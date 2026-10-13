@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/supabase_config.dart';
+import 'data/app_store.dart';
 import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -12,6 +13,7 @@ Future<void> main() async {
       url: SupabaseConfig.url,
       publishableKey: SupabaseConfig.anonKey,
     );
+    store.online = true;
   }
   runApp(const AprevoApp());
 }
