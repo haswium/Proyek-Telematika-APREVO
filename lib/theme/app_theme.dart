@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Palet APREVO hanya empat warna: ungu tua, ungu muda, putih, dan kuning.
 /// Tidak ada merah atau hijau. Benar dan salah dibedakan lewat ikon dan
@@ -53,37 +52,59 @@ class AppType {
   static const FontWeight bold = FontWeight.w700;
   static const FontWeight semiBold = FontWeight.w600;
 
-  /// `false` hanya saat widget test, supaya tes tidak mengunduh huruf.
-  static bool webFonts = true;
+  /// Keluarga huruf yang didaftarkan di pubspec.yaml (assets/fonts/).
+  /// Berisi SemiBold (600) dan Bold (700) di bawah satu nama, jadi teks
+  /// dengan `fontWeight` apa pun otomatis memakai berkas yang tepat.
+  static const String family = 'Poppins';
 
-  static TextStyle _display(double size, double height) {
-    final style = TextStyle(fontSize: size, fontWeight: bold, height: height);
-    return webFonts ? GoogleFonts.poppins(textStyle: style) : style;
+  /// Memasang Poppins ke gaya yang TIDAK mewarisi textTheme, misalnya gaya
+  /// teks tombol, chip, snackbar, dan menu bawah. Ketebalan dibulatkan ke
+  /// 600 atau 700.
+  static TextStyle poppins(TextStyle style) {
+    final w = style.fontWeight ?? semiBold;
+    return style.copyWith(
+      fontFamily: family,
+      fontWeight: w.value >= 700 ? bold : semiBold,
+    );
   }
 
-  static TextStyle get headlineMedium => _display(28, 1.2);
+  static const TextStyle headlineMedium = TextStyle(
+    fontFamily: family,
+    fontSize: 28,
+    fontWeight: bold,
+    height: 1.2,
+  );
 
-  static TextStyle get titleLarge => _display(22, 1.25);
+  static const TextStyle titleLarge = TextStyle(
+    fontFamily: family,
+    fontSize: 22,
+    fontWeight: bold,
+    height: 1.25,
+  );
 
   static const TextStyle titleMedium = TextStyle(
+    fontFamily: family,
     fontSize: 17,
     fontWeight: bold,
     height: 1.3,
   );
 
   static const TextStyle bodyLarge = TextStyle(
+    fontFamily: family,
     fontSize: 17,
     fontWeight: semiBold,
     height: 1.45,
   );
 
   static const TextStyle bodyMedium = TextStyle(
+    fontFamily: family,
     fontSize: 15,
     fontWeight: semiBold,
     height: 1.45,
   );
 
   static const TextStyle bodySmall = TextStyle(
+    fontFamily: family,
     fontSize: 13,
     fontWeight: semiBold,
     height: 1.4,
@@ -99,18 +120,13 @@ const List<BoxShadow> kStickerShadow = [
 ];
 
 /// Poppins untuk seluruh aplikasi: SemiBold untuk teks, Bold untuk judul.
-/// Tiap gaya dibuat lewat `GoogleFonts.poppins(textStyle: ...)` supaya
-/// berkas huruf dengan ketebalan yang tepat yang dipakai.
+/// Ketebalannya dipasang eksplisit supaya tidak ada gaya bawaan Material yang
+/// tertinggal di Regular (400).
 TextTheme _textTheme(TextTheme base) {
   final t = base.apply(bodyColor: AppColors.ink, displayColor: AppColors.ink);
 
-  TextStyle? poppins(TextStyle? s, FontWeight weight) {
-    if (s == null) return null;
-    final weighted = s.copyWith(fontWeight: weight);
-    return AppType.webFonts
-        ? GoogleFonts.poppins(textStyle: weighted)
-        : weighted;
-  }
+  TextStyle? poppins(TextStyle? s, FontWeight weight) =>
+      s == null ? null : AppType.poppins(s.copyWith(fontWeight: weight));
 
   TextStyle? semi(TextStyle? s) => poppins(s, AppType.semiBold);
   TextStyle? bold(TextStyle? s) => poppins(s, AppType.bold);
@@ -150,16 +166,57 @@ ThemeData _buildTheme() {
   const buttonShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(18)),
   );
-  const buttonText = TextStyle(fontSize: 17, fontWeight: FontWeight.w700);
+  // Tombol, chip, snackbar, dan menu bawah TIDAK mewarisi textTheme: gaya
+  // teksnya dipakai apa adanya. Jadi semuanya harus lewat AppType.poppins,
+  // kalau tidak hurufnya jatuh ke Roboto.
+  final buttonText = AppType.poppins(
+    const TextStyle(fontSize: 17, fontWeight: AppType.bold),
+  );
 
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.bgBottom,
+    // Semua teks yang mewarisi tema memakai Poppins, termasuk TextStyle
+    // tanpa fontFamily yang ditulis langsung di layar.
+    fontFamily: AppType.family,
   );
 
   return base.copyWith(
     textTheme: _textTheme(base.textTheme),
+    primaryTextTheme: _textTheme(base.primaryTextTheme),
+    // Menu bawah: ungu tua menyatu dengan latar, pil kuning di tab aktif.
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: AppColors.ink,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: AppColors.accent,
+      height: 74,
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return AppType.poppins(
+          TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? AppType.bold : AppType.semiBold,
+            color: selected ? AppColors.accent : AppColors.white,
+          ),
+        );
+      }),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return IconThemeData(
+          size: 26,
+          // Ikon aktif berada di atas pil kuning, jadi ungu tua.
+          color: selected ? AppColors.ink : AppColors.white,
+        );
+      }),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        textStyle: AppType.poppins(
+          const TextStyle(fontSize: 15, fontWeight: AppType.semiBold),
+        ),
+      ),
+    ),
     // Tombol ungu muda: terbaca di latar ungu maupun di kartu putih.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -188,17 +245,18 @@ ThemeData _buildTheme() {
       disabledColor: AppColors.soft,
       checkmarkColor: AppColors.ink,
       side: kStickerSide,
-      labelStyle: const TextStyle(
-        color: AppColors.ink,
-        fontWeight: FontWeight.w600,
+      labelStyle: AppType.poppins(
+        const TextStyle(color: AppColors.ink, fontWeight: AppType.semiBold),
       ),
     ),
-    snackBarTheme: const SnackBarThemeData(
+    snackBarTheme: SnackBarThemeData(
       backgroundColor: AppColors.ink,
-      contentTextStyle: TextStyle(
-        color: AppColors.white,
-        fontSize: 15,
-        fontWeight: FontWeight.w600,
+      contentTextStyle: AppType.poppins(
+        const TextStyle(
+          color: AppColors.white,
+          fontSize: 15,
+          fontWeight: AppType.semiBold,
+        ),
       ),
     ),
   );
@@ -216,7 +274,9 @@ final ThemeData aprevoOnPurpleTheme = _theme.copyWith(
     style: TextButton.styleFrom(
       foregroundColor: AppColors.white,
       minimumSize: const Size(0, 48),
-      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      textStyle: AppType.poppins(
+        const TextStyle(fontSize: 15, fontWeight: AppType.semiBold),
+      ),
     ),
   ),
   progressIndicatorTheme: const ProgressIndicatorThemeData(

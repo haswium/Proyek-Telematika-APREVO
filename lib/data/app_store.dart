@@ -4,8 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
-import '../config/supabase_config.dart';
-
 import '../models/models.dart';
 
 /// Penyimpanan sementara di memori supaya UI bisa dicoba tanpa backend.
@@ -29,7 +27,10 @@ class AppStore extends ChangeNotifier {
   // memakai Supabase Auth (akun asli, tersimpan). Kalau belum, memakai akun
   // contoh di bawah ini (mode demo, hilang saat aplikasi ditutup).
 
-  bool get online => SupabaseConfig.isConfigured;
+  /// Diisi `true` oleh `main()` setelah `Supabase.initialize` berhasil.
+  /// Widget test tidak menjalankan `main()`, jadi tes otomatis memakai mode
+  /// demo dan tidak pernah menghubungi Supabase.
+  bool online = false;
 
   final List<Account> _accounts = [
     Account(

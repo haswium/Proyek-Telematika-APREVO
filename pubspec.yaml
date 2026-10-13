@@ -36,7 +36,6 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_tts: ^4.2.5
   supabase_flutter: ^2.18.0
-  google_fonts: ^9.0.0
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +58,16 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Poppins hanya dua ketebalan: SemiBold (600) untuk teks, Bold (700) untuk
+  # judul. Sumber: github.com/google/fonts/tree/main/ofl/poppins (lisensi OFL).
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

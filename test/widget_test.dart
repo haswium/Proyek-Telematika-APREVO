@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aprevo/data/app_store.dart';
 import 'package:aprevo/main.dart';
-import 'package:aprevo/theme/app_theme.dart';
 
 void main() {
   testWidgets('Splash lalu layar sambutan', (tester) async {
-    // Tes tidak boleh mengunduh huruf dari internet.
-    AppType.webFonts = false;
+    // Mode demo: Supabase tidak diinisialisasi, jadi tes tidak butuh internet.
+    expect(store.online, isFalse);
 
     await tester.pumpWidget(const AprevoApp());
     expect(find.text('APREVO'), findsOneWidget);
