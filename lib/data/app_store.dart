@@ -220,6 +220,34 @@ class AppStore extends ChangeNotifier {
     return material;
   }
 
+  /// Guru mengunggah PDF sebagai materi baru (draf) di satu mata pelajaran.
+  ///
+  /// TIRUAN untuk mode demo: [bytes] belum dikirim ke mana pun, dan isi
+  /// materinya teks contoh. Nanti diganti dengan POST
+  /// /teacher/materials/upload ke backend (branch feat/backend-materials).
+  /// Kalau unggahan gagal, method ini melempar exception.
+  Future<LessonMaterial> uploadMaterialPdf(
+    Subject subject, {
+    required String title,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    final material = LessonMaterial(
+      id: _id(),
+      subjectId: subject.id,
+      title: title,
+      sourceFileName: fileName,
+      body:
+          'Materi $title diunggah dari file $fileName. Di mode demo, isi '
+          'PDF belum dibaca. Setelah aplikasi tersambung ke server, teks dari '
+          'PDF akan muncul di sini dan bisa didengarkan.',
+    );
+    subject.materials.add(material);
+    notifyListeners();
+    return material;
+  }
+
   /// Siswa bergabung ke mata pelajaran lewat kode aksesnya. Huruf kecil,
   /// spasi, dan strip dalam ketikan siswa tetap diterima.
   JoinResult joinSubject(String code, String studentName) {

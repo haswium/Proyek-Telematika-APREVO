@@ -119,12 +119,17 @@ class LessonMaterial {
     required this.body,
     this.questionType = GameType.quiz,
     this.published = false,
+    this.sourceFileName,
   });
 
   final String id;
   final String subjectId;
   final String title;
   final String body;
+
+  /// Nama file PDF kalau materi diunggah dari PDF, atau `null` kalau
+  /// isinya diketik guru.
+  final String? sourceFileName;
 
   final List<Attempt> attempts = [];
 

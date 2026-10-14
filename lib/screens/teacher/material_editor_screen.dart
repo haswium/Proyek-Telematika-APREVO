@@ -158,12 +158,8 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
             ListRow(
               icon: Icons.menu_book_outlined,
               title: 'Baca materi',
-              subtitle: _m.body.isEmpty
-                  ? 'Isi materi masih kosong'
-                  : (_m.body.length > 70
-                      ? '${_m.body.substring(0, 70)}...'
-                      : _m.body),
-              semanticLabel: 'Baca materi ${_m.title}',
+              subtitle: _sourceText(),
+              semanticLabel: 'Baca materi ${_m.title}. ${_sourceText()}',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -205,15 +201,23 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
               color: _m.published ? AppColors.mint : AppColors.soft,
               borderColor: AppColors.ink,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: SwitchListTile(
-                value: _m.published,
-                onChanged: _setPublished,
-                title: Text('Publikasikan ke siswa', style: AppType.titleMedium),
-                subtitle: Text(
-                  _m.published
-                      ? 'Siswa ${subject.name} bisa melihat materi ini'
-                      : 'Masih draf, siswa belum bisa melihat',
-                  style: AppType.bodySmall,
+              // Material transparan: ListTile menggambar efek sentuhnya di
+              // Material terdekat, yang tertutup latar AppCard.
+              child: Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  value: _m.published,
+                  onChanged: _setPublished,
+                  title: Text(
+                    'Publikasikan ke siswa',
+                    style: AppType.titleMedium,
+                  ),
+                  subtitle: Text(
+                    _m.published
+                        ? 'Siswa ${subject.name} bisa melihat materi ini'
+                        : 'Masih draf, siswa belum bisa melihat',
+                    style: AppType.bodySmall,
+                  ),
                 ),
               ),
             ),
@@ -233,6 +237,14 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
         ),
       ),
     );
+  }
+
+  /// Sumber isi materi: nama file PDF, atau cuplikan teks yang diketik.
+  String _sourceText() {
+    final file = _m.sourceFileName;
+    if (file != null) return 'Dari PDF: $file';
+    if (_m.body.isEmpty) return 'Isi materi masih kosong';
+    return _m.body.length > 70 ? '${_m.body.substring(0, 70)}...' : _m.body;
   }
 
   /// Ringkasan hasil pre-test dan post-test seorang siswa.

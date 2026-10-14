@@ -6,6 +6,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/playful.dart';
 import 'material_editor_screen.dart';
+import 'new_material_screen.dart';
 
 /// Isi satu mata pelajaran untuk guru: kode akses untuk dibagikan, tombol
 /// buat materi, lalu kartu tiap materi (publik maupun draf).
@@ -23,51 +24,13 @@ class SubjectDetailScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _createMaterial(BuildContext context) async {
-    final title = TextEditingController();
-    final body = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Materi baru'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: title,
-                autofocus: true,
-                decoration: fieldDecoration('Judul materi'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: body,
-                maxLines: 6,
-                decoration: fieldDecoration('Isi materi'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Lanjut buat soal'),
-          ),
-        ],
+  void _createMaterial(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NewMaterialScreen(subject: subject),
       ),
     );
-    if (ok != true || title.text.trim().isEmpty) return;
-    final material = store.createMaterial(
-      subject,
-      title.text.trim(),
-      body.text.trim(),
-    );
-    if (!context.mounted) return;
-    _open(context, material);
   }
 
   @override
