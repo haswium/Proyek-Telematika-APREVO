@@ -95,6 +95,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final locked = _m.hasQuestions;
+    final subject = store.subjectOf(_m);
     return PurpleScaffold(
       appBar: aprevoAppBar(_m.title),
       body: SafeArea(
@@ -109,6 +110,12 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      Pill(
+                        subject.name,
+                        icon: Icons.folder_outlined,
+                        color: const Color(0x33FFFFFF),
+                        textColor: AppColors.white,
+                      ),
                       Pill(
                         'Soal ${_m.questionType.label}',
                         icon: gameIcon(_m.questionType),
@@ -140,13 +147,10 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _m.published
-                        ? 'Bagikan kode akses ini ke siswa.'
-                        : 'Kode baru bisa dipakai setelah materi '
-                            'dipublikasikan.',
+                        ? 'Publik, terlihat oleh siswa ${subject.name}.'
+                        : 'Draf, belum terlihat oleh siswa.',
                     style: const TextStyle(color: AppColors.white),
                   ),
-                  const SizedBox(height: 12),
-                  CodeBox(code: store.subjectOf(_m).accessCode, onDark: true),
                 ],
               ),
             ),
@@ -207,18 +211,19 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                 title: Text('Publikasikan ke siswa', style: AppType.titleMedium),
                 subtitle: Text(
                   _m.published
-                      ? 'Siswa di ruang ini bisa melihat materi ini'
+                      ? 'Siswa ${subject.name} bisa melihat materi ini'
                       : 'Masih draf, siswa belum bisa melihat',
                   style: AppType.bodySmall,
                 ),
               ),
             ),
-            SectionTitle('Siswa (${store.subjectOf(_m).students.length})'),
-            if (store.subjectOf(_m).students.isEmpty)
+            SectionTitle('Siswa (${subject.students.length})'),
+            if (subject.students.isEmpty)
               const EmptyState(
-                message: 'Belum ada siswa yang bergabung ke materi ini.',
+                message: 'Belum ada siswa yang bergabung ke mata pelajaran '
+                    'ini.',
               ),
-            for (final name in store.subjectOf(_m).students)
+            for (final name in subject.students)
               ListRow(
                 icon: Icons.person_outline,
                 title: name,

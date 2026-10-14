@@ -4,7 +4,6 @@ import '../data/app_store.dart';
 import '../models/models.dart';
 import '../services/speech.dart';
 import '../theme/app_theme.dart';
-import '../widgets/common.dart';
 import 'student/student_shell.dart';
 import 'student/onboarding_screen.dart';
 import 'teacher/teacher_shell.dart';
@@ -167,38 +166,6 @@ class PasswordToggle extends StatelessWidget {
       color: AppColors.primary,
       icon: Icon(visible ? Icons.visibility_off : Icons.visibility_outlined),
       onPressed: onPressed,
-    );
-  }
-}
-
-/// Kartu pesan error. liveRegion: TalkBack langsung membacakannya.
-///
-/// TalkBack hanya membacakan liveRegion kalau labelnya berubah. Supaya
-/// pesan yang sama tetap dibacakan saat muncul lagi, beri `key` baru tiap
-/// kali pesan ditampilkan (lihat [ErrorCard.keyFor]).
-class ErrorCard extends StatelessWidget {
-  const ErrorCard({super.key, required this.message});
-
-  final String message;
-
-  /// Key unik untuk kemunculan ke-[serial] sebuah pesan.
-  static Key keyFor(int serial) => ValueKey('error-$serial');
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      liveRegion: true,
-      label: message,
-      excludeSemantics: true,
-      child: AppCard(
-        color: AppColors.dangerBg,
-        borderColor: AppColors.danger,
-        child: Text(
-          message,
-          style: AppType.bodyMedium.copyWith(color: AppColors.danger),
-        ),
-      ),
     );
   }
 }

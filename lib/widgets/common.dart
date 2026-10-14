@@ -257,6 +257,38 @@ class ListRow extends StatelessWidget {
   }
 }
 
+/// Kartu pesan error. liveRegion: TalkBack langsung membacakannya.
+///
+/// TalkBack hanya membacakan liveRegion kalau labelnya berubah. Supaya
+/// pesan yang sama tetap dibacakan saat muncul lagi, beri `key` baru tiap
+/// kali pesan ditampilkan (lihat [ErrorCard.keyFor]).
+class ErrorCard extends StatelessWidget {
+  const ErrorCard({super.key, required this.message});
+
+  final String message;
+
+  /// Key unik untuk kemunculan ke-[serial] sebuah pesan.
+  static Key keyFor(int serial) => ValueKey('error-$serial');
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: message,
+      excludeSemantics: true,
+      child: AppCard(
+        color: AppColors.dangerBg,
+        borderColor: AppColors.danger,
+        child: Text(
+          message,
+          style: AppType.bodyMedium.copyWith(color: AppColors.danger),
+        ),
+      ),
+    );
+  }
+}
+
 /// ChoiceChip setinggi [kTouchTarget]. Chip bawaan hanya 48; yang
 /// menambah tingginya adalah `labelPadding` vertikal (sudah diukur di tes).
 class AppChoiceChip extends StatelessWidget {
