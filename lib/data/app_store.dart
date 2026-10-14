@@ -16,7 +16,7 @@ class AppStore extends ChangeNotifier {
     _seed();
   }
 
-  final List<LessonMaterial> materials = [];
+  final List<Subject> subjects = [];
   final Random _random = Random();
   int _nextId = 1;
 
@@ -178,54 +178,81 @@ class AppStore extends ChangeNotifier {
     if (online) Supabase.instance.client.auth.signOut();
   }
 
-  // Tanpa O/0 dan I/1 supaya kode tidak ambigu saat dibacakan.
-  static const String _codeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  /// Semua materi dari semua mata pelajaran, termasuk draf.
+  List<LessonMaterial> get materials => [
+    for (final subject in subjects) ...subject.materials,
+  ];
+
+  static const String _codeLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
   String _generateAccessCode() {
     while (true) {
-      final part = List.generate(
-        4,
-        (_) => _codeChars[_random.nextInt(_codeChars.length)],
+      final code = List.generate(
+        kAccessCodeLength,
+        (_) => _codeLetters[_random.nextInt(_codeLetters.length)],
       ).join();
-      final code = 'APV-$part';
-      if (!materials.any((m) => m.accessCode == code)) return code;
+      if (!subjects.any((s) => s.accessCode == code)) return code;
     }
   }
 
-  /// Guru membuat materi. Kode aksesnya dibuat otomatis di sini.
-  LessonMaterial createMaterial(String title, String body) {
-    final material = LessonMaterial(
+  /// Guru membuat mata pelajaran. Kode aksesnya dibuat otomatis di sini.
+  Subject createSubject(String name) {
+    final subject = Subject(
       id: _id(),
-      title: title,
-      body: body,
+      name: name,
       accessCode: _generateAccessCode(),
     );
-    materials.add(material);
+    subjects.add(subject);
+    notifyListeners();
+    return subject;
+  }
+
+  /// Guru menambah materi ke satu mata pelajaran. Materi baru selalu draf.
+  LessonMaterial createMaterial(Subject subject, String title, String body) {
+    final material = LessonMaterial(
+      id: _id(),
+      subjectId: subject.id,
+      title: title,
+      body: body,
+    );
+    subject.materials.add(material);
     notifyListeners();
     return material;
   }
 
-  /// Siswa bergabung ke satu materi lewat kode aksesnya.
-  /// Mengembalikan materinya, atau `null` kalau kode tidak cocok dengan
-  /// materi yang sudah dipublikasikan.
-  LessonMaterial? joinMaterial(String code, String studentName) {
-    final clean = code.trim().toUpperCase().replaceAll(' ', '');
-    for (final material in materials) {
-      if (material.accessCode == clean && material.published) {
-        if (!material.students.contains(studentName)) {
-          material.students.add(studentName);
-          notifyListeners();
-        }
-        return material;
+  /// Siswa bergabung ke mata pelajaran lewat kode aksesnya. Huruf kecil,
+  /// spasi, dan strip dalam ketikan siswa tetap diterima.
+  JoinResult joinSubject(String code, String studentName) {
+    final clean = cleanAccessCode(code);
+    for (final subject in subjects) {
+      if (subject.accessCode != clean) continue;
+      if (subject.students.contains(studentName)) {
+        return JoinResult(JoinStatus.alreadyJoined, subject);
       }
+      subject.students.add(studentName);
+      notifyListeners();
+      return JoinResult(JoinStatus.joined, subject);
     }
-    return null;
+    return const JoinResult(JoinStatus.notFound);
   }
 
-  /// Materi yang sudah diikuti seorang siswa dan masih dipublikasikan.
-  List<LessonMaterial> materialsOf(String studentName) => materials
-      .where((m) => m.published && m.students.contains(studentName))
-      .toList();
+  /// Mata pelajaran yang sudah diikuti seorang siswa.
+  List<Subject> subjectsOf(String studentName) =>
+      subjects.where((s) => s.students.contains(studentName)).toList();
+
+  /// Materi yang boleh dilihat siswa: hanya yang sudah dipublikasikan.
+  List<LessonMaterial> publishedMaterials(Subject subject) =>
+      subject.materials.where((m) => m.published).toList();
+
+  /// Materi publik dari semua mata pelajaran yang diikuti seorang siswa.
+  List<LessonMaterial> materialsOf(String studentName) => [
+    for (final subject in subjectsOf(studentName))
+      ...publishedMaterials(subject),
+  ];
+
+  /// Mata pelajaran tempat sebuah materi berada.
+  Subject subjectOf(LessonMaterial material) =>
+      subjects.firstWhere((s) => s.id == material.subjectId);
 
   /// Dipanggil setelah mengubah isi materi (jenis soal, daftar soal).
   void touch() => notifyListeners();
@@ -313,10 +340,17 @@ class AppStore extends ChangeNotifier {
   }
 
   void _seed() {
+    final ipa = Subject(id: _id(), name: 'IPA Kelas 5', accessCode: 'KXPRTA');
+    final bumi = Subject(
+      id: _id(),
+      name: 'Bumi dan Antariksa',
+      accessCode: 'BMRANT',
+    );
+
     // Materi 1: jenis soal Quiz.
     final foto = LessonMaterial(
       id: _id(),
-      accessCode: 'APV-7K29',
+      subjectId: ipa.id,
       title: 'Fotosintesis',
       questionType: GameType.quiz,
       published: true,
@@ -386,7 +420,7 @@ class AppStore extends ChangeNotifier {
     // Materi 2: jenis soal Benar atau Salah.
     final napas = LessonMaterial(
       id: _id(),
-      accessCode: 'APV-3NPS',
+      subjectId: ipa.id,
       title: 'Sistem Pernapasan',
       questionType: GameType.trueFalse,
       published: true,
@@ -428,7 +462,7 @@ class AppStore extends ChangeNotifier {
     // Materi 3: jenis soal Puzzle Urutan.
     final air = LessonMaterial(
       id: _id(),
-      accessCode: 'APV-D4AR',
+      subjectId: ipa.id,
       title: 'Daur Air',
       questionType: GameType.ordering,
       published: true,
@@ -469,7 +503,7 @@ class AppStore extends ChangeNotifier {
     // Materi 4: jenis soal Isian Singkat.
     final planet = LessonMaterial(
       id: _id(),
-      accessCode: 'APV-TS8X',
+      subjectId: bumi.id,
       title: 'Tata Surya',
       questionType: GameType.shortAnswer,
       published: true,
@@ -502,7 +536,20 @@ class AppStore extends ChangeNotifier {
       ),
     ]);
 
-    foto.students.addAll(['Dimas', 'Sari']);
+    // Materi 5: masih draf, jadi tidak terlihat oleh siswa.
+    final gerhana = LessonMaterial(
+      id: _id(),
+      subjectId: bumi.id,
+      title: 'Gerhana',
+      questionType: GameType.quiz,
+      body:
+          'Gerhana matahari terjadi saat Bulan berada di antara Matahari dan '
+          'Bumi, sehingga cahaya Matahari tertutup Bulan.',
+    );
+
+    // Dimas belum ikut Bumi dan Antariksa, supaya alur memasukkan kode
+    // BMRANT bisa didemokan.
+    ipa.students.addAll(['Dimas', 'Sari']);
     foto.attempts.addAll([
       Attempt(
         studentName: 'Sari',
@@ -521,7 +568,9 @@ class AppStore extends ChangeNotifier {
         total: 3,
       ),
     ]);
-    materials.addAll([foto, napas, air, planet]);
+    ipa.materials.addAll([foto, napas, air]);
+    bumi.materials.addAll([planet, gerhana]);
+    subjects.addAll([ipa, bumi]);
   }
 }
 

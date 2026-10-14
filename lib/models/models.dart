@@ -80,28 +80,52 @@ extension TestKindInfo on TestKind {
   String get label => this == TestKind.pre ? 'Pre-test' : 'Post-test';
 }
 
+/// Panjang kode akses mata pelajaran: 6 huruf kapital A-Z, tanpa strip.
+const int kAccessCodeLength = 6;
+
+/// Merapikan ketikan kode akses: huruf kecil jadi kapital, karakter selain
+/// huruf A-Z dibuang. "kx-prta" menjadi "KXPRTA".
+String cleanAccessCode(String raw) =>
+    raw.toUpperCase().replaceAll(RegExp('[^A-Z]'), '');
+
+/// Mata pelajaran milik guru, misalnya "IPA Kelas 5". Satu mata pelajaran
+/// punya satu kode akses. Siswa bergabung lewat kode itu, lalu melihat semua
+/// materi yang sudah dipublikasikan di dalamnya.
+class Subject {
+  Subject({required this.id, required this.name, required this.accessCode});
+
+  final String id;
+  final String name;
+
+  /// Kode unik mata pelajaran ini, dibuat otomatis oleh sistem.
+  /// 6 huruf kapital A-Z, contoh: KXPRTA.
+  final String accessCode;
+
+  /// Nama siswa yang sudah bergabung lewat kode akses.
+  final List<String> students = [];
+
+  /// Semua materi, termasuk draf. Siswa hanya melihat yang publik.
+  final List<LessonMaterial> materials = [];
+}
+
 /// Satu materi = satu paket belajar: isi materi, satu jenis soal yang
 /// dipilih guru, lalu pre-test dan post-test dengan jenis soal itu.
-/// Tiap materi punya kode akses sendiri; siswa bergabung per materi.
+/// Materi selalu berada di dalam satu mata pelajaran ([subjectId]).
 class LessonMaterial {
   LessonMaterial({
     required this.id,
+    required this.subjectId,
     required this.title,
     required this.body,
-    required this.accessCode,
     this.questionType = GameType.quiz,
     this.published = false,
   });
 
   final String id;
+  final String subjectId;
   final String title;
   final String body;
 
-  /// Kode unik materi ini, dibuat otomatis oleh sistem. Contoh: APV-7K29.
-  final String accessCode;
-
-  /// Nama siswa yang sudah bergabung lewat kode akses.
-  final List<String> students = [];
   final List<Attempt> attempts = [];
 
   /// Jenis soal untuk materi ini. Hanya satu, dipilih guru.
@@ -114,6 +138,17 @@ class LessonMaterial {
       kind == TestKind.pre ? preTest : postTest;
 
   bool get hasQuestions => preTest.isNotEmpty || postTest.isNotEmpty;
+}
+
+enum JoinStatus { joined, alreadyJoined, notFound }
+
+/// Hasil siswa memasukkan kode akses. [subject] terisi kecuali
+/// [JoinStatus.notFound].
+class JoinResult {
+  const JoinResult(this.status, [this.subject]);
+
+  final JoinStatus status;
+  final Subject? subject;
 }
 
 /// Skor bintang: 3 bintang untuk 85% ke atas, 2 untuk 60% ke atas,

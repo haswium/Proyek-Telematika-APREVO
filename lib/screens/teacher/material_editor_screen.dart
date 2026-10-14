@@ -146,7 +146,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                     style: const TextStyle(color: AppColors.white),
                   ),
                   const SizedBox(height: 12),
-                  CodeBox(code: _m.accessCode, onDark: true),
+                  CodeBox(code: store.subjectOf(_m).accessCode, onDark: true),
                 ],
               ),
             ),
@@ -213,12 +213,12 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                 ),
               ),
             ),
-            SectionTitle('Siswa (${_m.students.length})'),
-            if (_m.students.isEmpty)
+            SectionTitle('Siswa (${store.subjectOf(_m).students.length})'),
+            if (store.subjectOf(_m).students.isEmpty)
               const EmptyState(
                 message: 'Belum ada siswa yang bergabung ke materi ini.',
               ),
-            for (final name in _m.students)
+            for (final name in store.subjectOf(_m).students)
               ListRow(
                 icon: Icons.person_outline,
                 title: name,

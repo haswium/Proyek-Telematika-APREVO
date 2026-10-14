@@ -60,7 +60,11 @@ class TeacherHomeScreen extends StatelessWidget {
     );
     if (ok != true || title.text.trim().isEmpty) return;
     // Kode akses materi dibuat otomatis di dalam createMaterial.
-    final material = store.createMaterial(title.text.trim(), body.text.trim());
+    final material = store.createMaterial(
+      store.subjects.first,
+      title.text.trim(),
+      body.text.trim(),
+    );
     if (!context.mounted) return;
     _open(context, material);
   }
@@ -183,13 +187,13 @@ class _MaterialCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          CodeBox(code: m.accessCode),
+          CodeBox(code: store.subjectOf(m).accessCode),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: StatTile(
-                  value: '${m.students.length}',
+                  value: '${store.subjectOf(m).students.length}',
                   label: 'Siswa',
                 ),
               ),
