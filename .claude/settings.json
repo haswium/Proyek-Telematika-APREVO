@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./backend/.env)",
+      "Read(./.env)",
+      "Read(./**/.env)"
+    ]
+  }
+}
