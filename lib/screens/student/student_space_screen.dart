@@ -90,15 +90,11 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Semantics(
-                        label: 'Kode akses: ${spellCode(store.subjectOf(_m).accessCode)}',
-                        excludeSemantics: true,
-                        child: Pill(
-                          'Kode: ${store.subjectOf(_m).accessCode}',
-                          icon: Icons.key,
-                          color: AppColors.accent,
-                          textColor: AppColors.ink,
-                        ),
+                      Pill(
+                        store.subjectOf(_m).name,
+                        icon: Icons.folder_outlined,
+                        color: AppColors.accent,
+                        textColor: AppColors.ink,
                       ),
                       const SizedBox(height: 12),
                       Semantics(

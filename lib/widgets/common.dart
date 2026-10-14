@@ -39,10 +39,35 @@ IconData gameIcon(GameType type) {
   }
 }
 
-/// Kode akses dieja per karakter untuk TalkBack, supaya "APV-7K29" tidak
-/// dibaca sebagai satu kata: "A P V 7 K 2 9".
+/// Kode akses dieja per huruf untuk TalkBack, supaya "KXPRTA" tidak
+/// dibaca sebagai satu kata: "K X P R T A".
 String spellCode(String code) =>
     code.replaceAll('-', '').split('').join(' ');
+
+/// Kolom kode akses: huruf kecil otomatis jadi kapital, karakter selain
+/// huruf A-Z dibuang, dan panjangnya paling banyak [kAccessCodeLength].
+class AccessCodeFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = cleanAccessCode(newValue.text);
+    if (text.length > kAccessCodeLength) {
+      text = text.substring(0, kAccessCodeLength);
+    }
+    // Kursor tetap di posisi yang sama relatif terhadap huruf di depannya.
+    final end = newValue.selection.end;
+    var offset = end < 0 || end > newValue.text.length
+        ? text.length
+        : cleanAccessCode(newValue.text.substring(0, end)).length;
+    if (offset > text.length) offset = text.length;
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+  }
+}
 
 InputDecoration fieldDecoration(String label, {String? hint}) {
   const radius = BorderRadius.all(Radius.circular(16));
