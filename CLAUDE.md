@@ -45,8 +45,11 @@ semua error sebelum menganggap tugas selesai.
 
 - Dua peran: guru dan siswa. Peran dipilih saat daftar dan disimpan di
   metadata akun Supabase (`name`, `role`).
-- Tidak ada ruang belajar. Tiap materi punya kode akses sendiri
-  (format `APV-XXXX`). Siswa memasukkan kode untuk membuka materi.
+- Guru membuat mata pelajaran. Tiap mata pelajaran punya satu kode akses
+  berupa 6 huruf kapital A-Z tanpa strip (contoh `KXPRTA`). Kode akses
+  tidak lagi per materi.
+- Siswa bergabung ke mata pelajaran dengan kode itu, lalu melihat semua
+  materi yang sudah dipublikasikan di mata pelajaran tersebut.
 - Satu materi memakai satu jenis soal pilihan guru: pilihan ganda,
   benar/salah, isian singkat, atau puzzle urutan.
 - Soal pilihan ganda hanya punya satu jawaban benar.
