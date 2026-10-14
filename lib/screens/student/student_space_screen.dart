@@ -39,7 +39,7 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
   }
 
   void _play(TestKind kind) {
-    if (_m.questionsFor(kind).isEmpty) {
+    if (_m.questionType == null || _m.questionsFor(kind).isEmpty) {
       _say('Guru belum membuat soal ${kind.label}.');
       return;
     }
@@ -104,7 +104,7 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Jenis soal: ${_m.questionType.label}',
+                        'Jenis soal: ${_m.questionTypeLabel}',
                         style: const TextStyle(
                           fontSize: 16,
                           color: AppColors.white,

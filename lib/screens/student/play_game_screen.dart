@@ -38,7 +38,9 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
   late final List<Question> _questions = List<Question>.of(
     widget.material.questionsFor(widget.kind),
   );
-  late final GameType _type = widget.material.questionType;
+  // Aman: MaterialJourneyScreen tidak membuka layar ini kalau jenis soal
+  // materinya belum ditentukan.
+  late final GameType _type = widget.material.questionType!;
 
   int _index = 0;
   int _score = 0;

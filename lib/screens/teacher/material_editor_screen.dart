@@ -42,13 +42,23 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     store.touch();
   }
 
+  /// Jenis soal materi ini, atau `null` setelah memberi tahu guru untuk
+  /// memilihnya dulu.
+  GameType? _requireType() {
+    final type = _m.questionType;
+    if (type == null) Speech.announce('Pilih jenis soal dulu.');
+    return type;
+  }
+
   Future<void> _addOrEdit(TestKind kind, {int? index}) async {
+    final type = _requireType();
+    if (type == null) return;
     final list = _m.questionsFor(kind);
     final result = await Navigator.push<Question>(
       context,
       MaterialPageRoute(
         builder: (_) => QuestionFormScreen(
-          type: _m.questionType,
+          type: type,
           initial: index == null ? null : list[index],
         ),
       ),
@@ -64,8 +74,10 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
   }
 
   Future<void> _generate(TestKind kind) async {
+    final type = _requireType();
+    if (type == null) return;
     setState(() => _generating = kind);
-    final generated = await store.generateQuestions(_m.questionType, _m);
+    final generated = await store.generateQuestions(type, _m);
     if (!mounted) return;
     _changed(() {
       _generating = null;
@@ -110,7 +122,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                     runSpacing: 8,
                     children: [
                       Pill(
-                        'Soal ${_m.questionType.label}',
+                        'Soal ${_m.questionTypeLabel}',
                         icon: gameIcon(_m.questionType),
                         color: const Color(0x33FFFFFF),
                         textColor: AppColors.white,

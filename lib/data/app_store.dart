@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
 import '../models/models.dart';
+import '../services/api_client.dart';
 
 /// Penyimpanan sementara di memori supaya UI bisa dicoba tanpa backend.
 ///
@@ -34,12 +35,14 @@ class AppStore extends ChangeNotifier {
 
   final List<Account> _accounts = [
     Account(
+      id: 'demo-guru',
       name: 'Bu Rina',
       email: 'guru@aprevo.id',
       password: '123456',
       role: UserRole.teacher,
     ),
     Account(
+      id: 'demo-siswa',
       name: 'Dimas',
       email: 'siswa@aprevo.id',
       password: '123456',
@@ -55,6 +58,7 @@ class AppStore extends ChangeNotifier {
     final email = user.email ?? '';
     final name = (meta['name'] ?? '').toString().trim();
     return Account(
+      id: user.id,
       name: name.isNotEmpty ? name : email.split('@').first,
       email: email,
       password: '',
@@ -140,6 +144,7 @@ class AppStore extends ChangeNotifier {
         return 'Email ini sudah terdaftar. Silakan masuk.';
       }
       final account = Account(
+        id: _id(),
         name: name.trim(),
         email: clean,
         password: password,
@@ -175,6 +180,8 @@ class AppStore extends ChangeNotifier {
 
   void signOut() {
     currentUser = null;
+    studentMaterials.clear();
+    studentMaterialsError = null;
     if (online) Supabase.instance.client.auth.signOut();
   }
 
@@ -199,6 +206,7 @@ class AppStore extends ChangeNotifier {
       title: title,
       body: body,
       accessCode: _generateAccessCode(),
+      questionType: GameType.quiz,
     );
     materials.add(material);
     notifyListeners();
@@ -222,10 +230,53 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
+  // ---- Daftar materi siswa.
+  // Mode online: diambil dari backend `GET /student/materials`.
+  // Mode demo: disaring dari data contoh di memori.
+
+  /// Hasil terakhir dari backend (hanya mode online).
+  final List<LessonMaterial> studentMaterials = [];
+  bool studentMaterialsLoading = false;
+
+  /// Pesan error terakhir, sudah dalam bahasa Indonesia, atau `null`.
+  String? studentMaterialsError;
+
+  /// Mengambil ulang daftar materi siswa dari backend. Di mode demo tidak
+  /// melakukan apa-apa.
+  Future<void> loadStudentMaterials() async {
+    if (!online || studentMaterialsLoading) return;
+    studentMaterialsLoading = true;
+    studentMaterialsError = null;
+    notifyListeners();
+    try {
+      final data = await ApiClient.get('/student/materials');
+      // Backend boleh mengirim daftar langsung atau {"materials": [...]}.
+      final rows = data is Map ? data['materials'] : data;
+      if (rows is! List) {
+        throw ApiException('Data materi dari server tidak terbaca.');
+      }
+      studentMaterials
+        ..clear()
+        ..addAll(
+          rows.whereType<Map<String, dynamic>>().map(LessonMaterial.fromJson),
+        );
+    } on ApiException catch (e) {
+      studentMaterialsError = e.message;
+    } catch (_) {
+      studentMaterialsError = 'Data materi dari server tidak terbaca.';
+    } finally {
+      studentMaterialsLoading = false;
+      notifyListeners();
+    }
+  }
+
   /// Materi yang sudah diikuti seorang siswa dan masih dipublikasikan.
-  List<LessonMaterial> materialsOf(String studentName) => materials
-      .where((m) => m.published && m.students.contains(studentName))
-      .toList();
+  List<LessonMaterial> materialsOf(String studentName) {
+    if (online) return List.unmodifiable(studentMaterials);
+    return materials
+        .where((m) => m.published && m.students.contains(studentName))
+        .toList();
+  }
 
   /// Dipanggil setelah mengubah isi materi (jenis soal, daftar soal).
   void touch() => notifyListeners();
