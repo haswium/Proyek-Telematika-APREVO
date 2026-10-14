@@ -27,8 +27,10 @@ AppBar aprevoAppBar(
   );
 }
 
-IconData gameIcon(GameType type) {
+IconData gameIcon(GameType? type) {
   switch (type) {
+    case null:
+      return Icons.menu_book_outlined;
     case GameType.quiz:
       return Icons.quiz_outlined;
     case GameType.trueFalse:

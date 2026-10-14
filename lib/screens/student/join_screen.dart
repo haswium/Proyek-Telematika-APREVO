@@ -25,6 +25,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    store.loadStudentMaterials();
+  }
+
+  @override
   void dispose() {
     _code.dispose();
     super.dispose();
@@ -70,7 +76,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     if (post != null) return 'Selesai, ${post.stars} dari 3 bintang';
     final pre = store.latestAttempt(m, name, TestKind.pre);
     if (pre != null) return 'Pre-test selesai, lanjut dengarkan materi';
-    return 'Soal ${m.questionType.label}, belum dimulai';
+    return 'Soal ${m.questionTypeLabel}, belum dimulai';
   }
 
   @override
@@ -86,7 +92,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 MascotBubble(
-                  text: 'Halo, ${widget.studentName}! Aku Odi. Masukkan '
+                  text:
+                      'Halo, ${widget.studentName}! Aku Odi. Masukkan '
                       'kode akses dari gurumu untuk membuka materi.',
                 ),
                 const SizedBox(height: 16),
@@ -126,24 +133,106 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   onPressed: _join,
                 ),
                 const SizedBox(height: 16),
-                SectionTitle('Materi yang kamu ikuti (${materials.length})'),
-                if (materials.isEmpty)
-                  const EmptyState(
-                    message: 'Belum ada materi. Masukkan kode akses di atas.',
-                  ),
-                for (final m in materials)
-                  ListRow(
-                    icon: gameIcon(m.questionType),
-                    title: m.title,
-                    subtitle: _progress(m),
-                    semanticLabel: 'Materi ${m.title}. ${_progress(m)}',
-                    onTap: () => _open(m),
-                  ),
+                if (store.studentMaterialsLoading)
+                  const _LoadingMaterials()
+                else if (store.studentMaterialsError != null)
+                  _LoadError(
+                    message: store.studentMaterialsError!,
+                    onRetry: store.loadStudentMaterials,
+                  )
+                else ...[
+                  SectionTitle('Materi yang kamu ikuti (${materials.length})'),
+                  if (materials.isEmpty)
+                    const EmptyState(
+                      message: 'Belum ada materi. Masukkan kode akses di atas.',
+                    ),
+                ],
+                if (!store.studentMaterialsLoading)
+                  for (final m in materials)
+                    ListRow(
+                      icon: gameIcon(m.questionType),
+                      title: m.title,
+                      subtitle: _progress(m),
+                      semanticLabel: 'Materi ${m.title}. ${_progress(m)}',
+                      onTap: () => _open(m),
+                    ),
               ],
             );
           },
         ),
       ),
+    );
+  }
+}
+
+/// Ditampilkan selama daftar materi diambil dari server.
+/// `liveRegion` membuat TalkBack langsung membacakan pesannya.
+class _LoadingMaterials extends StatelessWidget {
+  const _LoadingMaterials();
+
+  static const _message = 'Sedang memuat materimu. Tunggu sebentar.';
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.of(context).disableAnimations;
+    return Semantics(
+      liveRegion: true,
+      label: _message,
+      excludeSemantics: true,
+      child: AppCard(
+        child: Row(
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: still
+                  ? const Icon(Icons.hourglass_top, color: AppColors.primary)
+                  : const CircularProgressIndicator(
+                      strokeWidth: 4,
+                      color: AppColors.primary,
+                    ),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(child: Text(_message, style: AppType.bodyMedium)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pesan gagal memuat materi, dengan tombol untuk mencoba lagi.
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: 'Gagal memuat materi. $message',
+          excludeSemantics: true,
+          child: AppCard(
+            color: AppColors.dangerBg,
+            borderColor: AppColors.danger,
+            child: Text(
+              'Gagal memuat materi. $message',
+              style: AppType.bodyMedium.copyWith(color: AppColors.danger),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        PrimaryButton(
+          label: 'Coba lagi',
+          icon: Icons.refresh,
+          onPressed: onRetry,
+        ),
+      ],
     );
   }
 }

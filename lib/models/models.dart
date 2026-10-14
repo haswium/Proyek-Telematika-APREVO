@@ -4,6 +4,21 @@ library;
 
 enum GameType { quiz, trueFalse, shortAnswer, ordering }
 
+/// Nilai kolom `type` dari backend ke [GameType]. `null` kalau tidak dikenal.
+GameType? gameTypeFromApi(Object? value) {
+  switch (value) {
+    case 'multiple_choice':
+      return GameType.quiz;
+    case 'true_false':
+      return GameType.trueFalse;
+    case 'text':
+      return GameType.shortAnswer;
+    case 'ordering':
+      return GameType.ordering;
+  }
+  return null;
+}
+
 extension GameTypeInfo on GameType {
   String get label {
     switch (this) {
@@ -89,7 +104,7 @@ class LessonMaterial {
     required this.title,
     required this.body,
     required this.accessCode,
-    this.questionType = GameType.quiz,
+    this.questionType,
     this.published = false,
   });
 
@@ -105,7 +120,10 @@ class LessonMaterial {
   final List<Attempt> attempts = [];
 
   /// Jenis soal untuk materi ini. Hanya satu, dipilih guru.
-  GameType questionType;
+  /// `null` kalau materi dari backend belum punya quiz.
+  GameType? questionType;
+
+  String get questionTypeLabel => questionType?.label ?? 'belum ditentukan';
   bool published;
   final List<Question> preTest = [];
   final List<Question> postTest = [];
@@ -114,6 +132,27 @@ class LessonMaterial {
       kind == TestKind.pre ? preTest : postTest;
 
   bool get hasQuestions => preTest.isNotEmpty || postTest.isNotEmpty;
+
+  /// Dari satu baris tabel `materials` yang dikirim backend, dengan quiz
+  /// materi itu disertakan sebagai `quizzes` (embed Supabase, berupa daftar
+  /// atau satu objek). Jenis soal diambil dari kolom `type` quiz tersebut.
+  ///
+  /// Isi materi sengaja kosong: backend belum menyimpan isi materi sebagai
+  /// teks.
+  factory LessonMaterial.fromJson(Map<String, dynamic> json) {
+    final quizzes = json['quizzes'];
+    final quiz = quizzes is List
+        ? quizzes.whereType<Map>().firstOrNull
+        : (quizzes is Map ? quizzes : null);
+    return LessonMaterial(
+      id: json['id'].toString(),
+      title: (json['title'] ?? '').toString(),
+      body: '',
+      accessCode: (json['access_code'] ?? '').toString(),
+      questionType: gameTypeFromApi(quiz?['type']),
+      published: json['is_published'] != false,
+    );
+  }
 }
 
 /// Skor bintang: 3 bintang untuk 85% ke atas, 2 untuk 60% ke atas,
@@ -154,12 +193,16 @@ extension UserRoleInfo on UserRole {
 
 class Account {
   Account({
+    required this.id,
     required this.name,
     required this.email,
     required this.password,
     required this.role,
   });
 
+  /// Id pengguna Supabase (`auth.users.id`, sama dengan `public.users.id`).
+  /// Di mode demo berisi id lokal.
+  final String id;
   final String name;
   final String email;
   final String password;

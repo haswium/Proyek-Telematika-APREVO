@@ -166,7 +166,7 @@ class _MaterialCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              Pill(m.questionType.label, icon: gameIcon(m.questionType)),
+              Pill(m.questionTypeLabel, icon: gameIcon(m.questionType)),
               Pill(
                 m.published ? 'Publik' : 'Draf',
                 color: m.published ? AppColors.primary : AppColors.highlight,
