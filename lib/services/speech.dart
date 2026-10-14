@@ -42,6 +42,15 @@ class Speech {
     } catch (_) {}
   }
 
+  /// Untuk pesan yang SUDAH tampil di layar di dalam `liveRegion` (kartu
+  /// error, SnackBar). Kalau TalkBack menyala, liveRegion itu yang
+  /// membacakan, jadi di sini tidak diumumkan lagi supaya tidak dobel.
+  /// Kalau TalkBack mati, pesannya dibacakan dengan suara.
+  static void feedback(BuildContext context, String message) {
+    if (MediaQuery.of(context).accessibleNavigation) return;
+    speak(message);
+  }
+
   static void announce(String message) {
     final dispatcher = WidgetsBinding.instance.platformDispatcher;
     final view = dispatcher.implicitView ??

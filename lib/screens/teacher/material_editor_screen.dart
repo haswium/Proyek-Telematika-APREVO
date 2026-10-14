@@ -173,9 +173,9 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
               runSpacing: 8,
               children: [
                 for (final t in GameType.values)
-                  ChoiceChip(
-                    avatar: Icon(gameIcon(t), size: 18),
-                    label: Text(t.label),
+                  AppChoiceChip(
+                    icon: gameIcon(t),
+                    label: t.label,
                     selected: _m.questionType == t,
                     onSelected: locked
                         ? null
@@ -264,13 +264,19 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
               minHeight: kTouchTarget,
             ),
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => _changed(() => list.removeAt(i)),
+            onPressed: () {
+              _changed(() => list.removeAt(i));
+              // Tombol yang difokus TalkBack ikut hilang, jadi beri tahu.
+              Speech.announce('${kind.label} soal ${i + 1} dihapus.');
+            },
           ),
         ),
       if (_generating == kind)
         Semantics(
+          container: true,
           liveRegion: true,
-          label: 'AI sedang membuat soal',
+          label: 'AI sedang membuat soal ${kind.label}. Tunggu sebentar.',
+          excludeSemantics: true,
           child: const Padding(
             padding: EdgeInsets.all(20),
             child: Center(child: CircularProgressIndicator()),
