@@ -211,10 +211,18 @@ class _MaterialCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Bouncy(
-            child: FilledButton.icon(
-              icon: const Icon(Icons.tune),
-              label: const Text('Kelola materi'),
-              onPressed: onOpen,
+            // Tiap kartu punya tombol ini; sebut judulnya supaya TalkBack
+            // tidak membaca "Kelola materi" berulang tanpa konteks.
+            child: Semantics(
+              label: 'Kelola materi ${m.title}',
+              button: true,
+              onTap: onOpen,
+              excludeSemantics: true,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.tune),
+                label: const Text('Kelola materi'),
+                onPressed: onOpen,
+              ),
             ),
           ),
         ],

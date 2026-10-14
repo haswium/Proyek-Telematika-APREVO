@@ -25,6 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _showPassword = false;
   bool _busy = false;
   String? _error;
+  int _errorSerial = 0;
 
   @override
   void dispose() {
@@ -35,8 +36,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showError(String message) {
-    setState(() => _error = message);
-    Speech.announce(message);
+    setState(() {
+      _error = message;
+      _errorSerial++;
+    });
+    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -155,7 +159,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(height: 20),
             if (_error != null) ...[
-              ErrorCard(message: _error!),
+              ErrorCard(key: ErrorCard.keyFor(_errorSerial), message: _error!),
               const SizedBox(height: 16),
             ],
             PrimaryButton(
@@ -177,7 +181,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 }
 
-/// Pilihan peran. Dibaca TalkBack sebagai satu tombol: "Siswa, dipilih".
+/// Pilihan peran. Dibaca TalkBack sebagai satu tombol:
+/// "Daftar sebagai Siswa, dipilih".
 class _RoleCard extends StatelessWidget {
   const _RoleCard({
     required this.role,
@@ -195,9 +200,12 @@ class _RoleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const foreground = AppColors.ink;
     return Semantics(
-      label: role.label,
+      // Judul "Saya adalah" disembunyikan dari TalkBack, jadi konteksnya
+      // ditaruh di label ini.
+      label: 'Daftar sebagai ${role.label}',
       button: true,
       selected: selected,
+      inMutuallyExclusiveGroup: true,
       onTap: onTap,
       excludeSemantics: true,
       child: Bouncy(

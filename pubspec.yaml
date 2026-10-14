@@ -37,6 +37,8 @@ dependencies:
   flutter_tts: ^4.2.5
   supabase_flutter: ^2.18.0
   http: ^1.6.0
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:

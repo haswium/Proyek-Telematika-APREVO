@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showPassword = false;
   bool _busy = false;
   String? _error;
+  int _errorSerial = 0;
 
   @override
   void dispose() {
@@ -31,8 +32,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showError(String message) {
-    setState(() => _error = message);
-    Speech.announce(message);
+    setState(() {
+      _error = message;
+      _errorSerial++;
+    });
+    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -67,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.announce(message);
+    Speech.feedback(context, message);
   }
 
   @override
@@ -116,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             if (_error != null) ...[
-              ErrorCard(message: _error!),
+              ErrorCard(key: ErrorCard.keyFor(_errorSerial), message: _error!),
               const SizedBox(height: 16),
             ],
             FadeSlideIn(

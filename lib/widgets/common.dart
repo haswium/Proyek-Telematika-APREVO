@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/models.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import 'playful.dart';
 
@@ -41,6 +40,11 @@ IconData gameIcon(GameType? type) {
       return Icons.swap_vert;
   }
 }
+
+/// Kode akses dieja per karakter untuk TalkBack, supaya "APV-7K29" tidak
+/// dibaca sebagai satu kata: "A P V 7 K 2 9".
+String spellCode(String code) =>
+    code.replaceAll('-', '').split('').join(' ');
 
 InputDecoration fieldDecoration(String label, {String? hint}) {
   const radius = BorderRadius.all(Radius.circular(16));
@@ -255,6 +259,34 @@ class ListRow extends StatelessWidget {
   }
 }
 
+/// ChoiceChip setinggi [kTouchTarget]. Chip bawaan hanya 48; yang
+/// menambah tingginya adalah `labelPadding` vertikal (sudah diukur di tes).
+class AppChoiceChip extends StatelessWidget {
+  const AppChoiceChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+    this.icon,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool>? onSelected;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      avatar: icon == null ? null : Icon(icon, size: 18),
+      label: Text(label),
+      selected: selected,
+      onSelected: onSelected,
+    );
+  }
+}
+
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key, required this.message});
 
@@ -357,7 +389,8 @@ class Pill extends StatelessWidget {
   }
 }
 
-/// Kotak angka ringkas, misalnya "32 Siswa". Dibaca sebagai satu frasa.
+/// Kotak angka ringkas, misalnya "32 Siswa". Dibaca sebagai satu frasa
+/// dengan nama di depan: "Siswa: 32", "Nilai pre-test: Belum ada".
 class StatTile extends StatelessWidget {
   const StatTile({super.key, required this.value, required this.label});
 
@@ -367,7 +400,7 @@ class StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: '$value $label',
+      label: '$label: $value',
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
@@ -413,7 +446,6 @@ class CodeBox extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(content: Text('Kode akses disalin.')));
-    Speech.announce('Kode akses disalin.');
   }
 
   @override
@@ -436,7 +468,7 @@ class CodeBox extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Semantics(
-              label: 'Kode akses: ${code.split('').join(' ')}',
+              label: 'Kode akses: ${spellCode(code)}',
               excludeSemantics: true,
               child: Text(
                 code,
@@ -449,16 +481,22 @@ class CodeBox extends StatelessWidget {
               ),
             ),
           ),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              foregroundColor: AppColors.ink,
-              minimumSize: const Size(0, 48),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+          Semantics(
+            label: 'Salin kode akses',
+            button: true,
+            onTap: () => _copy(context),
+            excludeSemantics: true,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.ink,
+                minimumSize: const Size(0, kTouchTarget),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('Salin'),
+              onPressed: () => _copy(context),
             ),
-            icon: const Icon(Icons.copy, size: 18),
-            label: const Text('Salin'),
-            onPressed: () => _copy(context),
           ),
         ],
       ),

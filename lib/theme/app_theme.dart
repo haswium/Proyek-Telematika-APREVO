@@ -212,9 +212,15 @@ ThemeData _buildTheme() {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
+        minimumSize: const Size(kTouchTarget, kTouchTarget),
         textStyle: AppType.poppins(
           const TextStyle(fontSize: 15, fontWeight: AppType.semiBold),
         ),
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        minimumSize: const Size(kTouchTarget, kTouchTarget),
       ),
     ),
     // Tombol ungu muda: terbaca di latar ungu maupun di kartu putih.
@@ -273,7 +279,7 @@ final ThemeData aprevoOnPurpleTheme = _theme.copyWith(
   textButtonTheme: TextButtonThemeData(
     style: TextButton.styleFrom(
       foregroundColor: AppColors.white,
-      minimumSize: const Size(0, 48),
+      minimumSize: const Size(kTouchTarget, kTouchTarget),
       textStyle: AppType.poppins(
         const TextStyle(fontSize: 15, fontWeight: AppType.semiBold),
       ),
