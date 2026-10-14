@@ -9,7 +9,7 @@ import '../../widgets/playful.dart';
 import '../profile_tab.dart';
 import 'teacher_home_screen.dart';
 
-/// Kerangka guru dengan menu bawah: Materi, Siswa, Hasil, Profil.
+/// Kerangka guru dengan menu bawah: Pelajaran, Siswa, Hasil, Profil.
 ///
 /// Di Figma ada tab "Games". Tab itu tidak ada di sini karena soal sekarang
 /// dikelola di dalam tiap materi (satu materi, satu jenis soal).
@@ -41,7 +41,7 @@ class _TeacherShellState extends State<TeacherShell> {
         onChanged: (i) => setState(() => _index = i),
         items: const [
           NavItem(
-            label: 'Materi',
+            label: 'Pelajaran',
             icon: Icons.menu_book_outlined,
             selectedIcon: Icons.menu_book,
           ),
