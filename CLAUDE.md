@@ -49,6 +49,7 @@ semua error sebelum menganggap tugas selesai.
   (format `APV-XXXX`). Siswa memasukkan kode untuk membuka materi.
 - Satu materi memakai satu jenis soal pilihan guru: pilihan ganda,
   benar/salah, isian singkat, atau puzzle urutan.
+- Soal pilihan ganda hanya punya satu jawaban benar.
 - Tiap materi punya pre-test dan post-test. Post-test terkunci sampai
   pre-test selesai.
 - Tiap jawaban mendapat umpan balik rinci: jawaban siswa, jawaban benar, dan
