@@ -113,7 +113,9 @@ class _ResultScreenState extends State<ResultScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Center(child: Mascot(size: 150, mood: _mood)),
+            // Hiasan: hasilnya ada di ringkasan di bawah, jadi fokus pertama
+            // TalkBack tidak berhenti di deskripsi Odi yang panjang.
+            Center(child: Mascot(size: 150, mood: _mood, decorative: true)),
             const SizedBox(height: 8),
             // Seluruh hasil dibaca TalkBack sebagai satu pesan utuh.
             Semantics(

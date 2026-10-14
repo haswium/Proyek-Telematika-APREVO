@@ -189,8 +189,8 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
             spacing: 8,
             children: [
               for (var i = 0; i < 4; i++)
-                ChoiceChip(
-                  label: Text('Pilihan ${String.fromCharCode(65 + i)}'),
+                AppChoiceChip(
+                  label: 'Pilihan ${String.fromCharCode(65 + i)}',
                   selected: _correct == i,
                   onSelected: (_) => setState(() => _correct = i),
                 ),
@@ -203,13 +203,13 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
           Wrap(
             spacing: 8,
             children: [
-              ChoiceChip(
-                label: const Text('Benar'),
+              AppChoiceChip(
+                label: 'Benar',
                 selected: _correct == 0,
                 onSelected: (_) => setState(() => _correct = 0),
               ),
-              ChoiceChip(
-                label: const Text('Salah'),
+              AppChoiceChip(
+                label: 'Salah',
                 selected: _correct == 1,
                 onSelected: (_) => setState(() => _correct = 1),
               ),
