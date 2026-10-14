@@ -13,10 +13,19 @@ class MultipleChoiceQuestion(BaseModel):
     options: list[MultipleChoiceOption]
 
     @model_validator(mode="after")
-    def validate_correct_answer(self):
+    def validate_options(self):
+        if len(self.options) < 2:
+            raise ValueError("Pilihan ganda harus memiliki minimal 2 opsi.")
+        option_texts = [
+            option.text.strip().casefold() for option in self.options
+        ]
+        if any(not text for text in option_texts):
+            raise ValueError("Teks opsi tidak boleh kosong.")
+        if len(option_texts) != len(set(option_texts)):
+            raise ValueError("Opsi tidak boleh duplikat.")
         correct_count = sum(option.is_correct for option in self.options)
-        if correct_count != 1:
-            raise ValueError("Multiple choice harus memiliki tepat 1 jawaban benar.")
+        if correct_count < 1 or correct_count > 2:
+            raise ValueError("Multiple choice harus memiliki 1 atau 2 jawaban benar.")
 
         return self
 
@@ -29,15 +38,6 @@ class TrueFalseQuestion(BaseModel):
 
 class TextAnswer(BaseModel):
     answer: str
-
-    @field_validator("answer")
-    @classmethod
-    def validate_answer_length(cls, value):
-        word_count = len(value.split())
-        if word_count > 3:
-            raise ValueError("Jawaban isian singkat maksimal 3 kata.")
-        return value
-
 
 class TextQuestion(BaseModel):
     type: Literal["text"]
@@ -63,6 +63,8 @@ class OrderingQuestion(BaseModel):
 
     @model_validator(mode="after")
     def validate_order(self):
+        if len(self.items) < 2:
+            raise ValueError("Soal urutan harus memiliki minimal 2 item.")
         orders = [item.correct_order for item in self.items]
         expected = list(range(1, len(self.items) + 1))
         if sorted(orders) != expected:
