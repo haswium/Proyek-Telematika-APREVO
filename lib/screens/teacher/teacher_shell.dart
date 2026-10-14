@@ -80,7 +80,7 @@ int? _average(LessonMaterial m, TestKind kind) {
   return count == 0 ? null : (sum / count * 100).round();
 }
 
-/// Tab Siswa: semua siswa dari seluruh materi guru.
+/// Tab Siswa: semua siswa dari seluruh mata pelajaran guru.
 class TeacherStudentsTab extends StatelessWidget {
   const TeacherStudentsTab({super.key});
 
@@ -93,7 +93,7 @@ class TeacherStudentsTab extends StatelessWidget {
           listenable: store,
           builder: (context, _) {
             final names = <String>{
-              for (final m in store.materials) ...store.subjectOf(m).students,
+              for (final s in store.subjects) ...s.students,
             }.toList()
               ..sort();
             return ListView(
@@ -102,8 +102,8 @@ class TeacherStudentsTab extends StatelessWidget {
                 SectionTitle('${names.length} siswa bergabung'),
                 if (names.isEmpty)
                   const EmptyState(
-                    message: 'Belum ada siswa. Bagikan kode akses materi '
-                        'ke siswamu.',
+                    message: 'Belum ada siswa. Bagikan kode akses mata '
+                        'pelajaran ke siswamu.',
                   ),
                 for (final name in names)
                   ListRow(
@@ -120,23 +120,23 @@ class TeacherStudentsTab extends StatelessWidget {
   }
 
   String _summary(String name) {
-    var joined = 0;
+    final subjects = store.subjectsOf(name);
     var finished = 0;
     var stars = 0;
-    for (final m in store.materials) {
-      if (!store.subjectOf(m).students.contains(name)) continue;
-      joined++;
+    for (final m in store.materialsOf(name)) {
       final post = store.latestAttempt(m, name, TestKind.post);
       if (post != null) {
         finished++;
         stars += post.stars;
       }
     }
-    return 'Mengikuti $joined materi, selesai $finished, $stars bintang';
+    return 'Ikut ${subjects.length} mata pelajaran, selesai $finished '
+        'materi, $stars bintang';
   }
 }
 
-/// Tab Hasil: ringkasan pre-test dan post-test tiap materi.
+/// Tab Hasil: ringkasan pre-test dan post-test tiap materi, dikelompokkan
+/// per mata pelajaran.
 class TeacherResultsTab extends StatelessWidget {
   const TeacherResultsTab({super.key});
 
@@ -150,14 +150,24 @@ class TeacherResultsTab extends StatelessWidget {
           builder: (context, _) => ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              const SectionTitle('Rata-rata nilai tiap materi'),
-              if (store.materials.isEmpty)
-                const EmptyState(message: 'Belum ada materi.'),
-              for (final m in store.materials)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: _ResultCard(material: m),
-                ),
+              Text(
+                'Rata-rata nilai tiap materi dari siswa yang sudah '
+                'mengerjakan.',
+                style: AppType.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              if (store.subjects.isEmpty)
+                const EmptyState(message: 'Belum ada mata pelajaran.'),
+              for (final s in store.subjects) ...[
+                SectionTitle(s.name),
+                if (s.materials.isEmpty)
+                  const EmptyState(message: 'Belum ada materi.'),
+                for (final m in s.materials)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: _ResultCard(material: m),
+                  ),
+              ],
             ],
           ),
         ),

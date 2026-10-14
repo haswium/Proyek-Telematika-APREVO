@@ -198,7 +198,7 @@ class _TypedCode extends StatelessWidget {
             excludeSemantics: true,
             child: Text(
               'Kode yang diketik: ${spellCode(code)} ($count)',
-              style: AppType.bodyMedium.copyWith(color: AppColors.white),
+              style: AppType.bodyMedium,
             ),
           ),
         );

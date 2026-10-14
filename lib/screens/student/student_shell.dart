@@ -63,7 +63,8 @@ class _StudentShellState extends State<StudentShell> {
   }
 }
 
-/// Tab Progres: bintang yang sudah dikumpulkan siswa di tiap materi.
+/// Tab Progres: bintang yang sudah dikumpulkan siswa di tiap materi,
+/// dikelompokkan per mata pelajaran.
 class StudentProgressTab extends StatelessWidget {
   const StudentProgressTab({super.key, required this.studentName});
 
@@ -77,6 +78,7 @@ class StudentProgressTab extends StatelessWidget {
         child: ListenableBuilder(
           listenable: store,
           builder: (context, _) {
+            final subjects = store.subjectsOf(studentName);
             final materials = store.materialsOf(studentName);
             var stars = 0;
             var finished = 0;
@@ -92,25 +94,32 @@ class StudentProgressTab extends StatelessWidget {
               children: [
                 MascotBubble(
                   mood: stars > 0 ? MascotMood.cheer : MascotMood.happy,
-                  text: materials.isEmpty
-                      ? 'Belum ada materi. Buka tab Belajar dan masukkan '
-                          'kode akses dari gurumu.'
+                  text: subjects.isEmpty
+                      ? 'Belum ada mata pelajaran. Buka tab Belajar dan '
+                          'masukkan kode dari gurumu.'
                       : 'Kamu sudah mengumpulkan $stars bintang dan '
                           'menyelesaikan $finished dari ${materials.length} '
                           'materi.',
                 ),
                 const SizedBox(height: 8),
-                if (materials.isNotEmpty)
-                  const SectionTitle('Bintang tiap materi'),
-                for (final m in materials)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: _ProgressCard(
-                      title: m.title,
-                      pre: store.latestAttempt(m, studentName, TestKind.pre),
-                      post: store.latestAttempt(m, studentName, TestKind.post),
+                for (final s in subjects) ...[
+                  SectionTitle(s.name),
+                  if (store.publishedMaterials(s).isEmpty)
+                    const EmptyState(message: 'Belum ada materi.'),
+                  for (final m in store.publishedMaterials(s))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: _ProgressCard(
+                        title: m.title,
+                        pre: store.latestAttempt(m, studentName, TestKind.pre),
+                        post: store.latestAttempt(
+                          m,
+                          studentName,
+                          TestKind.post,
+                        ),
+                      ),
                     ),
-                  ),
+                ],
               ],
             );
           },
