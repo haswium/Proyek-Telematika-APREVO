@@ -53,7 +53,7 @@ void main() {
               ),
               TextButton(onPressed: () {}, child: const Text('Lupa password?')),
               IconButton(onPressed: () {}, icon: const Icon(Icons.add)),
-              const CodeBox(code: 'APV-7K29'),
+              const CodeBox(code: 'KXPRTA'),
             ],
           ),
         ),
@@ -71,9 +71,9 @@ void main() {
   ) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(
-      _app(const Scaffold(body: CodeBox(code: 'APV-7K29'))),
+      _app(const Scaffold(body: CodeBox(code: 'KXPRTA'))),
     );
-    expect(find.bySemanticsLabel('Kode akses: A P V 7 K 2 9'), findsOneWidget);
+    expect(find.bySemanticsLabel('Kode akses: K X P R T A'), findsOneWidget);
     expect(find.bySemanticsLabel('Salin kode akses'), findsOneWidget);
     handle.dispose();
   });
