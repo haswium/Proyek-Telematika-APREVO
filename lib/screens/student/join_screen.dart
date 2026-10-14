@@ -56,16 +56,15 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       _showError('Kode akses belum diisi.');
       return;
     }
-    final material = store.joinMaterial(_code.text, widget.studentName);
-    if (material == null) {
+    final subject = store.joinSubject(_code.text, widget.studentName).subject;
+    if (subject == null) {
       _showError('Kode akses tidak ditemukan. Periksa lagi kode dari guru.');
       return;
     }
     FocusScope.of(context).unfocus();
     _code.clear();
     setState(() => _error = null);
-    Speech.announce('Materi ${material.title} ditambahkan.');
-    _open(material);
+    Speech.announce('Bergabung ke ${subject.name}.');
   }
 
   String _progress(LessonMaterial m) {

@@ -71,7 +71,7 @@ class _TeacherShellState extends State<TeacherShell> {
 int? _average(LessonMaterial m, TestKind kind) {
   var sum = 0.0;
   var count = 0;
-  for (final name in m.students) {
+  for (final name in store.subjectOf(m).students) {
     final attempt = store.latestAttempt(m, name, kind);
     if (attempt == null || attempt.total == 0) continue;
     sum += attempt.score / attempt.total;
@@ -93,7 +93,7 @@ class TeacherStudentsTab extends StatelessWidget {
           listenable: store,
           builder: (context, _) {
             final names = <String>{
-              for (final m in store.materials) ...m.students,
+              for (final m in store.materials) ...store.subjectOf(m).students,
             }.toList()
               ..sort();
             return ListView(
@@ -124,7 +124,7 @@ class TeacherStudentsTab extends StatelessWidget {
     var finished = 0;
     var stars = 0;
     for (final m in store.materials) {
-      if (!m.students.contains(name)) continue;
+      if (!store.subjectOf(m).students.contains(name)) continue;
       joined++;
       final post = store.latestAttempt(m, name, TestKind.post);
       if (post != null) {
@@ -188,7 +188,7 @@ class _ResultCard extends StatelessWidget {
             children: [
               Expanded(
                 child: StatTile(
-                  value: '${material.students.length}',
+                  value: '${store.subjectOf(material).students.length}',
                   label: 'Siswa',
                 ),
               ),
