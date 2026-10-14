@@ -50,18 +50,33 @@ class ProfileTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Email', style: AppType.bodySmall),
-                  Text(
-                    email.isEmpty ? 'Belum ada email' : email,
-                    style: AppType.titleMedium,
+                  // Judul kecil dan isinya dibaca sebagai satu: "Email, ...".
+                  MergeSemantics(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Email', style: AppType.bodySmall),
+                        Text(
+                          email.isEmpty ? 'Belum ada email' : email,
+                          style: AppType.titleMedium,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  Text('Penyimpanan akun', style: AppType.bodySmall),
-                  Text(
-                    store.online
-                        ? 'Tersimpan di Supabase'
-                        : 'Mode demo, hilang saat aplikasi ditutup',
-                    style: AppType.titleMedium,
+                  MergeSemantics(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Penyimpanan akun', style: AppType.bodySmall),
+                        Text(
+                          store.online
+                              ? 'Tersimpan di Supabase'
+                              : 'Mode demo, hilang saat aplikasi ditutup',
+                          style: AppType.titleMedium,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

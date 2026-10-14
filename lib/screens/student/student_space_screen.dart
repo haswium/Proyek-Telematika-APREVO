@@ -9,6 +9,13 @@ import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
 import 'play_game_screen.dart';
 
+/// Materi dari backend belum punya isi teks. Kartu kosong membuat TalkBack
+/// berhenti di elemen tanpa suara, jadi tampilkan kalimat ini.
+const String _emptyBody = 'Isi materi belum tersedia.';
+
+String _spokenBody(LessonMaterial m) =>
+    '${m.title}. ${m.body.isEmpty ? _emptyBody : m.body}';
+
 String _starsText(Attempt? attempt) => attempt == null
     ? 'Belum dikerjakan'
     : 'Selesai, ${attempt.stars} dari 3 bintang';
@@ -60,7 +67,7 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.announce(message);
+    Speech.feedback(context, message);
   }
 
   @override
@@ -83,11 +90,15 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Pill(
-                        'Kode: ${_m.accessCode}',
-                        icon: Icons.key,
-                        color: AppColors.accent,
-                        textColor: AppColors.ink,
+                      Semantics(
+                        label: 'Kode akses: ${spellCode(_m.accessCode)}',
+                        excludeSemantics: true,
+                        child: Pill(
+                          'Kode: ${_m.accessCode}',
+                          icon: Icons.key,
+                          color: AppColors.accent,
+                          textColor: AppColors.ink,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Semantics(
@@ -138,12 +149,17 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Materi audio', style: AppType.bodySmall),
-                                Text(_m.title, style: AppType.titleMedium),
-                              ],
+                            child: MergeSemantics(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Materi audio',
+                                    style: AppType.bodySmall,
+                                  ),
+                                  Text(_m.title, style: AppType.titleMedium),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -152,8 +168,7 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
                       PrimaryButton(
                         label: 'Dengarkan',
                         icon: Icons.play_arrow,
-                        onPressed: () =>
-                            Speech.speak('${_m.title}. ${_m.body}'),
+                        onPressed: () => Speech.speak(_spokenBody(_m)),
                       ),
                       const SizedBox(height: 10),
                       Row(
@@ -395,7 +410,7 @@ class _MaterialReaderScreenState extends State<MaterialReaderScreen> {
             PrimaryButton(
               label: 'Dengarkan materi',
               icon: Icons.volume_up,
-              onPressed: () => Speech.speak('${m.title}. ${m.body}'),
+              onPressed: () => Speech.speak(_spokenBody(m)),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -406,7 +421,10 @@ class _MaterialReaderScreenState extends State<MaterialReaderScreen> {
             const SizedBox(height: 20),
             AppCard(
               color: AppColors.soft,
-              child: Text(m.body, style: AppType.bodyLarge),
+              child: Text(
+                m.body.isEmpty ? _emptyBody : m.body,
+                style: AppType.bodyLarge,
+              ),
             ),
           ],
         ),

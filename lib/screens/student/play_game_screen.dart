@@ -283,8 +283,14 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
     Speech.announce('${_order[to]} pindah ke urutan ${to + 1}.');
   }
 
+  // `container: true` supaya tiap bagian menjadi node sendiri; sortKey
+  // hanya berlaku pada node.
   Widget _ordered(double order, Widget child) {
-    return Semantics(sortKey: OrdinalSortKey(order), child: child);
+    return Semantics(
+      container: true,
+      sortKey: OrdinalSortKey(order),
+      child: child,
+    );
   }
 
   @override

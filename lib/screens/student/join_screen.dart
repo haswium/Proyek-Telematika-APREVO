@@ -23,6 +23,7 @@ class StudentHomeScreen extends StatefulWidget {
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   final _code = TextEditingController();
   String? _error;
+  int _errorSerial = 0;
 
   @override
   void initState() {
@@ -37,8 +38,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   }
 
   void _showError(String message) {
-    setState(() => _error = message);
-    Speech.announce(message);
+    setState(() {
+      _error = message;
+      _errorSerial++;
+    });
+    Speech.feedback(context, message);
   }
 
   void _open(LessonMaterial material) {
@@ -111,9 +115,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 ),
                 const SizedBox(height: 12),
                 if (_error != null) ...[
-                  // liveRegion: TalkBack langsung membacakan pesan ini.
+                  // liveRegion: TalkBack langsung membacakan pesan ini. Key
+                  // baru tiap kali supaya pesan yang sama tetap dibacakan.
                   Semantics(
+                    key: ValueKey('join-error-$_errorSerial'),
+                    container: true,
                     liveRegion: true,
+                    label: _error,
+                    excludeSemantics: true,
                     child: AppCard(
                       color: AppColors.dangerBg,
                       borderColor: AppColors.danger,
@@ -176,6 +185,7 @@ class _LoadingMaterials extends StatelessWidget {
   Widget build(BuildContext context) {
     final still = MediaQuery.of(context).disableAnimations;
     return Semantics(
+      container: true,
       liveRegion: true,
       label: _message,
       excludeSemantics: true,
@@ -214,6 +224,7 @@ class _LoadError extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Semantics(
+          container: true,
           liveRegion: true,
           label: 'Gagal memuat materi. $message',
           excludeSemantics: true,
