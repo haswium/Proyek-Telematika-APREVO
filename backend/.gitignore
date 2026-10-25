@@ -5,3 +5,4 @@ __pycache__/
 !.env.example
 tes.pdf
 hasil_gambar/
+.pytest_cache/
