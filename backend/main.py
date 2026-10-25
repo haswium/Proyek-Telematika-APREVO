@@ -1,16 +1,22 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
 import os
 from supabase import create_client, ClientOptions
+from postgrest.exceptions import APIError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import random
-from pydantic import BaseModel
-from typing import Optional
+import re
+import secrets
+import string
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
 from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
 import logging
+from pdf_sections import split_pdf_bytes
 
 print("DEBUG: MAIN.PY TERLOAD", flush=True)
 
@@ -24,8 +30,44 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, os.getenv("SUPABASE_SERVICE_KEY"))
 TEST_LOGIN_EMAIL = os.getenv("TEST_LOGIN_EMAIL")
 TEST_LOGIN_PASSWORD = os.getenv("TEST_LOGIN_PASSWORD")
+ENABLE_DEBUG_ENDPOINTS = os.getenv("ENABLE_DEBUG_ENDPOINTS") == "1"
+
+# localhost dan IP jaringan lokal (10.x, 172.16-31.x, 192.168.x) di port mana pun.
+LOCAL_ORIGIN_REGEX = (
+    r"^https?://(localhost|127\.0\.0\.1|\[::1\]"
+    r"|10(\.\d{1,3}){3}"
+    r"|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}"
+    r"|192\.168(\.\d{1,3}){2})(:\d+)?$"
+)
+EXTRA_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=EXTRA_CORS_ORIGINS,
+    allow_origin_regex=LOCAL_ORIGIN_REGEX,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class EmptyResponse:
+    """Pengganti hasil maybe_single() yang bernilai None saat baris tidak ada."""
+
+    data = None
+
+
+EMPTY_RESPONSE = EmptyResponse()
+
+
+def require_debug():
+    if not ENABLE_DEBUG_ENDPOINTS:
+        raise HTTPException(status_code=404, detail="Not Found")
 
 
 @app.middleware("http")
@@ -88,7 +130,7 @@ def root():
     return {"message": "Hello World"}
 
 
-@app.get("/test-supabase")
+@app.get("/test-supabase", dependencies=[Depends(require_debug)])
 def test_supabase():
     response = supabase.table("materials").select("*").limit(1).execute()
     return {"data": response.data}
@@ -109,13 +151,175 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         )
 
 
-@app.get("/test-auth")
+ROLE_LABELS = {"teacher": "guru", "student": "siswa"}
+
+
+def get_current_profile(auth=Depends(get_current_user)):
+    profile_response = (
+        supabase_admin.table("users")
+        .select("id, name, role")
+        .eq("id", str(auth["user"].id))
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    profile = profile_response.data
+    if profile is None or profile["role"] not in ROLE_LABELS:
+        raise HTTPException(status_code=403, detail="Profil akun belum terdaftar")
+    return {**auth, "user_id": str(auth["user"].id), "profile": profile}
+
+
+def require_role(role: str):
+    def dependency(auth=Depends(get_current_profile)):
+        if auth["profile"]["role"] != role:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Hanya {ROLE_LABELS[role]} yang boleh mengakses endpoint ini",
+            )
+        return auth
+
+    return dependency
+
+
+require_teacher = require_role("teacher")
+require_student = require_role("student")
+
+
+def parse_time(value):
+    if value is None:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def quiz_status(quiz, now=None):
+    start_time = parse_time(quiz.get("available_from"))
+    deadline = parse_time(quiz.get("deadline_at"))
+    if start_time is None or deadline is None:
+        return "unscheduled"
+    now = now or datetime.now(timezone.utc)
+    if now < start_time:
+        return "upcoming"
+    if now >= deadline:
+        return "closed"
+    return "open"
+
+
+def discussion_available(quiz, now=None):
+    deadline = parse_time(quiz.get("deadline_at"))
+    if deadline is None:
+        return False
+    return (now or datetime.now(timezone.utc)) >= deadline
+
+
+def is_subject_member(subject_id, student_id):
+    if subject_id is None:
+        return False
+    response = (
+        supabase_admin.table("subject_students")
+        .select("subject_id")
+        .eq("subject_id", subject_id)
+        .eq("student_id", student_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(response.data)
+
+
+def student_can_access_material(material, student_id):
+    """Akses lewat keanggotaan mata pelajaran, atau material_access lama."""
+    if is_subject_member(material.get("subject_id"), student_id):
+        return True
+    access_response = (
+        supabase_admin.table("material_access")
+        .select("id")
+        .eq("material_id", material["id"])
+        .eq("student_id", student_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(access_response.data)
+
+
+def has_submitted_pre_test(material_id, student_id):
+    """Post-test terkunci sampai pre-test materi yang sama dikumpulkan.
+
+    Materi tanpa pre-test tidak mengunci post-test.
+    """
+    pre_response = (
+        supabase_admin.table("quizzes")
+        .select("id")
+        .eq("material_id", material_id)
+        .eq("kind", "pre")
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    pre_ids = [row["id"] for row in (pre_response.data or [])]
+    if not pre_ids:
+        return True
+    attempt_response = (
+        supabase_admin.table("quiz_attempts")
+        .select("id")
+        .in_("quiz_id", pre_ids)
+        .eq("student_id", student_id)
+        .not_.is_("submitted_at", "null")
+        .limit(1)
+        .execute()
+    )
+    return bool(attempt_response.data)
+
+
+def check_post_test_unlocked(quiz, student_id):
+    if quiz.get("kind") == "post" and not has_submitted_pre_test(
+        quiz["material_id"], student_id
+    ):
+        raise HTTPException(
+            status_code=403, detail="Kerjakan pre-test terlebih dahulu"
+        )
+
+
+def get_owned_subject(subject_id, teacher_id):
+    subject_response = (
+        supabase_admin.table("subjects")
+        .select("id, name, access_code, teacher_id, created_at")
+        .eq("id", subject_id)
+        .eq("teacher_id", teacher_id)
+        .is_("deleted_at", "null")
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    subject = subject_response.data
+    if subject is None:
+        raise HTTPException(status_code=404, detail="Mata pelajaran tidak ditemukan")
+    return subject
+
+
+def get_owned_material(material_id, teacher_id):
+    material_response = (
+        supabase_admin.table("materials")
+        .select("id, title, subject_id, teacher_id, is_published, created_at")
+        .eq("id", material_id)
+        .eq("teacher_id", teacher_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    material = material_response.data
+    if material is None:
+        raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
+    return material
+
+
+@app.get("/test-auth", dependencies=[Depends(require_debug)])
 def test_auth(auth=Depends(get_current_user)):
     user = auth["user"]
     return {"message": "Token valid", "user_id": user.id}
 
 
-@app.get("/debug-auth")
+@app.get("/debug-auth", dependencies=[Depends(require_debug)])
 def debug_auth(auth=Depends(get_current_user)):
     user = auth["user"]
     access_token = auth["access_token"]
@@ -133,7 +337,7 @@ def debug_auth(auth=Depends(get_current_user)):
     return {"fastapi_user_id": user.id, "quiz_data": response.data}
 
 
-@app.get("/debug-policy")
+@app.get("/debug-policy", dependencies=[Depends(require_debug)])
 def debug_policy(auth=Depends(get_current_user)):
     access_token = auth["access_token"]
 
@@ -154,7 +358,7 @@ def debug_policy(auth=Depends(get_current_user)):
     return {"user_id": auth["user"].id, "matching_quiz": response.data}
 
 
-@app.post("/test-login")
+@app.post("/test-login", dependencies=[Depends(require_debug)])
 def test_login():
     if not TEST_LOGIN_EMAIL or not TEST_LOGIN_PASSWORD:
         raise HTTPException(
@@ -194,6 +398,7 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
         .eq("id", str(user.id))
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     profile = profile_response.data
     if profile is None or profile["role"] != "teacher":
@@ -211,6 +416,7 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
         .eq("id", quiz_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
     if quiz is None:
@@ -225,6 +431,7 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
             "quiz_id": quiz_id,
             "type": question.type,
             "question": question.question,
+            "explanation": question.explanation,
         }
         question_response = (
             supabase_admin.table("questions").insert(question_data).execute()
@@ -276,6 +483,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
         .eq("id", str(user.id))
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     profile = profile_response.data
     if profile is None or profile["role"] != "teacher":
@@ -289,19 +497,23 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
     )
     quiz_response = (
         user_supabase.table("quizzes")
-        .select("id, title, material_id, teacher_id, attempt_limit, created_at")
+        .select(
+            "id, title, material_id, teacher_id, attempt_limit, created_at, "
+            "kind, available_from, deadline_at"
+        )
         .eq("id", quiz_id)
         .eq("teacher_id", user.id)
         .is_("deleted_at", "null")
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
     if quiz is None:
         raise HTTPException(status_code=404, detail="Quiz tidak ditemukan")
     questions_response = (
         supabase_admin.table("questions")
-        .select("id, type, question, correct_answer")
+        .select("id, type, question, correct_answer, explanation")
         .eq("quiz_id", quiz_id)
         .execute()
     )
@@ -347,11 +559,12 @@ def get_student_materials(auth=Depends(get_current_user)):
         .eq("id", user_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     profile = profile_response.data
     if profile is None or profile["role"] != "student":
         raise HTTPException(
-            status_code=403, detail="Hanya siswa yang dapat emngakses daftar maetri"
+            status_code=403, detail="Hanya siswa yang dapat mengakses daftar materi"
         )
     access_response = (
         supabase_admin.table("material_access")
@@ -360,16 +573,38 @@ def get_student_materials(auth=Depends(get_current_user)):
         .execute()
     )
     material_ids = [row["material_id"] for row in (access_response.data or [])]
-    if not material_ids:
-        return {"materials": []}
-    materials_response = (
-        supabase_admin.table("materials")
-        .select("id, title, is_published")
-        .in_("id", material_ids)
-        .eq("is_published", True)
+    membership_response = (
+        supabase_admin.table("subject_students")
+        .select("subject_id")
+        .eq("student_id", user_id)
         .execute()
     )
-    return {"materials": materials_response.data or []}
+    subject_ids = [row["subject_id"] for row in (membership_response.data or [])]
+    materials = []
+    if material_ids:
+        materials_response = (
+            supabase_admin.table("materials")
+            .select("id, title, is_published")
+            .in_("id", material_ids)
+            .eq("is_published", True)
+            .execute()
+        )
+        materials.extend(materials_response.data or [])
+    if subject_ids:
+        subject_materials_response = (
+            supabase_admin.table("materials")
+            .select("id, title, is_published")
+            .in_("subject_id", subject_ids)
+            .eq("is_published", True)
+            .execute()
+        )
+        known_ids = {material["id"] for material in materials}
+        materials.extend(
+            material
+            for material in (subject_materials_response.data or [])
+            if material["id"] not in known_ids
+        )
+    return {"materials": materials}
 
 
 @app.get("/student/quizzes/{quiz_id}")
@@ -383,6 +618,7 @@ def get_student_quiz(quiz_id: str, auth=Depends(get_current_user)):
         .eq("id", user_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     profile = profile_response.data
     if profile is None or profile["role"] != "student":
@@ -392,10 +628,14 @@ def get_student_quiz(quiz_id: str, auth=Depends(get_current_user)):
 
     quiz_response = (
         supabase_admin.table("quizzes")
-        .select("id, title, material_id, attempt_limit, deleted_at")
+        .select(
+            "id, title, material_id, attempt_limit, deleted_at, "
+            "kind, available_from, deadline_at"
+        )
         .eq("id", quiz_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
@@ -404,27 +644,22 @@ def get_student_quiz(quiz_id: str, auth=Depends(get_current_user)):
 
     material_response = (
         supabase_admin.table("materials")
-        .select("id, is_published")
+        .select("id, is_published, subject_id")
         .eq("id", material_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     material = material_response.data
     if material is None or not material["is_published"]:
         raise HTTPException(status_code=403, detail="Materi belum dipublikasikan")
 
-    access_response = (
-        supabase_admin.table("material_access")
-        .select("id")
-        .eq("material_id", material_id)
-        .eq("student_id", user_id)
-        .limit(1)
-        .execute()
-    )
-    if not access_response.data:
+    if not student_can_access_material(material, user_id):
         raise HTTPException(
             status_code=403, detail="Anda tidak memiliki akses ke materi ini"
         )
+    check_quiz_schedule(quiz)
+    check_post_test_unlocked(quiz, user_id)
 
     questions_response = (
         supabase_admin.table("questions")
@@ -483,6 +718,7 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
         .eq("id", str(user.id))
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     profile = profile_supabase.data
     if profile is None or profile["role"] != "student":
@@ -492,11 +728,13 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
     quiz_response = (
         supabase_admin.table("quizzes")
         .select(
-            "id, material_id, attempt_limit, deleted_at, available_from, deadline_at"
+            "id, material_id, attempt_limit, deleted_at, available_from, deadline_at, "
+            "kind"
         )
         .eq("id", quiz_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
@@ -505,26 +743,20 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
     material_id = quiz["material_id"]
     material_response = (
         supabase_admin.table("materials")
-        .select("id,is_published")
+        .select("id,is_published,subject_id")
         .eq("id", material_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     material = material_response.data
     if material is None or not material["is_published"]:
         raise HTTPException(status_code=403, detail="Materi belum dipublikasikan")
-    access_response = (
-        supabase_admin.table("material_access")
-        .select("id")
-        .eq("material_id", material_id)
-        .eq("student_id", str(user.id))
-        .limit(1)
-        .execute()
-    )
-    if not access_response.data:
+    if not student_can_access_material(material, str(user.id)):
         raise HTTPException(
             status_code=403, detail="Anda tidak memiliki akses ke materi ini"
         )
+    check_post_test_unlocked(quiz, str(user.id))
     attempt_response = (
         supabase_admin.table("quiz_attempts")
         .select("id, submitted_at")
@@ -583,6 +815,7 @@ def autosave_quiz_answer(
         .eq("id", user_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     profile = profile_response.data
     if profile is None or profile["role"] != "student":
@@ -596,6 +829,7 @@ def autosave_quiz_answer(
         .eq("student_id", user_id)
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     attempt = attempt_response.data
     if attempt is None:
@@ -608,6 +842,7 @@ def autosave_quiz_answer(
         .eq("id", attempt["quiz_id"])
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
@@ -624,6 +859,7 @@ def autosave_quiz_answer(
         .eq("quiz_id", attempt["quiz_id"])
         .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     question = question_response.data
     if question is None:
@@ -686,7 +922,7 @@ def autosave_quiz_answer(
             )
         if not isinstance(question["correct_answer"], bool):
             raise HTTPException(
-                status_code=500, detail="Kunci jawaban beanr/salah belum valid"
+                status_code=500, detail="Kunci jawaban benar/salah belum valid"
             )
         is_correct = data.boolean_value == question["correct_answer"]
         answer_boolean = {"value": data.boolean_value}
@@ -710,7 +946,7 @@ def autosave_quiz_answer(
         ordered_ids = data.ordered_item_ids
         if ordered_ids is None:
             raise HTTPException(
-                staus_code=400, detail="Jawaban harus berupa urutan item"
+                status_code=400, detail="Jawaban harus berupa urutan item"
             )
         if len(ordered_ids) != len(set(ordered_ids)):
             raise HTTPException(
@@ -748,6 +984,7 @@ def autosave_quiz_answer(
             {
                 "attempt_id": attempt_id,
                 "question_id": question_id,
+                "is_correct": is_correct,
             },
             on_conflict="attempt_id,question_id",
         )
@@ -807,6 +1044,7 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
             .eq("id", user_id)
             .maybe_single()
             .execute()
+            or EMPTY_RESPONSE
         )
         profile = profile_response.data
         if profile is None or profile["role"] != "student":
@@ -821,11 +1059,12 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
             .eq("student_id", user_id)
             .maybe_single()
             .execute()
+            or EMPTY_RESPONSE
         )
         attempt = attempt_response.data
         if attempt is None:
             raise HTTPException(
-                status_code=409, detail="Percobaan kuis tidak ditemukan"
+                status_code=404, detail="Percobaan kuis tidak ditemukan"
             )
         if attempt["submitted_at"] is not None:
             raise HTTPException(
@@ -837,13 +1076,14 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
             .eq("id", attempt["quiz_id"])
             .maybe_single()
             .execute()
+            or EMPTY_RESPONSE
         )
         quiz = quiz_response.data
         if quiz is None or quiz["deleted_at"] is not None:
             raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
         if quiz["deadline_at"] is None:
             raise HTTPException(
-                status_code=500, detail="Jadwal kuis belum dikonfigurasi dnegan benar"
+                status_code=500, detail="Jadwal kuis belum dikonfigurasi dengan benar"
             )
         deadline = datetime.fromisoformat(quiz["deadline_at"].replace("Z", "+00:00"))
         if deadline.tzinfo is None:
@@ -907,6 +1147,7 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
                     .eq("answer_id", answer_id)
                     .maybe_single()
                     .execute()
+                    or EMPTY_RESPONSE
                 )
                 boolean_answer = boolean_response.data
                 is_correct = (
@@ -920,6 +1161,7 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
                     .eq("answer_id", answer_id)
                     .maybe_single()
                     .execute()
+                    or EMPTY_RESPONSE
                 )
                 text_answer = text_response.data
                 accepted_response = (
@@ -968,6 +1210,9 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
                 raise HTTPException(
                     status_code=400, detail=f"Tipe soal tidak dikenal: {question_type}"
                 )
+            supabase_admin.table("answers").update({"is_correct": is_correct}).eq(
+                "id", answer_id
+            ).execute()
             if is_correct:
                 correct_count += 1
         update_response = (
@@ -1003,54 +1248,22 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
         raise
 
 
-@app.get("/student/attempts/{attempt_id}/result")
-def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
-    user_id = str(auth["user"].id)
-    profile_response = (
-        supabase_admin.table("users")
-        .select("id, role")
-        .eq("id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    profile = profile_response.data
-    if profile is None or profile["role"] != "student":
-        raise HTTPException(
-            status_code=403, detail="Hanya murid yang boleh melihat hasil kuis."
-        )
-    attempt_response = (
-        supabase_admin.table("quiz_attempts")
-        .select("id, quiz_id, student_id, submitted_at, correct_count, total_questions")
-        .eq("id", attempt_id)
-        .eq("student_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    attempt = attempt_response.data
-    if attempt is None:
-        raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan.")
-    if attempt["submitted_at"] is None:
-        raise HTTPException(status_code=409, detail="Percobaan kuis belum dikumpulkan.")
-    quiz_response = (
-        supabase_admin.table("quizzes")
-        .select("id, title")
-        .eq("id", attempt["quiz_id"])
-        .maybe_single()
-        .execute()
-    )
-    quiz = quiz_response.data
-    if quiz is None:
-        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan.")
+def build_review(attempt_id, quiz_id, include_key):
+    """Soal dan jawaban siswa pada satu percobaan.
+
+    include_key menambahkan jawaban benar dan pembahasan, hanya untuk dipakai
+    setelah tenggat kuis lewat.
+    """
     question_response = (
         supabase_admin.table("questions")
-        .select("id, type, question")
-        .eq("quiz_id", attempt["quiz_id"])
+        .select("id, type, question, correct_answer, explanation")
+        .eq("quiz_id", quiz_id)
         .execute()
     )
     questions = question_response.data or []
     answers_response = (
         supabase_admin.table("answers")
-        .select("id, question_id")
+        .select("id, question_id, is_correct")
         .eq("attempt_id", attempt_id)
         .execute()
     )
@@ -1066,11 +1279,12 @@ def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
             "type": question["type"],
             "question": question["question"],
             "answer": None,
+            "is_correct": answer.get("is_correct") if answer else False,
         }
         if question["type"] == "multiple_choice":
             options_response = (
                 supabase_admin.table("question_options")
-                .select("id, text")
+                .select("id, text, is_correct")
                 .eq("question_id", question_id)
                 .execute()
             )
@@ -1086,14 +1300,16 @@ def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
                 selected_ids = {
                     str(row["option_id"]) for row in (selected_response.data or [])
                 }
-            item["options"] = [
-                {
+            item["options"] = []
+            for option in options:
+                option_item = {
                     "option_id": str(option["id"]),
                     "text": option["text"],
                     "selected": str(option["id"]) in selected_ids,
                 }
-                for option in options
-            ]
+                if include_key:
+                    option_item["is_correct"] = option["is_correct"]
+                item["options"].append(option_item)
         elif question["type"] == "true_false":
             if answer_id:
                 response = (
@@ -1102,10 +1318,13 @@ def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
                     .eq("answer_id", answer_id)
                     .maybe_single()
                     .execute()
+                    or EMPTY_RESPONSE
                 )
                 saved = response.data
                 if saved is not None:
                     item["answer"] = saved["value"]
+            if include_key:
+                item["correct_answer"] = question["correct_answer"]
         elif question["type"] == "text":
             if answer_id:
                 response = (
@@ -1114,14 +1333,25 @@ def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
                     .eq("answer_id", answer_id)
                     .maybe_single()
                     .execute()
+                    or EMPTY_RESPONSE
                 )
                 saved = response.data
                 if saved is not None:
                     item["answer"] = saved["value"]
+            if include_key:
+                accepted_response = (
+                    supabase_admin.table("question_answers")
+                    .select("answer")
+                    .eq("question_id", question_id)
+                    .execute()
+                )
+                item["accepted_answers"] = [
+                    row["answer"] for row in (accepted_response.data or [])
+                ]
         elif question["type"] == "ordering":
             items_response = (
                 supabase_admin.table("question_items")
-                .select("id, text")
+                .select("id, text, correct_order")
                 .eq("question_id", question_id)
                 .execute()
             )
@@ -1138,21 +1368,80 @@ def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
                     str(row["item_id"]): row["selected_order"]
                     for row in (order_response.data or [])
                 }
-            item["items"] = [
-                {
+            item["items"] = []
+            for question_item in sorted(
+                question_items,
+                key=lambda question_item: (
+                    selected_order_map.get(str(question_item["id"])) is None,
+                    selected_order_map.get(str(question_item["id"]), 0),
+                ),
+            ):
+                order_item = {
                     "item_id": str(question_item["id"]),
                     "text": question_item["text"],
                     "selected_order": selected_order_map.get(str(question_item["id"])),
                 }
-                for question_item in sorted(
-                    question_items,
-                    key=lambda question_item: (
-                        selected_order_map.get(str(question_item["id"])) is None,
-                        selected_order_map.get(str(question_item["id"]), 0),
-                    ),
-                )
-            ]
+                if include_key:
+                    order_item["correct_order"] = question_item["correct_order"]
+                item["items"].append(order_item)
+        if include_key:
+            item["explanation"] = question["explanation"]
         review.append(item)
+    return review
+
+
+def get_student_attempt(attempt_id, student_id):
+    attempt_response = (
+        supabase_admin.table("quiz_attempts")
+        .select("id, quiz_id, student_id, submitted_at, correct_count, total_questions")
+        .eq("id", attempt_id)
+        .eq("student_id", student_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    attempt = attempt_response.data
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan.")
+    return attempt
+
+
+def get_attempt_quiz(attempt):
+    quiz_response = (
+        supabase_admin.table("quizzes")
+        .select("id, title, deadline_at")
+        .eq("id", attempt["quiz_id"])
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    quiz = quiz_response.data
+    if quiz is None:
+        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan.")
+    return quiz
+
+
+@app.get("/student/attempts/{attempt_id}/result")
+def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
+    user_id = str(auth["user"].id)
+    profile_response = (
+        supabase_admin.table("users")
+        .select("id, role")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    profile = profile_response.data
+    if profile is None or profile["role"] != "student":
+        raise HTTPException(
+            status_code=403, detail="Hanya murid yang boleh melihat hasil kuis."
+        )
+    attempt = get_student_attempt(attempt_id, user_id)
+    if attempt["submitted_at"] is None:
+        raise HTTPException(status_code=409, detail="Percobaan kuis belum dikumpulkan.")
+    quiz = get_attempt_quiz(attempt)
+    review = build_review(attempt_id, attempt["quiz_id"], include_key=False)
     return {
         "attempt_id": attempt["id"],
         "quiz_id": attempt["quiz_id"],
@@ -1160,12 +1449,36 @@ def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
         "score": attempt["correct_count"],
         "total_questions": attempt["total_questions"],
         "submitted_at": attempt["submitted_at"],
+        "deadline_at": quiz["deadline_at"],
+        "discussion_available": discussion_available(quiz),
+        "review": review,
+    }
+
+
+@app.get("/student/attempts/{attempt_id}/discussion")
+def get_quiz_discussion(attempt_id: str, auth=Depends(require_student)):
+    attempt = get_student_attempt(attempt_id, auth["user_id"])
+    quiz = get_attempt_quiz(attempt)
+    if not discussion_available(quiz):
+        raise HTTPException(
+            status_code=403,
+            detail="Pembahasan baru terbuka setelah tenggat kuis lewat.",
+        )
+    review = build_review(attempt_id, attempt["quiz_id"], include_key=True)
+    return {
+        "attempt_id": attempt["id"],
+        "quiz_id": attempt["quiz_id"],
+        "quiz_title": quiz["title"],
+        "score": attempt["correct_count"],
+        "total_questions": attempt["total_questions"],
+        "submitted_at": attempt["submitted_at"],
+        "deadline_at": quiz["deadline_at"],
         "review": review,
     }
 
 
 @app.post("/validate-ai")
-def validate_ai(data: AIOutput):
+def validate_ai(data: AIOutput, auth=Depends(require_teacher)):
     return {"message": "Output AI valid!", "data": data}
 
 
@@ -1173,6 +1486,7 @@ def validate_ai(data: AIOutput):
 async def upload_material_pdf(
     title: str = Form(...),
     file: UploadFile = File(...),
+    subject_id: Optional[str] = Form(None),
     current_user=Depends(get_current_user),
 ):
     user = current_user["user"]
@@ -1180,13 +1494,17 @@ async def upload_material_pdf(
         supabase_admin.table("users")
         .select("role")
         .eq("id", str(user.id))
-        .single()
+        .maybe_single()
         .execute()
+        or EMPTY_RESPONSE
     )
     if not user_data.data or user_data.data["role"] != "teacher":
         raise HTTPException(
             status_code=403, detail="Hanya guru yang boleh mengunggah materi."
         )
+    teacher_id = str(user.id)
+    if subject_id is not None:
+        get_owned_subject(subject_id, teacher_id)
 
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="File harus berformat PDF.")
@@ -1198,17 +1516,15 @@ async def upload_material_pdf(
         raise HTTPException(status_code=413, detail="Ukuran PDF maksimal 20 MB.")
 
     try:
-        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+        with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
             extracted_text = "\n".join(page.get_text() for page in pdf)
             total_pages = len(pdf)
             total_images = sum(len(page.get_images(full=True)) for page in pdf)
+        sections = split_pdf_bytes(file_bytes)
     except Exception as e:
         print("ERROR EKSTRAKSI PDF:", repr(e))
-        raise HTTPException(
-            status_code=400, detail="PDF tidak dapat diproses: {str(e)}"
-        )
+        raise HTTPException(status_code=400, detail="PDF tidak dapat diproses.")
 
-    teacher_id = str(user.id)
     file_path = f"{teacher_id}/{uuid4()}.pdf"
     try:
         supabase_admin.storage.from_("materials-pdf").upload(
@@ -1222,6 +1538,7 @@ async def upload_material_pdf(
             status_code=500, detail="Gagal mengunggah PDF ke penyimpanan."
         )
 
+    material = None
     try:
         result = (
             supabase_admin.table("materials")
@@ -1230,21 +1547,29 @@ async def upload_material_pdf(
                     "title": title,
                     "file_url": file_path,
                     "teacher_id": teacher_id,
+                    "subject_id": subject_id,
                     "is_published": False,
                 }
             )
             .execute()
         )
-        return {
-            "message": "PDF berhasil diunggah dan diekstraksi.",
-            "material": result.data[0],
-            "extraction": {
-                "total_pages": total_pages,
-                "total_images": total_images,
-                "extracted_text": extracted_text,
-            },
-        }
-    except Exception:
+        material = result.data[0]
+        section_rows = [
+            section.as_row(material["id"], position)
+            for position, section in enumerate(sections, start=1)
+        ]
+        saved_sections = (
+            supabase_admin.table("material_sections").insert(section_rows).execute()
+        ).data or []
+    except Exception as e:
+        print("ERROR SIMPAN MATERI:", repr(e))
+        if material is not None:
+            try:
+                supabase_admin.table("materials").delete().eq(
+                    "id", material["id"]
+                ).execute()
+            except Exception:
+                pass
         try:
             supabase_admin.storage.from_("materials-pdf").remove([file_path])
         except Exception:
@@ -1253,3 +1578,610 @@ async def upload_material_pdf(
             status_code=500,
             detail="PDF tersimpan, tetapi metadata materi gagal disimpan.",
         )
+    return {
+        "message": "PDF berhasil diunggah dan diekstraksi.",
+        "material": material,
+        "extraction": {
+            "total_pages": total_pages,
+            "total_images": total_images,
+            "extracted_text": extracted_text,
+        },
+        "sections": [
+            {
+                "id": section["id"],
+                "position": section["position"],
+                "title": section["title"],
+                "page_start": section["page_start"],
+                "page_end": section["page_end"],
+                "image_count": section["image_count"],
+            }
+            for section in sorted(saved_sections, key=lambda row: row["position"])
+        ],
+    }
+
+
+ACCESS_CODE_LETTERS = string.ascii_uppercase
+ACCESS_CODE_RE = re.compile(r"^[A-Z]{6}$")
+
+
+def generate_access_code():
+    return "".join(secrets.choice(ACCESS_CODE_LETTERS) for _ in range(6))
+
+
+def normalize_access_code(code: str) -> str:
+    """Huruf kecil, spasi, dan strip dari input siswa diabaikan."""
+    return re.sub(r"[\s-]", "", code).upper()
+
+
+class SubjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class JoinSubjectRequest(BaseModel):
+    code: str
+
+
+class MaterialUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1)
+    is_published: Optional[bool] = None
+
+
+class QuizScheduleRequest(BaseModel):
+    available_from: datetime
+    deadline_at: datetime
+
+
+class QuizCreateRequest(QuizScheduleRequest):
+    kind: Literal["pre", "post"]
+    title: Optional[str] = None
+    attempt_limit: Optional[int] = Field(default=None, ge=1)
+
+
+def validate_schedule(data: QuizScheduleRequest):
+    for value in (data.available_from, data.deadline_at):
+        if value.tzinfo is None:
+            raise HTTPException(
+                status_code=400, detail="Waktu harus menyertakan zona waktu"
+            )
+    if data.deadline_at <= data.available_from:
+        raise HTTPException(
+            status_code=400, detail="Waktu tutup harus setelah waktu buka"
+        )
+
+
+def quizzes_by_material(material_ids):
+    if not material_ids:
+        return {}
+    quizzes_response = (
+        supabase_admin.table("quizzes")
+        .select(
+            "id, title, material_id, kind, attempt_limit, available_from, deadline_at"
+        )
+        .in_("material_id", material_ids)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    grouped = {material_id: [] for material_id in material_ids}
+    for quiz in quizzes_response.data or []:
+        grouped[quiz["material_id"]].append(quiz)
+    for quizzes in grouped.values():
+        quizzes.sort(key=lambda quiz: {"pre": 0, "post": 1}.get(quiz["kind"], 2))
+    return grouped
+
+
+def section_counts(material_ids):
+    if not material_ids:
+        return {}
+    sections_response = (
+        supabase_admin.table("material_sections")
+        .select("material_id")
+        .in_("material_id", material_ids)
+        .execute()
+    )
+    counts = {material_id: 0 for material_id in material_ids}
+    for row in sections_response.data or []:
+        counts[row["material_id"]] += 1
+    return counts
+
+
+@app.post("/teacher/subjects")
+def create_subject(data: SubjectCreateRequest, auth=Depends(require_teacher)):
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nama mata pelajaran wajib diisi")
+    for _ in range(5):
+        try:
+            response = (
+                supabase_admin.table("subjects")
+                .insert(
+                    {
+                        "name": name,
+                        "access_code": generate_access_code(),
+                        "teacher_id": auth["user_id"],
+                    }
+                )
+                .execute()
+            )
+            return {"message": "Mata pelajaran berhasil dibuat", "subject": response.data[0]}
+        except APIError as error:
+            # 23505: kode akses sudah dipakai, coba kode lain.
+            if error.code != "23505":
+                raise
+    raise HTTPException(status_code=500, detail="Gagal membuat kode akses unik")
+
+
+@app.get("/teacher/subjects")
+def list_teacher_subjects(auth=Depends(require_teacher)):
+    subjects_response = (
+        supabase_admin.table("subjects")
+        .select("id, name, access_code, created_at")
+        .eq("teacher_id", auth["user_id"])
+        .is_("deleted_at", "null")
+        .order("created_at")
+        .execute()
+    )
+    subjects = subjects_response.data or []
+    subject_ids = [subject["id"] for subject in subjects]
+    student_counts = {subject_id: 0 for subject_id in subject_ids}
+    material_counts = {subject_id: 0 for subject_id in subject_ids}
+    if subject_ids:
+        members_response = (
+            supabase_admin.table("subject_students")
+            .select("subject_id")
+            .in_("subject_id", subject_ids)
+            .execute()
+        )
+        for row in members_response.data or []:
+            student_counts[row["subject_id"]] += 1
+        materials_response = (
+            supabase_admin.table("materials")
+            .select("subject_id")
+            .in_("subject_id", subject_ids)
+            .execute()
+        )
+        for row in materials_response.data or []:
+            material_counts[row["subject_id"]] += 1
+    return {
+        "subjects": [
+            {
+                **subject,
+                "student_count": student_counts[subject["id"]],
+                "material_count": material_counts[subject["id"]],
+            }
+            for subject in subjects
+        ]
+    }
+
+
+@app.get("/teacher/subjects/{subject_id}/materials")
+def list_teacher_subject_materials(subject_id: str, auth=Depends(require_teacher)):
+    subject = get_owned_subject(subject_id, auth["user_id"])
+    materials_response = (
+        supabase_admin.table("materials")
+        .select("id, title, is_published, created_at")
+        .eq("subject_id", subject_id)
+        .order("created_at")
+        .execute()
+    )
+    materials = materials_response.data or []
+    material_ids = [material["id"] for material in materials]
+    quizzes = quizzes_by_material(material_ids)
+    counts = section_counts(material_ids)
+    return {
+        "subject": subject,
+        "materials": [
+            {
+                **material,
+                "section_count": counts.get(material["id"], 0),
+                "quizzes": [
+                    {**quiz, "status": quiz_status(quiz)}
+                    for quiz in quizzes.get(material["id"], [])
+                ],
+            }
+            for material in materials
+        ],
+    }
+
+
+@app.patch("/teacher/materials/{material_id}")
+def update_material(
+    material_id: str, data: MaterialUpdateRequest, auth=Depends(require_teacher)
+):
+    get_owned_material(material_id, auth["user_id"])
+    changes = data.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="Tidak ada perubahan")
+    response = (
+        supabase_admin.table("materials")
+        .update(changes)
+        .eq("id", material_id)
+        .execute()
+    )
+    return {"message": "Materi berhasil diperbarui", "material": response.data[0]}
+
+
+@app.post("/teacher/materials/{material_id}/quizzes")
+def create_quiz(
+    material_id: str, data: QuizCreateRequest, auth=Depends(require_teacher)
+):
+    get_owned_material(material_id, auth["user_id"])
+    validate_schedule(data)
+    title = (data.title or "").strip() or (
+        "Pre-test" if data.kind == "pre" else "Post-test"
+    )
+    try:
+        response = (
+            supabase_admin.table("quizzes")
+            .insert(
+                {
+                    "title": title,
+                    "material_id": material_id,
+                    "teacher_id": auth["user_id"],
+                    "kind": data.kind,
+                    "attempt_limit": data.attempt_limit,
+                    "available_from": data.available_from.isoformat(),
+                    "deadline_at": data.deadline_at.isoformat(),
+                }
+            )
+            .execute()
+        )
+    except APIError as error:
+        if error.code == "23505":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Materi ini sudah punya {title.lower()}",
+            )
+        raise
+    return {"message": "Kuis berhasil dibuat", "quiz": response.data[0]}
+
+
+@app.patch("/teacher/quizzes/{quiz_id}/schedule")
+def update_quiz_schedule(
+    quiz_id: str, data: QuizScheduleRequest, auth=Depends(require_teacher)
+):
+    validate_schedule(data)
+    response = (
+        supabase_admin.table("quizzes")
+        .update(
+            {
+                "available_from": data.available_from.isoformat(),
+                "deadline_at": data.deadline_at.isoformat(),
+            }
+        )
+        .eq("id", quiz_id)
+        .eq("teacher_id", auth["user_id"])
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    return {"message": "Jadwal kuis berhasil diperbarui", "quiz": response.data[0]}
+
+
+@app.get("/teacher/subjects/{subject_id}/results")
+def get_subject_results(subject_id: str, auth=Depends(require_teacher)):
+    subject = get_owned_subject(subject_id, auth["user_id"])
+    members_response = (
+        supabase_admin.table("subject_students")
+        .select("student_id, joined_at")
+        .eq("subject_id", subject_id)
+        .execute()
+    )
+    student_ids = [row["student_id"] for row in (members_response.data or [])]
+    students = []
+    if student_ids:
+        users_response = (
+            supabase_admin.table("users")
+            .select("id, name")
+            .in_("id", student_ids)
+            .execute()
+        )
+        students = sorted(users_response.data or [], key=lambda row: row["name"])
+
+    materials_response = (
+        supabase_admin.table("materials")
+        .select("id, title, is_published, created_at")
+        .eq("subject_id", subject_id)
+        .order("created_at")
+        .execute()
+    )
+    materials = materials_response.data or []
+    quizzes = quizzes_by_material([material["id"] for material in materials])
+    quiz_ids = [quiz["id"] for group in quizzes.values() for quiz in group]
+
+    # Percobaan terakhir yang sudah dikumpulkan per (kuis, siswa).
+    latest = {}
+    attempt_counts = {}
+    if quiz_ids and student_ids:
+        attempts_response = (
+            supabase_admin.table("quiz_attempts")
+            .select("id, quiz_id, student_id, correct_count, total_questions, submitted_at")
+            .in_("quiz_id", quiz_ids)
+            .in_("student_id", student_ids)
+            .not_.is_("submitted_at", "null")
+            .order("submitted_at")
+            .execute()
+        )
+        for attempt in attempts_response.data or []:
+            key = (attempt["quiz_id"], attempt["student_id"])
+            latest[key] = attempt
+            attempt_counts[key] = attempt_counts.get(key, 0) + 1
+
+    result_materials = []
+    for material in materials:
+        result_quizzes = []
+        for quiz in quizzes.get(material["id"], []):
+            rows = []
+            percents = []
+            for student in students:
+                key = (quiz["id"], student["id"])
+                attempt = latest.get(key)
+                if attempt and attempt["total_questions"]:
+                    percents.append(
+                        attempt["correct_count"] / attempt["total_questions"] * 100
+                    )
+                rows.append(
+                    {
+                        "student_id": student["id"],
+                        "name": student["name"],
+                        "attempt_count": attempt_counts.get(key, 0),
+                        "latest_attempt": (
+                            {
+                                "attempt_id": attempt["id"],
+                                "correct_count": attempt["correct_count"],
+                                "total_questions": attempt["total_questions"],
+                                "submitted_at": attempt["submitted_at"],
+                            }
+                            if attempt
+                            else None
+                        ),
+                    }
+                )
+            result_quizzes.append(
+                {
+                    **quiz,
+                    "status": quiz_status(quiz),
+                    "submitted_count": len(percents),
+                    "average_percent": (
+                        round(sum(percents) / len(percents), 1) if percents else None
+                    ),
+                    "students": rows,
+                }
+            )
+        result_materials.append({**material, "quizzes": result_quizzes})
+    return {
+        "subject": subject,
+        "student_count": len(students),
+        "materials": result_materials,
+    }
+
+
+@app.post("/student/subjects/join")
+def join_subject(data: JoinSubjectRequest, auth=Depends(require_student)):
+    code = normalize_access_code(data.code)
+    if not ACCESS_CODE_RE.match(code):
+        raise HTTPException(status_code=400, detail="Kode akses harus 6 huruf")
+    subject_response = (
+        supabase_admin.table("subjects")
+        .select("id, name, teacher_id")
+        .eq("access_code", code)
+        .is_("deleted_at", "null")
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    subject = subject_response.data
+    if subject is None:
+        raise HTTPException(status_code=404, detail="Kode akses tidak ditemukan")
+    already_joined = is_subject_member(subject["id"], auth["user_id"])
+    if not already_joined:
+        supabase_admin.table("subject_students").upsert(
+            {"subject_id": subject["id"], "student_id": auth["user_id"]},
+            on_conflict="subject_id,student_id",
+            ignore_duplicates=True,
+        ).execute()
+    return {
+        "message": (
+            "Kamu sudah bergabung di mata pelajaran ini"
+            if already_joined
+            else "Berhasil bergabung ke mata pelajaran"
+        ),
+        "already_joined": already_joined,
+        "subject": {"id": subject["id"], "name": subject["name"]},
+    }
+
+
+@app.get("/student/subjects")
+def list_student_subjects(auth=Depends(require_student)):
+    members_response = (
+        supabase_admin.table("subject_students")
+        .select("subject_id, joined_at")
+        .eq("student_id", auth["user_id"])
+        .execute()
+    )
+    joined_at = {
+        row["subject_id"]: row["joined_at"] for row in (members_response.data or [])
+    }
+    if not joined_at:
+        return {"subjects": []}
+    subjects_response = (
+        supabase_admin.table("subjects")
+        .select("id, name, teacher_id")
+        .in_("id", list(joined_at))
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    subjects = subjects_response.data or []
+    teacher_ids = list({subject["teacher_id"] for subject in subjects})
+    teacher_names = {}
+    if teacher_ids:
+        teachers_response = (
+            supabase_admin.table("users")
+            .select("id, name")
+            .in_("id", teacher_ids)
+            .execute()
+        )
+        teacher_names = {row["id"]: row["name"] for row in (teachers_response.data or [])}
+    material_counts = {subject["id"]: 0 for subject in subjects}
+    if subjects:
+        materials_response = (
+            supabase_admin.table("materials")
+            .select("subject_id")
+            .in_("subject_id", list(material_counts))
+            .eq("is_published", True)
+            .execute()
+        )
+        for row in materials_response.data or []:
+            material_counts[row["subject_id"]] += 1
+    return {
+        "subjects": sorted(
+            [
+                {
+                    "id": subject["id"],
+                    "name": subject["name"],
+                    "teacher_name": teacher_names.get(subject["teacher_id"]),
+                    "material_count": material_counts[subject["id"]],
+                    "joined_at": joined_at[subject["id"]],
+                }
+                for subject in subjects
+            ],
+            key=lambda subject: subject["joined_at"],
+        )
+    }
+
+
+@app.get("/student/subjects/{subject_id}/materials")
+def list_student_subject_materials(subject_id: str, auth=Depends(require_student)):
+    student_id = auth["user_id"]
+    if not is_subject_member(subject_id, student_id):
+        raise HTTPException(
+            status_code=403, detail="Kamu belum bergabung di mata pelajaran ini"
+        )
+    subject_response = (
+        supabase_admin.table("subjects")
+        .select("id, name")
+        .eq("id", subject_id)
+        .is_("deleted_at", "null")
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    subject = subject_response.data
+    if subject is None:
+        raise HTTPException(status_code=404, detail="Mata pelajaran tidak ditemukan")
+    materials_response = (
+        supabase_admin.table("materials")
+        .select("id, title, created_at")
+        .eq("subject_id", subject_id)
+        .eq("is_published", True)
+        .order("created_at")
+        .execute()
+    )
+    materials = materials_response.data or []
+    material_ids = [material["id"] for material in materials]
+    quizzes = quizzes_by_material(material_ids)
+    counts = section_counts(material_ids)
+    quiz_ids = [quiz["id"] for group in quizzes.values() for quiz in group]
+    attempts_by_quiz = {quiz_id: [] for quiz_id in quiz_ids}
+    if quiz_ids:
+        attempts_response = (
+            supabase_admin.table("quiz_attempts")
+            .select("id, quiz_id, correct_count, total_questions, submitted_at")
+            .in_("quiz_id", quiz_ids)
+            .eq("student_id", student_id)
+            .order("started_at")
+            .execute()
+        )
+        for attempt in attempts_response.data or []:
+            attempts_by_quiz[attempt["quiz_id"]].append(attempt)
+
+    now = datetime.now(timezone.utc)
+    result = []
+    for material in materials:
+        material_quizzes = quizzes.get(material["id"], [])
+        has_pre = any(quiz["kind"] == "pre" for quiz in material_quizzes)
+        pre_submitted = any(
+            attempt["submitted_at"] is not None
+            for quiz in material_quizzes
+            if quiz["kind"] == "pre"
+            for attempt in attempts_by_quiz[quiz["id"]]
+        )
+        quiz_rows = []
+        for quiz in material_quizzes:
+            attempts = attempts_by_quiz[quiz["id"]]
+            submitted = [a for a in attempts if a["submitted_at"] is not None]
+            unfinished = next((a for a in attempts if a["submitted_at"] is None), None)
+            latest = submitted[-1] if submitted else None
+            quiz_rows.append(
+                {
+                    "id": quiz["id"],
+                    "kind": quiz["kind"],
+                    "title": quiz["title"],
+                    "available_from": quiz["available_from"],
+                    "deadline_at": quiz["deadline_at"],
+                    "status": quiz_status(quiz, now),
+                    "attempt_limit": quiz["attempt_limit"],
+                    "attempts_used": len(attempts),
+                    "unfinished_attempt_id": unfinished["id"] if unfinished else None,
+                    "locked": quiz["kind"] == "post" and has_pre and not pre_submitted,
+                    "discussion_available": discussion_available(quiz, now),
+                    "latest_attempt": (
+                        {
+                            "attempt_id": latest["id"],
+                            "correct_count": latest["correct_count"],
+                            "total_questions": latest["total_questions"],
+                            "submitted_at": latest["submitted_at"],
+                        }
+                        if latest
+                        else None
+                    ),
+                }
+            )
+        result.append(
+            {
+                "id": material["id"],
+                "title": material["title"],
+                "section_count": counts.get(material["id"], 0),
+                "quizzes": quiz_rows,
+            }
+        )
+    return {"subject": subject, "materials": result}
+
+
+@app.get("/materials/{material_id}/sections")
+def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
+    material_response = (
+        supabase_admin.table("materials")
+        .select("id, title, subject_id, teacher_id, is_published")
+        .eq("id", material_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    )
+    material = material_response.data
+    if material is None:
+        raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
+    if auth["profile"]["role"] == "teacher":
+        if material["teacher_id"] != auth["user_id"]:
+            raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
+    else:
+        if not material["is_published"]:
+            raise HTTPException(status_code=403, detail="Materi belum dipublikasikan")
+        if not student_can_access_material(material, auth["user_id"]):
+            raise HTTPException(
+                status_code=403, detail="Anda tidak memiliki akses ke materi ini"
+            )
+    sections_response = (
+        supabase_admin.table("material_sections")
+        .select(
+            "id, position, title, content, image_description, image_count, "
+            "page_start, page_end"
+        )
+        .eq("material_id", material_id)
+        .order("position")
+        .execute()
+    )
+    return {
+        "material": {"id": material["id"], "title": material["title"]},
+        "sections": sections_response.data or [],
+    }

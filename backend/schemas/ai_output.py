@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
 
@@ -10,6 +10,7 @@ class MultipleChoiceOption(BaseModel):
 class MultipleChoiceQuestion(BaseModel):
     type: Literal["multiple_choice"]
     question: str
+    explanation: Optional[str] = None
     options: list[MultipleChoiceOption]
 
     @model_validator(mode="after")
@@ -24,8 +25,8 @@ class MultipleChoiceQuestion(BaseModel):
         if len(option_texts) != len(set(option_texts)):
             raise ValueError("Opsi tidak boleh duplikat.")
         correct_count = sum(option.is_correct for option in self.options)
-        if correct_count < 1 or correct_count > 2:
-            raise ValueError("Multiple choice harus memiliki 1 atau 2 jawaban benar.")
+        if correct_count != 1:
+            raise ValueError("Pilihan ganda harus memiliki tepat 1 jawaban benar.")
 
         return self
 
@@ -33,6 +34,7 @@ class MultipleChoiceQuestion(BaseModel):
 class TrueFalseQuestion(BaseModel):
     type: Literal["true_false"]
     question: str
+    explanation: Optional[str] = None
     correct_answer: StrictBool
 
 
@@ -42,6 +44,7 @@ class TextAnswer(BaseModel):
 class TextQuestion(BaseModel):
     type: Literal["text"]
     question: str
+    explanation: Optional[str] = None
     answers: list[TextAnswer]
 
     @model_validator(mode="after")
@@ -59,6 +62,7 @@ class OrderingItem(BaseModel):
 class OrderingQuestion(BaseModel):
     type: Literal["ordering"]
     question: str
+    explanation: Optional[str] = None
     items: list[OrderingItem]
 
     @model_validator(mode="after")
