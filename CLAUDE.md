@@ -50,13 +50,18 @@ semua error sebelum menganggap tugas selesai.
   tidak lagi per materi.
 - Siswa bergabung ke mata pelajaran dengan kode itu, lalu melihat semua
   materi yang sudah dipublikasikan di mata pelajaran tersebut.
+- Materi ditampilkan per sub-bab. Siswa bisa mendengarkan tiap sub-bab dan
+  berpindah antar sub-bab.
 - Satu materi memakai satu jenis soal pilihan guru: pilihan ganda,
   benar/salah, isian singkat, atau puzzle urutan.
 - Soal pilihan ganda hanya punya satu jawaban benar.
 - Tiap materi punya pre-test dan post-test. Post-test terkunci sampai
   pre-test selesai.
-- Tiap jawaban mendapat umpan balik rinci: jawaban siswa, jawaban benar, dan
-  penjelasan.
+- Guru mengatur jadwal tiap kuis: waktu buka dan waktu tutup (tenggat).
+- Saat mengerjakan, tiap soal hanya diberi tahu benar atau salah, tanpa
+  jawaban benar dan pembahasan.
+- Setelah kuis selesai, siswa bisa melihat ulang soal dan jawabannya sendiri.
+- Jawaban benar dan pembahasan baru terbuka setelah tenggat kuis lewat.
 - Skor 0 sampai 3 bintang (85% ke atas = 3, 60% ke atas = 2, ada yang benar =
   1) dan apresiasi dari maskot Odi.
 
