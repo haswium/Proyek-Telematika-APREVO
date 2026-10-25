@@ -1,5 +1,7 @@
 .venv/
 __pycache__/
 .env
+.env.*
+!.env.example
 tes.pdf
 hasil_gambar/
