@@ -9,6 +9,12 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 from uuid import uuid4
+import pymupdf
+import logging
+
+print("DEBUG: MAIN.PY TERLOAD", flush=True)
+
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
@@ -16,9 +22,24 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, os.getenv("SUPABASE_SERVICE_KEY"))
+TEST_LOGIN_EMAIL = os.getenv("TEST_LOGIN_EMAIL")
+TEST_LOGIN_PASSWORD = os.getenv("TEST_LOGIN_PASSWORD")
 
 app = FastAPI()
 
+
+@app.middleware("http")
+async def debug_request(request, call_next):
+    print(f">>> REQUEST MASUK: {request.method} {request.url.path}", flush=True)
+    try:
+        response = await call_next(request)
+        print(f">>> RESPONSE: {response.status_code}", flush=True)
+        return response
+    except Exception as exc:
+        import traceback
+
+        traceback.print_exc()
+        raise
 
 class SubmittedAnswer(BaseModel):
     question_id: str
@@ -28,8 +49,34 @@ class SubmittedAnswer(BaseModel):
     ordered_item_ids: Optional[list[str]] = None
 
 
+class AutosaveAnswerRequest(BaseModel):
+    selected_option_ids: Optional[list[str]] = None
+    boolean_value: Optional[bool] = None
+    text_value: Optional[str] = None
+    ordered_item_ids: Optional[list[str]] = None
+
+
 class SubmittedAnswersRequest(BaseModel):
     answers: list[SubmittedAnswer]
+
+
+def check_quiz_schedule(quiz):
+    available_from = quiz["available_from"]
+    deadline_at = quiz["deadline_at"]
+    if available_from is None or deadline_at is None:
+        raise HTTPException(
+            status_code=500, detail="Jadwal kuis belum dikonfigurasi dengan benar"
+        )
+    start_time = datetime.fromisoformat(available_from.replace("Z", "+00:00"))
+    deadline = datetime.fromisoformat(deadline_at.replace("Z", "+00:00"))
+    if deadline <= start_time:
+        raise HTTPException(status_code=500, detail="Jadwal kuis tidak valid")
+    now = datetime.now(timezone.utc)
+    if now < start_time:
+        raise HTTPException(status_code=403, detail="Kuis belum tersedia")
+    if now >= deadline:
+        raise HTTPException(status_code=403, detail="Deadline kuis telah lewat")
+    return deadline
 
 
 security = HTTPBearer()
@@ -108,16 +155,50 @@ def debug_policy(auth=Depends(get_current_user)):
 
 @app.post("/test-login")
 def test_login():
-    response = supabase.auth.sign_in_with_password(
-        {"email": "guru.test@aprevo.local", "password": "pwsementara"}
-    )
+    if not TEST_LOGIN_EMAIL or not TEST_LOGIN_PASSWORD:
+        raise HTTPException(
+            status_code=500,
+            detail="Kredensial pengujian belum dikonfigurasi",
+        )
+
+    try:
+        response = supabase.auth.sign_in_with_password(
+            {
+                "email": TEST_LOGIN_EMAIL,
+                "password": TEST_LOGIN_PASSWORD,
+            }
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Login pengujian gagal",
+        )
+
+    if not response.session:
+        raise HTTPException(
+            status_code=401,
+            detail="Sesi login tidak tersedia",
+        )
+
     return {"access_token": response.session.access_token}
 
 
-@app.post("/quizzes/{quiz_id}/ai-output")
+@app.post("/quizzes/{quiz_id}/questions")
 def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user)):
     user = auth["user"]
     access_token = auth["access_token"]
+    profile_response = (
+        supabase_admin.table("users")
+        .select("role")
+        .eq("id", str(user.id))
+        .maybe_single()
+        .execute()
+    )
+    profile = profile_response.data
+    if profile is None or profile["role"] != "teacher":
+        raise HTTPException(
+            status_code=403, detail="Hanya guru yang boleh mengakses endpoint ini"
+        )
     user_supabase = create_client(
         SUPABASE_URL,
         SUPABASE_KEY,
@@ -127,7 +208,7 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
         user_supabase.table("quizzes")
         .select("teacher_id")
         .eq("id", quiz_id)
-        .single()
+        .maybe_single()
         .execute()
     )
     quiz = quiz_response.data
@@ -188,6 +269,18 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
 def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
     user = auth["user"]
     access_token = auth["access_token"]
+    profile_response = (
+        supabase_admin.table("users")
+        .select("role")
+        .eq("id", str(user.id))
+        .maybe_single()
+        .execute()
+    )
+    profile = profile_response.data
+    if profile is None or profile["role"] != "teacher":
+        raise HTTPException(
+            status_code=403, detail="Hanya guru yang boleh mengakses endpoint ini"
+        )
     user_supabase = create_client(
         SUPABASE_URL,
         SUPABASE_KEY,
@@ -199,7 +292,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
         .eq("id", quiz_id)
         .eq("teacher_id", user.id)
         .is_("deleted_at", "null")
-        .single()
+        .maybe_single()
         .execute()
     )
     quiz = quiz_response.data
@@ -211,7 +304,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
         .eq("quiz_id", quiz_id)
         .execute()
     )
-    questions = questions_response.data
+    questions = questions_response.data or []
 
     for question in questions:
         question_id = question["id"]
@@ -222,7 +315,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
                 .eq("question_id", question_id)
                 .execute()
             )
-            question["options"] = response.data
+            question["options"] = response.data or []
         elif question["type"] == "text":
             response = (
                 supabase_admin.table("question_answers")
@@ -230,7 +323,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
                 .eq("question_id", question_id)
                 .execute()
             )
-            question["answer"] = response.data
+            question["answer"] = response.data or []
         elif question["type"] == "ordering":
             response = (
                 supabase_admin.table("question_items")
@@ -239,7 +332,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
                 .order("correct_order")
                 .execute()
             )
-            question["items"] = response.data
+            question["items"] = response.data or []
 
     return {"quiz": quiz, "questions": questions}
 
@@ -397,7 +490,9 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
         )
     quiz_response = (
         supabase_admin.table("quizzes")
-        .select("id, material_id, attempt_limit, deleted_at")
+        .select(
+            "id, material_id, attempt_limit, deleted_at, available_from, deadline_at"
+        )
         .eq("id", quiz_id)
         .maybe_single()
         .execute()
@@ -405,6 +500,7 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
         raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    check_quiz_schedule(quiz)
     material_id = quiz["material_id"]
     material_response = (
         supabase_admin.table("materials")
@@ -437,11 +533,12 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
     )
     previous_attempts = attempt_response.data or []
     unfinished_attempt = next(
-        (attempt for attempt in previous_attempts if attempt["submitted"] is None), None
+        (attempt for attempt in previous_attempts if attempt["submitted_at"] is None),
+        None,
     )
     if unfinished_attempt is not None:
         return {
-            "message": "Melanjutkan percobaan kuius yang belum selesai",
+            "message": "Melanjutkan percobaan kuis yang belum selesai",
             "attempt": unfinished_attempt,
         }
     attempt_limit = quiz["attempt_limit"]
@@ -467,16 +564,18 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
         )
         .execute()
     )
-    attempt = attempt_response.data
+    attempt = attempt_response.data[0]
     return {"message": "Percobaan kuis berhasil dimulai", "attempt": attempt}
 
 
-@app.post("/student/attempts/{attempt_id}/submit")
-def submit_quiz_answers(
-    attempt_id: str, data: SubmittedAnswersRequest, auth=Depends(get_current_user)
+@app.put("/student/attempts/{attempt_id}/answers/{question_id}")
+def autosave_quiz_answer(
+    attempt_id: str,
+    question_id: str,
+    data: SubmittedAnswer,
+    auth=Depends(get_current_user),
 ):
     user_id = str(auth["user"].id)
-
     profile_response = (
         supabase_admin.table("users")
         .select("id, role")
@@ -487,12 +586,11 @@ def submit_quiz_answers(
     profile = profile_response.data
     if profile is None or profile["role"] != "student":
         raise HTTPException(
-            status_code=403, detail="Hanya siswa yang dapat mengiirm jawaban"
+            status_code=403, detail="Hanya siswa yang dapat menyimpan jawaban"
         )
-
     attempt_response = (
         supabase_admin.table("quiz_attempts")
-        .select("id, quiz_id, student_id, submitted_at, total_questions")
+        .select("id, quiz_id, student_id, submitted_at")
         .eq("id", attempt_id)
         .eq("student_id", user_id)
         .maybe_single()
@@ -500,184 +598,408 @@ def submit_quiz_answers(
     )
     attempt = attempt_response.data
     if attempt is None:
-        raise HTTPException(status_code=409, detail="Percobaan kuis tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan")
     if attempt["submitted_at"] is not None:
-        raise HTTPException(status_code=409, detail="Percobaan kuis sudah dikumpulkan")
-    quiz_id = attempt["quiz_id"]
-
-    questions_response = (
-        supabase_admin.table("questions")
-        .select("id, type, correct_answer")
-        .eq("quiz_id", quiz_id)
+        raise HTTPException(status_code=409, detail="Percobaan kuis sudah selesai")
+    quiz_response = (
+        supabase_admin.table("quizzes")
+        .select("id, available_from, deadline_at, deleted_at")
+        .eq("id", attempt["quiz_id"])
+        .maybe_single()
         .execute()
     )
-    questions = questions_response.data or []
-    question_map = {q["id"]: q for q in questions}
-    if not questions:
-        raise HTTPException(status_code=400, detail="Kuis belum memiliki soal")
-
-    submitted_ids = [a.question_id for a in data.answers]
-    if len(submitted_ids) != len(set(submitted_ids)) or set(submitted_ids) != set(
-        question_map.keys()
-    ):
+    quiz = quiz_response.data
+    if quiz is None or quiz["deleted_at"] is not None:
+        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    check_quiz_schedule(quiz)
+    if str(data.question_id) != question_id:
         raise HTTPException(
-            status_code=400, detail="Jawaban harus mencakup setiap soal tepat satu kali"
+            status_code=400, detail="ID soal pada URL dan body tidak sama"
         )
-    correct_count = 0
-
-    for submitted in data.answers:
-        question = question_map[submitted.question_id]
-        question_id = submitted.question_id
-        question_type = question["type"]
-
-        # hanya satu jawaban yg boleh diisi
-        provided_values = [
-            submitted.selected_option_ids is not None,
-            submitted.boolean_value is not None,
-            submitted.text_value is not None,
-            submitted.ordered_item_ids is not None,
-        ]
-        if sum(provided_values) != 1:
+    question_response = (
+        supabase_admin.table("questions")
+        .select("id, type, correct_answer")
+        .eq("id", question_id)
+        .eq("quiz_id", attempt["quiz_id"])
+        .maybe_single()
+        .execute()
+    )
+    question = question_response.data
+    if question is None:
+        raise HTTPException(
+            status_code=404, detail="Soal tidak ditemukan dalam kuis ini"
+        )
+    provided_values = [
+        data.selected_option_ids is not None,
+        data.boolean_value is not None,
+        data.text_value is not None,
+        data.ordered_item_ids is not None,
+    ]
+    if sum(provided_values) != 1:
+        raise HTTPException(status_code=400, detail="Kirim tepat satu format jawaban")
+    question_type = question["type"]
+    is_correct = False
+    answer_options = []
+    answer_boolean = None
+    answer_text = None
+    answer_order_items = []
+    if question_type == "multiple_choice":
+        selected_ids = data.selected_option_ids
+        if selected_ids is None or len(selected_ids) != 1:
             raise HTTPException(
                 status_code=400,
-                detail=f"Format jawaban tidak valid untuk soal {question_id}",
+                detail="Pilih tepat satu opsi",
             )
-        answer_id_response = (
-            supabase_admin.table("answers")
-            .insert({"attempt_id": attempt_id, "question_id": question_id})
+        if len(selected_ids) != len(set(selected_ids)):
+            raise HTTPException(
+                status_code=400, detail="Opsi yang sama tidak boleh dipilih berulang"
+            )
+        options_response = (
+            supabase_admin.table("question_options")
+            .select("id, is_correct")
+            .eq("question_id", question_id)
             .execute()
         )
-        answer_id = answer_id_response.data[0]["id"]
-        is_correct = False
-        if question_type == "multiple_choice":
-            selected_ids = submitted.selected_option_ids
-            if not selected_ids:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Pilih minimal satu opsi untuk soal pilihan ganda",
-                )
-            if len(selected_ids) != len(set(selected_ids)):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Opsi yang sama tidak boleh dipilih lebih dari sekali",
-                )
-            option_response = (
-                supabase_admin.table("question_options")
-                .select("id, is_correct")
-                .eq("question_id", question_id)
-                .execute()
-            )
-            options = option_response.data or []
-            option_map = {option["id"]: option for option in options}
-            if any(option_id not in option_map for option_id in selected_ids):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Terdapat opsi yang tidak valid untuk soal ini",
-                )
-            answer_option_rows = [
-                {"answer_id": answer_id, "option_id": option_id}
-                for option_id in selected_ids
-            ]
-            supabase_admin.table("answer_options").insert(answer_option_rows).execute()
-            correct_ids = {
-                option["id"] for option in options if option["is_correct"] is True
-            }
-            is_correct = set(selected_ids) == correct_ids
-        elif question_type == "true_false":
-            if (
-                submitted.selected_option_ids is not None
-                or submitted.boolean_value is None
-                or submitted.text_value is not None
-                or submitted.ordered_item_ids is not None
-            ):
-                raise HTTPException(
-                    status_code=400, detail="Jawaban harus berupa true atau false"
-                )
-            supabase_admin.table("answer_boolean").insert(
-                {"answer_id": answer_id, "value": submitted.boolean_value}
-            ).execute()
-            is_correct = submitted.boolean_value == question["correct_answer"]
-        elif question_type == "text":
-            if (
-                submitted.selected_option_ids is not None
-                or submitted.boolean_value is not None
-                or submitted.text_value is None
-                or submitted.ordered_item_ids is not None
-            ):
-                raise HTTPException(status_code=400, detail="Jawaban harus berupa teks")
-            supabase_admin.table("answer_text").insert(
-                {"answer_id": answer_id, "value": submitted.text_value}
-            ).execute()
-            accepted_response = (
-                supabase_admin.table("question_answers")
-                .select("answer")
-                .eq("question_id", question_id)
-                .execute()
-            )
-            accepted_answers = accepted_response.data or []
-            normalize = lambda value: " ".join(value.strip().casefold().split())
-            is_correct = any(
-                normalize(submitted.text_value) == normalize(item["answer"])
-                for item in accepted_answers
-            )
-        elif question_type == "ordering":
-            if (
-                submitted.selected_option_ids is not None
-                or submitted.boolean_value is not None
-                or submitted.text_value is not None
-                or submitted.ordered_item_ids is None
-            ):
-                raise HTTPException(
-                    status_code=400, detail="Jawaban harus berupa urutan item"
-                )
-            items_response = (
-                supabase_admin.table("question_items")
-                .select("id, correct_order")
-                .eq("question_id", question_id)
-                .execute()
-            )
-            items = items_response.data or []
-            item_ids = [item["id"] for item in items]
-            if len(submitted.ordered_item_ids) != len(
-                set(submitted.ordered_item_ids)
-            ) or set(submitted.ordered_item_ids) != set(item_ids):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Urutan harus memuat semua item tepat satu kali",
-                )
-            order_rows = [
-                {"answer_id": answer_id, "item_id": item_id, "selected_order": position}
-                for position, item_id in enumerate(submitted.ordered_item_ids, start=1)
-            ]
-            if order_rows:
-                supabase_admin.table("answer_order_items").insert(order_rows).execute()
-            expected_order = [
-                item["id"]
-                for item in sorted(items, key=lambda item: item["correct_order"])
-            ]
-            is_correct = submitted.ordered_item_ids == expected_order
-        else:
+        options = options_response.data or []
+        option_map = {str(option["id"]): option for option in options}
+        selected_id = selected_ids[0]
+        if selected_id not in option_map:
             raise HTTPException(
-                status_code=400, detail=f"Tipe soal tidak dikenal: {question_type}"
+                status_code=400,
+                detail="Opsi tidak valid untuk soal ini",
+            )
+        correct_ids = {
+            str(option["id"]) for option in options if option["is_correct"] is True
+        }
+        if len(correct_ids) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Soal harus memiliki tepat satu opsi benar",
+            )
+        is_correct = selected_id in correct_ids
+        answer_options = [{"option_id": selected_id}]
+    elif question_type == "true_false":
+        if data.boolean_value is None:
+            raise HTTPException(
+                status_code=400, detail="Jawaban harus berupa true atau false"
+            )
+        if not isinstance(question["correct_answer"], bool):
+            raise HTTPException(
+                status_code=500, detail="Kunci jawaban beanr/salah belum valid"
+            )
+        is_correct = data.boolean_value == question["correct_answer"]
+        answer_boolean = {"value": data.boolean_value}
+    elif question_type == "text":
+        if data.text_value is None:
+            raise HTTPException(status_code=400, detail="Jawaban harus berupa teks")
+        accepted_response = (
+            supabase_admin.table("question_answers")
+            .select("answer")
+            .eq("question_id", question_id)
+            .execute()
+        )
+        accepted_answers = accepted_response.data or []
+        normalize = lambda value: " ".join(value.strip().casefold().split())
+        is_correct = any(
+            normalize(data.text_value) == normalize(item["answer"])
+            for item in accepted_answers
+        )
+        answer_text = {"value": data.text_value}
+    elif question_type == "ordering":
+        ordered_ids = data.ordered_item_ids
+        if ordered_ids is None:
+            raise HTTPException(
+                staus_code=400, detail="Jawaban harus berupa urutan item"
+            )
+        if len(ordered_ids) != len(set(ordered_ids)):
+            raise HTTPException(
+                status_code=400, detail="Item yang sama tidak boleh muncul berulang"
+            )
+        items_response = (
+            supabase_admin.table("question_items")
+            .select("id, correct_order")
+            .eq("question_id", question_id)
+            .execute()
+        )
+        items = items_response.data or []
+        item_map = {str(item["id"]): item for item in items}
+        valid_item_ids = set(item_map.keys())
+        if set(ordered_ids) != valid_item_ids:
+            raise HTTPException(
+                status_code=400, detail="Urutan harus memuat semua item tepat satu kali"
+            )
+        expected_order = [
+            str(item["id"])
+            for item in sorted(items, key=lambda item: item["correct_order"])
+        ]
+        is_correct = ordered_ids == expected_order
+        answer_order_items = [
+            {"item_id": item_id, "selected_order": position}
+            for position, item_id in enumerate(ordered_ids, start=1)
+        ]
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Tipe soal tidak dikenal: {question_type}"
+        )
+    answer_response = (
+        supabase_admin.table("answers")
+        .upsert(
+            {
+                "attempt_id": attempt_id,
+                "question_id": question_id,
+            },
+            on_conflict="attempt_id,question_id",
+        )
+        .execute()
+    )
+    if not answer_response.data:
+        raise HTTPException(status_code=500, detail="Jawaban gagal disimpan")
+    answer_id = answer_response.data[0]["id"]
+    supabase_admin.table("answer_options").delete().eq("answer_id", answer_id).execute()
+    supabase_admin.table("answer_boolean").delete().eq("answer_id", answer_id).execute()
+    supabase_admin.table("answer_text").delete().eq("answer_id", answer_id).execute()
+    supabase_admin.table("answer_order_items").delete().eq(
+        "answer_id", answer_id
+    ).execute()
+    if answer_options:
+        supabase_admin.table("answer_options").insert(
+            [
+                {"answer_id": answer_id, "option_id": item["option_id"]}
+                for item in answer_options
+            ]
+        ).execute()
+    elif answer_boolean is not None:
+        supabase_admin.table("answer_boolean").insert(
+            {"answer_id": answer_id, "value": answer_boolean["value"]}
+        ).execute()
+    elif answer_text is not None:
+        supabase_admin.table("answer_text").insert(
+            {"answer_id": answer_id, "value": answer_text["value"]}
+        ).execute()
+    elif answer_order_items:
+        supabase_admin.table("answer_order_items").insert(
+            [
+                {
+                    "answer_id": answer_id,
+                    "item_id": item["item_id"],
+                    "selected_order": item["selected_order"],
+                }
+                for item in answer_order_items
+            ]
+        ).execute()
+    return {
+        "message": "Jawaban berhasil disimpan",
+        "attempt_id": attempt_id,
+        "question_id": question_id,
+        "is_correct": is_correct,
+    }
+
+
+@app.post("/student/attempts/{attempt_id}/submit")
+def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
+    print("DEBUG: ENDPOINT SUBMIT TERPANGGIL", flush=True)
+    try:
+        user_id = str(auth["user"].id)
+        profile_response = (
+            supabase_admin.table("users")
+            .select("id, role")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        profile = profile_response.data
+        if profile is None or profile["role"] != "student":
+            raise HTTPException(
+                status_code=403, detail="Hanya siswa yang dapat mengumpulkan jawaban"
             )
 
-        if is_correct:
-            correct_count += 1
-
-    supabase_admin.table("quiz_attempts").update(
-        {
+        attempt_response = (
+            supabase_admin.table("quiz_attempts")
+            .select("id, quiz_id, student_id, submitted_at")
+            .eq("id", attempt_id)
+            .eq("student_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        attempt = attempt_response.data
+        if attempt is None:
+            raise HTTPException(
+                status_code=409, detail="Percobaan kuis tidak ditemukan"
+            )
+        if attempt["submitted_at"] is not None:
+            raise HTTPException(
+                status_code=409, detail="Percobaan kuis sudah dikumpulkan"
+            )
+        quiz_response = (
+            supabase_admin.table("quizzes")
+            .select("id, deadline_at, deleted_at")
+            .eq("id", attempt["quiz_id"])
+            .maybe_single()
+            .execute()
+        )
+        quiz = quiz_response.data
+        if quiz is None or quiz["deleted_at"] is not None:
+            raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+        if quiz["deadline_at"] is None:
+            raise HTTPException(
+                status_code=500, detail="Jadwal kuis belum dikonfigurasi dnegan benar"
+            )
+        deadline = datetime.fromisoformat(quiz["deadline_at"].replace("Z", "+00:00"))
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        submitted_at = datetime.now(timezone.utc)
+        questions_response = (
+            supabase_admin.table("questions")
+            .select("id, type, correct_answer")
+            .eq("quiz_id", attempt["quiz_id"])
+            .execute()
+        )
+        questions = questions_response.data or []
+        if not questions:
+            raise HTTPException(status_code=400, detail="Kuis belum memiliki soal")
+        question_ids = [question["id"] for question in questions]
+        answer_response = (
+            supabase_admin.table("answers")
+            .select("id, question_id")
+            .eq("attempt_id", attempt_id)
+            .execute()
+        )
+        saved_answers = answer_response.data or []
+        answer_map = {answer["question_id"]: answer["id"] for answer in saved_answers}
+        if any(question_id not in question_ids for question_id in answer_map):
+            raise HTTPException(
+                status_code=500, detail="Terdapat jawaban yang tidak sesuai dengan kuis"
+            )
+        correct_count = 0
+        for question in questions:
+            question_id = question["id"]
+            question_type = question["type"]
+            answer_id = answer_map.get(question_id)
+            if answer_id is None:
+                continue
+            is_correct = False
+            if question_type == "multiple_choice":
+                selected_response = (
+                    supabase_admin.table("answer_options")
+                    .select("option_id")
+                    .eq("answer_id", answer_id)
+                    .execute()
+                )
+                selected_ids = {
+                    row["option_id"] for row in (selected_response.data or [])
+                }
+                options_response = (
+                    supabase_admin.table("question_options")
+                    .select("id, is_correct")
+                    .eq("question_id", question_id)
+                    .execute()
+                )
+                options = options_response.data or []
+                correct_ids = {
+                    option["id"] for option in options if option["is_correct"] is True
+                }
+                is_correct = len(correct_ids) == 1 and selected_ids == correct_ids
+            elif question_type == "true_false":
+                boolean_response = (
+                    supabase_admin.table("answer_boolean")
+                    .select("value")
+                    .eq("answer_id", answer_id)
+                    .maybe_single()
+                    .execute()
+                )
+                boolean_answer = boolean_response.data
+                is_correct = (
+                    boolean_answer is not None
+                    and boolean_answer["value"] == question["correct_answer"]
+                )
+            elif question_type == "text":
+                text_response = (
+                    supabase_admin.table("answer_text")
+                    .select("value")
+                    .eq("answer_id", answer_id)
+                    .maybe_single()
+                    .execute()
+                )
+                text_answer = text_response.data
+                accepted_response = (
+                    supabase_admin.table("question_answers")
+                    .select("answer")
+                    .eq("question_id", question_id)
+                    .execute()
+                )
+                accepted_answers = accepted_response.data or []
+                if text_answer is not None:
+                    normalize = lambda value: " ".join(value.strip().casefold().split())
+                    is_correct = any(
+                        normalize(text_answer["value"]) == normalize(item["answer"])
+                        for item in accepted_answers
+                    )
+            elif question_type == "ordering":
+                order_response = (
+                    supabase_admin.table("answer_order_items")
+                    .select("item_id, selected_order")
+                    .eq("answer_id", answer_id)
+                    .execute()
+                )
+                selected_items = order_response.data or []
+                items_response = (
+                    supabase_admin.table("question_items")
+                    .select("id, correct_order")
+                    .eq("question_id", question_id)
+                    .execute()
+                )
+                items = items_response.data or []
+                selected_order = [
+                    row["item_id"]
+                    for row in sorted(
+                        selected_items, key=lambda row: row["selected_order"]
+                    )
+                ]
+                expected_order = [
+                    item["id"]
+                    for item in sorted(items, key=lambda item: item["correct_order"])
+                ]
+                is_correct = (
+                    len(selected_order) == len(expected_order)
+                    and selected_order == expected_order
+                )
+            else:
+                raise HTTPException(
+                    status_code=400, detail=f"Tipe soal tidak dikenal: {question_type}"
+                )
+            if is_correct:
+                correct_count += 1
+        update_response = (
+            supabase_admin.table("quiz_attempts")
+            .update(
+                {
+                    "correct_count": correct_count,
+                    "total_questions": len(questions),
+                    "submitted_at": submitted_at.isoformat(),
+                }
+            )
+            .eq("id", attempt_id)
+            .eq("student_id", user_id)
+            .is_("submitted_at", "null")
+            .execute()
+        )
+        if not update_response.data:
+            raise HTTPException(
+                status_code=409, detail="Percobaan kuis sudah dikumpulkan"
+            )
+        return {
+            "message": "Jawaban berhasil dikumpulkan",
+            "attempt_id": attempt_id,
             "correct_count": correct_count,
             "total_questions": len(questions),
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "submitted_at": submitted_at.isoformat(),
+            "deadline_passed": submitted_at >= deadline,
         }
-    ).eq("id", attempt_id).eq("student_id", user_id).execute()
-
-    return {
-        "message": "Jawaban berhasil dikumpulkan",
-        "attempt_id": attempt_id,
-        "correct_count": correct_count,
-        "total_questions": len(questions),
-    }
+    except HTTPException:
+        raise
+    except Exception:
+        logging.exception("Error saat submit kuis")
+        raise
 
 
 @app.post("/validate-ai")
@@ -713,6 +1035,17 @@ async def upload_material_pdf(
     if len(file_bytes) > max_size:
         raise HTTPException(status_code=413, detail="Ukuran PDF maksimal 20 MB.")
 
+    try:
+        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+            extracted_text = "\n".join(page.get_text() for page in pdf)
+            total_pages = len(pdf)
+            total_images = sum(len(page.get_images(full=True)) for page in pdf)
+    except Exception as e:
+        print("ERROR EKSTRAKSI PDF:", repr(e))
+        raise HTTPException(
+            status_code=400, detail="PDF tidak dapat diproses: {str(e)}"
+        )
+
     teacher_id = str(user.id)
     file_path = f"{teacher_id}/{uuid4()}.pdf"
     try:
@@ -724,8 +1057,7 @@ async def upload_material_pdf(
     except Exception as e:
         print("ERROR SUPABASE STORAGE:", repr(e))
         raise HTTPException(
-            status_code=500, 
-            detail="Gagal mengunggah PDF ke penyimpanan."
+            status_code=500, detail="Gagal mengunggah PDF ke penyimpanan."
         )
 
     try:
@@ -741,7 +1073,15 @@ async def upload_material_pdf(
             )
             .execute()
         )
-        return {"message": "PDF berhasil diunggah.", "material": result.data[0]}
+        return {
+            "message": "PDF berhasil diunggah dan diekstraksi.",
+            "material": result.data[0],
+            "extraction": {
+                "total_pages": total_pages,
+                "total_images": total_images,
+                "extracted_text": extracted_text,
+            },
+        }
     except Exception:
         try:
             supabase_admin.storage.from_("materials-pdf").remove([file_path])
