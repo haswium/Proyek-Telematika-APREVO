@@ -41,6 +41,7 @@ async def debug_request(request, call_next):
         traceback.print_exc()
         raise
 
+
 class SubmittedAnswer(BaseModel):
     question_id: str
     selected_option_ids: Optional[list[str]] = None
@@ -1000,6 +1001,167 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
     except Exception:
         logging.exception("Error saat submit kuis")
         raise
+
+
+@app.get("/student/attempts/{attempt_id}/result")
+def get_quiz_result(attempt_id: str, auth=Depends(get_current_user)):
+    user_id = str(auth["user"].id)
+    profile_response = (
+        supabase_admin.table("users")
+        .select("id, role")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    profile = profile_response.data
+    if profile is None or profile["role"] != "student":
+        raise HTTPException(
+            status_code=403, detail="Hanya murid yang boleh melihat hasil kuis."
+        )
+    attempt_response = (
+        supabase_admin.table("quiz_attempts")
+        .select("id, quiz_id, student_id, submitted_at, correct_count, total_questions")
+        .eq("id", attempt_id)
+        .eq("student_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    attempt = attempt_response.data
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan.")
+    if attempt["submitted_at"] is None:
+        raise HTTPException(status_code=409, detail="Percobaan kuis belum dikumpulkan.")
+    quiz_response = (
+        supabase_admin.table("quizzes")
+        .select("id, title")
+        .eq("id", attempt["quiz_id"])
+        .maybe_single()
+        .execute()
+    )
+    quiz = quiz_response.data
+    if quiz is None:
+        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan.")
+    question_response = (
+        supabase_admin.table("questions")
+        .select("id, type, question")
+        .eq("quiz_id", attempt["quiz_id"])
+        .execute()
+    )
+    questions = question_response.data or []
+    answers_response = (
+        supabase_admin.table("answers")
+        .select("id, question_id")
+        .eq("attempt_id", attempt_id)
+        .execute()
+    )
+    answers = answers_response.data or []
+    answer_map = {str(answer["question_id"]): answer for answer in answers}
+    review = []
+    for question in questions:
+        question_id = str(question["id"])
+        answer = answer_map.get(question_id)
+        answer_id = answer["id"] if answer else None
+        item = {
+            "question_id": question_id,
+            "type": question["type"],
+            "question": question["question"],
+            "answer": None,
+        }
+        if question["type"] == "multiple_choice":
+            options_response = (
+                supabase_admin.table("question_options")
+                .select("id, text")
+                .eq("question_id", question_id)
+                .execute()
+            )
+            options = options_response.data or []
+            selected_ids = set()
+            if answer_id:
+                selected_response = (
+                    supabase_admin.table("answer_options")
+                    .select("option_id")
+                    .eq("answer_id", answer_id)
+                    .execute()
+                )
+                selected_ids = {
+                    str(row["option_id"]) for row in (selected_response.data or [])
+                }
+            item["options"] = [
+                {
+                    "option_id": str(option["id"]),
+                    "text": option["text"],
+                    "selected": str(option["id"]) in selected_ids,
+                }
+                for option in options
+            ]
+        elif question["type"] == "true_false":
+            if answer_id:
+                response = (
+                    supabase_admin.table("answer_boolean")
+                    .select("value")
+                    .eq("answer_id", answer_id)
+                    .maybe_single()
+                    .execute()
+                )
+                saved = response.data
+                if saved is not None:
+                    item["answer"] = saved["value"]
+        elif question["type"] == "text":
+            if answer_id:
+                response = (
+                    supabase_admin.table("answer_text")
+                    .select("value")
+                    .eq("answer_id", answer_id)
+                    .maybe_single()
+                    .execute()
+                )
+                saved = response.data
+                if saved is not None:
+                    item["answer"] = saved["value"]
+        elif question["type"] == "ordering":
+            items_response = (
+                supabase_admin.table("question_items")
+                .select("id, text")
+                .eq("question_id", question_id)
+                .execute()
+            )
+            question_items = items_response.data or []
+            selected_order_map = {}
+            if answer_id:
+                order_response = (
+                    supabase_admin.table("answer_order_items")
+                    .select("item_id, selected_order")
+                    .eq("answer_id", answer_id)
+                    .execute()
+                )
+                selected_order_map = {
+                    str(row["item_id"]): row["selected_order"]
+                    for row in (order_response.data or [])
+                }
+            item["items"] = [
+                {
+                    "item_id": str(question_item["id"]),
+                    "text": question_item["text"],
+                    "selected_order": selected_order_map.get(str(question_item["id"])),
+                }
+                for question_item in sorted(
+                    question_items,
+                    key=lambda question_item: (
+                        selected_order_map.get(str(question_item["id"])) is None,
+                        selected_order_map.get(str(question_item["id"]), 0),
+                    ),
+                )
+            ]
+        review.append(item)
+    return {
+        "attempt_id": attempt["id"],
+        "quiz_id": attempt["quiz_id"],
+        "quiz_title": quiz["title"],
+        "score": attempt["correct_count"],
+        "total_questions": attempt["total_questions"],
+        "submitted_at": attempt["submitted_at"],
+        "review": review,
+    }
 
 
 @app.post("/validate-ai")
