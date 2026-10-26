@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
+import '../../services/api_client.dart';
 import '../../services/speech.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import '../../widgets/mascot.dart';
 import 'subject_screen.dart';
@@ -23,6 +25,7 @@ class StudentHomeScreen extends StatefulWidget {
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   final _code = TextEditingController();
+  bool _joining = false;
   String? _error;
   int _errorSerial = 0;
 
@@ -58,7 +61,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  void _join() {
+  Future<void> _join() async {
+    if (_joining) return;
     final code = cleanAccessCode(_code.text);
     if (code.isEmpty) {
       _showError('Kode belum diisi.');
@@ -71,7 +75,22 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       );
       return;
     }
-    final result = store.joinSubject(code, widget.studentName);
+    setState(() {
+      _joining = true;
+      _error = null;
+    });
+    Speech.announce('Sedang bergabung dengan kode ${spellCode(code)}.');
+    final JoinResult result;
+    try {
+      result = await store.joinSubject(code);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _joining = false);
+      _showError(e.message);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _joining = false);
     final subject = result.subject;
     if (subject == null) {
       _showError(
@@ -82,7 +101,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     }
     FocusScope.of(context).unfocus();
     _code.clear();
-    setState(() => _error = null);
     _say(
       result.status == JoinStatus.alreadyJoined
           ? 'Kamu sudah ikut ${subject.name}.'
@@ -92,15 +110,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   }
 
   String _summary(Subject s) {
-    final materials = store.publishedMaterials(s);
-    final finished = materials
-        .where(
-          (m) =>
-              store.latestAttempt(m, widget.studentName, TestKind.post) !=
-              null,
-        )
-        .length;
-    return '${materials.length} materi, $finished selesai';
+    final teacher = s.teacherName;
+    final count = '${s.materialCount} materi';
+    return teacher == null || teacher.isEmpty ? count : '$count, guru $teacher';
   }
 
   @override
@@ -108,67 +120,73 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     return PurpleScaffold(
       appBar: aprevoAppBar('Mata Pelajaran'),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final subjects = store.subjectsOf(widget.studentName);
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                MascotBubble(
-                  text: 'Halo, ${widget.studentName}! Aku Odi. Masukkan '
-                      'kode $kAccessCodeLength huruf dari gurumu untuk '
-                      'bergabung ke mata pelajaran.',
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _code,
-                  textInputAction: TextInputAction.done,
-                  textCapitalization: TextCapitalization.characters,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  inputFormatters: [AccessCodeFormatter()],
-                  style: AppType.bodyLarge,
-                  decoration: fieldDecoration(
-                    'Kode mata pelajaran',
-                    hint: 'Contoh: KXPRTA',
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            MascotBubble(
+              text:
+                  'Halo, ${widget.studentName}! Aku Odi. Masukkan '
+                  'kode $kAccessCodeLength huruf dari gurumu untuk '
+                  'bergabung ke mata pelajaran.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _code,
+              enabled: !_joining,
+              textInputAction: TextInputAction.done,
+              textCapitalization: TextCapitalization.characters,
+              autocorrect: false,
+              enableSuggestions: false,
+              inputFormatters: [AccessCodeFormatter()],
+              style: AppType.bodyLarge,
+              decoration: fieldDecoration(
+                'Kode mata pelajaran',
+                hint: 'Contoh: KXPRTA',
+              ),
+              onSubmitted: (_) => _join(),
+            ),
+            _TypedCode(controller: _code),
+            const SizedBox(height: 12),
+            if (_error != null) ...[
+              ErrorCard(key: ErrorCard.keyFor(_errorSerial), message: _error!),
+              const SizedBox(height: 12),
+            ],
+            PrimaryButton(
+              label: _joining ? 'Sedang bergabung...' : 'Gabung',
+              icon: Icons.key,
+              onPressed: _joining ? null : _join,
+            ),
+            const SizedBox(height: 16),
+            LoadView<List<Subject>>(
+              scrollable: false,
+              padding: EdgeInsets.zero,
+              loadingMessage: 'Memuat mata pelajaranmu.',
+              load: store.studentSubjects,
+              builder: (context, subjects, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SectionTitle(
+                    'Mata pelajaran yang kamu ikuti (${subjects.length})',
                   ),
-                  onSubmitted: (_) => _join(),
-                ),
-                _TypedCode(controller: _code),
-                const SizedBox(height: 12),
-                if (_error != null) ...[
-                  ErrorCard(
-                    key: ErrorCard.keyFor(_errorSerial),
-                    message: _error!,
-                  ),
-                  const SizedBox(height: 12),
+                  if (subjects.isEmpty)
+                    const EmptyState(
+                      message:
+                          'Belum ada mata pelajaran. Masukkan kode dari '
+                          'gurumu di atas.',
+                    ),
+                  for (final s in subjects)
+                    ListRow(
+                      icon: Icons.folder_outlined,
+                      title: s.name,
+                      subtitle: _summary(s),
+                      semanticLabel:
+                          'Mata pelajaran ${s.name}. ${_summary(s)}.',
+                      onTap: () => _open(s),
+                    ),
                 ],
-                PrimaryButton(
-                  label: 'Gabung',
-                  icon: Icons.key,
-                  onPressed: _join,
-                ),
-                const SizedBox(height: 16),
-                SectionTitle(
-                  'Mata pelajaran yang kamu ikuti (${subjects.length})',
-                ),
-                if (subjects.isEmpty)
-                  const EmptyState(
-                    message: 'Belum ada mata pelajaran. Masukkan kode dari '
-                        'gurumu di atas.',
-                  ),
-                for (final s in subjects)
-                  ListRow(
-                    icon: Icons.folder_outlined,
-                    title: s.name,
-                    subtitle: _summary(s),
-                    semanticLabel: 'Mata pelajaran ${s.name}. ${_summary(s)}.',
-                    onTap: () => _open(s),
-                  ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,55 +1,113 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
+import '../../services/api_client.dart';
 import '../../services/speech.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
 import 'result_screen.dart';
 
-/// Layar pengerjaan pre-test atau post-test satu materi. Jenis soalnya
-/// mengikuti jenis yang dipilih guru untuk materi itu.
+/// Layar pengerjaan pre-test atau post-test satu materi.
+///
+/// Soal diambil dari backend lalu percobaan dimulai (atau dilanjutkan kalau
+/// ada yang belum dikumpulkan). Tiap jawaban dikirim ke server dan hanya
+/// dijawab benar atau salah; jawaban benar dan pembahasan baru terbuka
+/// setelah tenggat kuis lewat.
 ///
 /// Urutan fokus TalkBack (lihat angka OrdinalSortKey):
-/// 1 info soal, 2 tombol dengarkan, 3 deskripsi gambar, 4 pertanyaan,
-/// 5 jawaban, 6 umpan balik, 7 tombol kirim/lanjut.
-class PlayGameScreen extends StatefulWidget {
+/// 1 info soal, 2 tombol dengarkan, 4 pertanyaan, 5 jawaban, 6 umpan balik
+/// atau error, 7 tombol periksa/lanjut.
+class PlayGameScreen extends StatelessWidget {
   const PlayGameScreen({
     super.key,
-    required this.material,
-    required this.kind,
+    required this.quiz,
+    required this.materialTitle,
     required this.studentName,
+    this.preTest,
   });
 
-  final LessonMaterial material;
-  final TestKind kind;
+  final QuizInfo quiz;
+  final String materialTitle;
   final String studentName;
 
+  /// Hasil pre-test siswa, untuk dibandingkan saat post-test selesai.
+  final Attempt? preTest;
+
   @override
-  State<PlayGameScreen> createState() => _PlayGameScreenState();
+  Widget build(BuildContext context) {
+    return PurpleScaffold(
+      appBar: aprevoAppBar('${quiz.kind.label}: $materialTitle'),
+      body: SafeArea(
+        child: LoadView<QuizSession>(
+          listenToStore: false,
+          loadingMessage: 'Menyiapkan soal ${quiz.kind.label}.',
+          load: () => store.startQuiz(quiz.id),
+          builder: (context, session, _) => session.questions.isEmpty
+              ? const EmptyState(message: 'Kuis ini belum punya soal.')
+              : _QuizRunner(
+                  session: session,
+                  quiz: quiz,
+                  materialTitle: materialTitle,
+                  studentName: studentName,
+                  preTest: preTest,
+                ),
+        ),
+      ),
+    );
+  }
 }
 
-class _PlayGameScreenState extends State<PlayGameScreen> {
+class _QuizRunner extends StatefulWidget {
+  const _QuizRunner({
+    required this.session,
+    required this.quiz,
+    required this.materialTitle,
+    required this.studentName,
+    required this.preTest,
+  });
+
+  final QuizSession session;
+  final QuizInfo quiz;
+  final String materialTitle;
+  final String studentName;
+  final Attempt? preTest;
+
+  @override
+  State<_QuizRunner> createState() => _QuizRunnerState();
+}
+
+class _QuizRunnerState extends State<_QuizRunner> {
+  static const List<Choice> _trueFalse = [
+    Choice('true', 'Benar'),
+    Choice('false', 'Salah'),
+  ];
+
   final _answer = TextEditingController();
-  late final List<Question> _questions = List<Question>.of(
-    widget.material.questionsFor(widget.kind),
-  );
-  late final GameType _type = widget.material.questionType;
 
   int _index = 0;
-  int _score = 0;
   bool _answered = false;
   bool _correct = false;
   int? _picked;
-  List<String> _order = [];
+  List<Choice> _order = [];
 
-  Question get _q => _questions[_index];
+  /// Sedang mengirim jawaban atau mengumpulkan kuis.
+  bool _busy = false;
+  String? _error;
+  int _errorSerial = 0;
+
+  List<StudentQuestion> get _questions => widget.session.questions;
+  StudentQuestion get _q => _questions[_index];
+  GameType get _type => _q.type;
   int get _total => _questions.length;
   bool get _isLast => _index == _total - 1;
+
+  List<Choice> get _choices =>
+      _type == GameType.trueFalse ? _trueFalse : _q.choices;
 
   @override
   void initState() {
@@ -57,7 +115,13 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
     _prepare();
     // Tunggu layar tampil dulu supaya pengumuman tidak tertimpa pembacaan
     // judul halaman oleh TalkBack.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _announceQuestion());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final resumed = widget.session.resumed
+          ? 'Melanjutkan ${widget.quiz.kind.label} yang belum dikumpulkan. '
+          : '';
+      Speech.announce('$resumed${_questionIntro()}');
+    });
   }
 
   @override
@@ -71,33 +135,23 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
     _answered = false;
     _correct = false;
     _picked = null;
+    _error = null;
     _answer.clear();
-    if (_type == GameType.ordering) {
-      _order = List<String>.of(_q.options);
-      // Acak sampai urutannya berbeda dari jawaban benar.
-      var tries = 0;
-      while (_order.length > 1 && listEquals(_order, _q.options) && tries < 10) {
-        _order.shuffle();
-        tries++;
-      }
-    }
+    // Urutan item sudah diacak server.
+    _order = _type == GameType.ordering ? List<Choice>.of(_q.choices) : [];
   }
 
-  void _announceQuestion() {
-    Speech.announce('Soal ${_index + 1} dari $_total. ${_type.instruction}');
-  }
+  String _questionIntro() =>
+      'Soal ${_index + 1} dari $_total. ${_type.instruction}';
 
   /// Teks lengkap soal untuk tombol "Dengarkan soal".
   String _spokenQuestion() {
     final b = StringBuffer('Soal ${_index + 1} dari $_total. ');
-    if (_q.imageDescription != null) {
-      b.write('Deskripsi gambar: ${_q.imageDescription}. ');
-    }
     b.write('${_q.prompt} ');
     switch (_type) {
       case GameType.quiz:
-        for (var i = 0; i < _q.options.length; i++) {
-          b.write('Pilihan ${_letter(i)}: ${_q.options[i]}. ');
+        for (var i = 0; i < _choices.length; i++) {
+          b.write('Pilihan ${_letter(i)}: ${_choices[i].text}. ');
         }
       case GameType.trueFalse:
         b.write('Pilih benar atau salah.');
@@ -105,7 +159,7 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
         b.write('Ketik jawabanmu.');
       case GameType.ordering:
         for (var i = 0; i < _order.length; i++) {
-          b.write('Urutan ${i + 1}: ${_order[i]}. ');
+          b.write('Urutan ${i + 1}: ${_order[i].text}. ');
         }
     }
     return b.toString();
@@ -114,6 +168,7 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
   String _letter(int i) => String.fromCharCode(65 + i);
 
   bool get _canSubmit {
+    if (_busy) return false;
     switch (_type) {
       case GameType.quiz:
       case GameType.trueFalse:
@@ -125,142 +180,90 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
     }
   }
 
-  void _submit() {
-    if (!_canSubmit || _answered) return;
-    var correct = false;
+  StudentAnswer _studentAnswer() {
     switch (_type) {
       case GameType.quiz:
+        return StudentAnswer.option(_choices[_picked!].id);
       case GameType.trueFalse:
-        correct = _picked == _q.correctIndex;
+        return StudentAnswer.boolean(_picked == 0);
       case GameType.shortAnswer:
-        correct = _answer.text.trim().toLowerCase() ==
-            _q.answerText.trim().toLowerCase();
+        return StudentAnswer.text(_answer.text.trim());
       case GameType.ordering:
-        correct = listEquals(_order, _q.options);
+        return StudentAnswer.order([for (final c in _order) c.id]);
     }
+  }
+
+  void _showError(String message) {
+    setState(() {
+      _busy = false;
+      _error = message;
+      _errorSerial++;
+    });
+    Speech.feedback(context, message);
+  }
+
+  Future<void> _submit() async {
+    if (!_canSubmit || _answered) return;
     FocusScope.of(context).unfocus();
     setState(() {
-      _answered = true;
-      _correct = correct;
-      if (correct) _score++;
+      _busy = true;
+      _error = null;
     });
-    // TalkBack membacakan kartu umpan balik lewat liveRegion. Kalau TalkBack
-    // mati, Odi yang membacakannya.
-    if (!MediaQuery.of(context).accessibleNavigation) {
-      Speech.speak(_feedbackSpoken());
+    Speech.announce('Memeriksa jawaban.');
+    try {
+      final correct = await store.saveAnswer(
+        widget.session.attemptId,
+        _q.id,
+        _studentAnswer(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _answered = true;
+        _correct = correct;
+      });
+      // TalkBack membacakan kartu umpan balik lewat liveRegion. Kalau
+      // TalkBack mati, Odi yang membacakannya.
+      Speech.feedback(context, _feedbackSpoken());
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _showError('Jawaban belum terkirim. ${e.message}');
     }
   }
 
   // ---- Umpan balik -------------------------------------------------------
 
-  String get _headline => _correct ? 'Benar! Hebat!' : 'Belum tepat, tidak apa-apa.';
+  String get _headline =>
+      _correct ? 'Benar! Hebat!' : 'Belum tepat, tidak apa-apa.';
 
   /// Jawaban yang diberikan siswa, dalam kalimat.
   String _yourAnswer() {
     switch (_type) {
       case GameType.quiz:
-        return 'Pilihan ${_letter(_picked!)}, ${_q.options[_picked!]}';
+        return 'Pilihan ${_letter(_picked!)}, ${_choices[_picked!].text}';
       case GameType.trueFalse:
-        return _q.options[_picked!];
+        return _choices[_picked!].text;
       case GameType.shortAnswer:
         return _answer.text.trim();
       case GameType.ordering:
-        return _order.join(', lalu ');
+        return _order.map((c) => c.text).join(', lalu ');
     }
   }
 
-  String _rightAnswer() {
-    if (_type == GameType.quiz) {
-      return 'Pilihan ${_letter(_q.correctIndex)}, '
-          '${_q.options[_q.correctIndex]}';
-    }
-    return _q.correctText(_type);
-  }
-
-  /// Untuk puzzle urutan: tunjukkan posisi pertama yang keliru.
-  String? _orderingHint() {
-    if (_type != GameType.ordering) return null;
-    for (var i = 0; i < _order.length; i++) {
-      if (_order[i] != _q.options[i]) {
-        return 'Urutan ${i + 1} seharusnya "${_q.options[i]}", '
-            'tetapi kamu menaruh "${_order[i]}".';
-      }
-    }
-    return null;
-  }
-
-  /// Penjelasan dari guru. Kalau guru belum menulisnya, arahkan siswa ke
-  /// materi supaya umpan balik tidak berhenti di "salah".
-  String _why() {
-    final explanation = _q.explanation;
-    if (explanation != null && explanation.isNotEmpty) return explanation;
-    return 'Dengarkan lagi materi ${widget.material.title} untuk memahami '
-        'bagian ini.';
-  }
-
-  /// Baris-baris kartu umpan balik: judul kecil dan isinya.
-  List<(String, String)> _feedbackRows() {
-    if (_correct) {
-      final explanation = _q.explanation;
-      return [
-        ('Jawabanmu', _yourAnswer()),
-        if (explanation != null && explanation.isNotEmpty)
-          ('Penjelasan', explanation),
-      ];
-    }
-    final hint = _orderingHint();
-    return [
-      ('Jawabanmu', _yourAnswer()),
-      ('Jawaban yang benar', _rightAnswer()),
-      if (hint != null) ('Yang perlu diperbaiki', hint),
-      ('Penjelasan', _why()),
-    ];
-  }
-
+  /// Saat mengerjakan, siswa hanya diberi tahu benar atau salah. Jawaban
+  /// benar dan pembahasan baru terbuka setelah tenggat.
   String _feedbackSpoken() {
-    final b = StringBuffer('$_headline ');
-    for (final row in _feedbackRows()) {
-      b.write('${row.$1}: ${row.$2}. ');
-    }
+    final b = StringBuffer('$_headline Jawabanmu: ${_yourAnswer()}. ');
     if (!_correct) b.write('Tetap semangat, kamu pasti bisa!');
     return b.toString();
   }
 
   // ---- Navigasi ----------------------------------------------------------
 
-  void _next() {
+  Future<void> _next() async {
+    if (_busy) return;
     if (_isLast) {
-      final pre = widget.kind == TestKind.post
-          ? store.latestAttempt(
-              widget.material,
-              widget.studentName,
-              TestKind.pre,
-            )
-          : null;
-      store.addAttempt(
-        widget.material,
-        Attempt(
-          studentName: widget.studentName,
-          materialId: widget.material.id,
-          materialTitle: widget.material.title,
-          kind: widget.kind,
-          score: _score,
-          total: _total,
-        ),
-      );
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResultScreen(
-            materialTitle: widget.material.title,
-            kind: widget.kind,
-            score: _score,
-            total: _total,
-            studentName: widget.studentName,
-            preTest: pre,
-          ),
-        ),
-      );
+      await _finish();
       return;
     }
     Speech.stop();
@@ -268,7 +271,38 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
       _index++;
       _prepare();
     });
-    _announceQuestion();
+    Speech.announce(_questionIntro());
+  }
+
+  Future<void> _finish() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    Speech.announce('Mengumpulkan jawaban.');
+    try {
+      final result = await store.submitAttempt(widget.session.attemptId);
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResultScreen(
+            attemptId: result.attemptId,
+            materialTitle: widget.materialTitle,
+            kind: widget.quiz.kind,
+            score: result.score,
+            total: result.total,
+            studentName: widget.studentName,
+            deadlineAt: widget.quiz.deadlineAt,
+            discussionAvailable: result.deadlinePassed,
+            preTest: widget.preTest,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _showError('Jawaban belum terkumpul. ${e.message}');
+    }
   }
 
   void _move(int from, int delta) {
@@ -278,7 +312,7 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
       final item = _order.removeAt(from);
       _order.insert(to, item);
     });
-    Speech.announce('${_order[to]} pindah ke urutan ${to + 1}.');
+    Speech.announce('${_order[to].text} pindah ke urutan ${to + 1}.');
   }
 
   // `container: true` supaya tiap bagian menjadi node sendiri; sortKey
@@ -291,113 +325,107 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
     );
   }
 
+  String get _actionLabel {
+    if (!_answered) return _busy ? 'Memeriksa...' : 'Periksa Jawaban';
+    if (!_isLast) return 'Soal berikutnya';
+    return _busy ? 'Mengumpulkan...' : 'Kumpulkan dan lihat hasil';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return PurpleScaffold(
-      appBar: aprevoAppBar('${widget.kind.label}: ${widget.material.title}'),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _ordered(
-              1,
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      'Soal ${_index + 1} dari $_total',
-                      style: AppType.titleLarge,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Batang progres hanya visual; infonya sudah ada di judul.
-                  ExcludeSemantics(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween(end: (_index + 1) / _total),
-                        duration: reduceMotion(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 450),
-                        curve: Curves.easeOutCubic,
-                        builder: (context, value, _) => LinearProgressIndicator(
-                          value: value,
-                          minHeight: 12,
-                          backgroundColor: AppColors.soft,
-                          color: AppColors.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(_type.instruction, style: AppType.bodySmall),
-                ],
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        _ordered(
+          1,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  'Soal ${_index + 1} dari $_total',
+                  style: AppType.titleLarge,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _ordered(
-              2,
-              OutlinedButton.icon(
-                icon: const Icon(Icons.volume_up),
-                label: const Text('Dengarkan soal'),
-                onPressed: () => Speech.speak(_spokenQuestion()),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_q.imageDescription != null) ...[
-              _ordered(
-                3,
-                AppCard(
-                  color: AppColors.lilac,
-                  child: Text(
-                    'Deskripsi gambar: ${_q.imageDescription}',
-                    style: AppType.bodyMedium,
+              const SizedBox(height: 8),
+              // Batang progres hanya visual; infonya sudah ada di judul.
+              ExcludeSemantics(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: (_index + 1) / _total),
+                    duration: reduceMotion(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 450),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, value, _) => LinearProgressIndicator(
+                      value: value,
+                      minHeight: 12,
+                      backgroundColor: AppColors.soft,
+                      color: AppColors.accent,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              Text(_type.instruction, style: AppType.bodySmall),
             ],
-            _ordered(
-              4,
-              // Key per soal supaya animasi masuk terulang tiap ganti soal.
-              FadeSlideIn(
-                key: ValueKey('prompt-$_index'),
-                child: Text(_q.prompt, style: AppType.headlineMedium),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _ordered(5, _buildAnswerArea(text)),
-            const SizedBox(height: 8),
-            if (_answered) ...[
-              _ordered(6, _buildFeedback(text)),
-              const SizedBox(height: 16),
-            ],
-            _ordered(
-              7,
-              _answered
-                  ? PrimaryButton(
-                      label: _isLast ? 'Lihat hasil' : 'Soal berikutnya',
-                      icon: Icons.arrow_forward,
-                      onPressed: _next,
-                    )
-                  : PrimaryButton(
-                      label: 'Periksa Jawaban',
-                      icon: Icons.check,
-                      onPressed: _canSubmit ? _submit : null,
-                    ),
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 16),
+        _ordered(
+          2,
+          OutlinedButton.icon(
+            icon: const Icon(Icons.volume_up),
+            label: const Text('Dengarkan soal'),
+            onPressed: () => Speech.speak(_spokenQuestion()),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _ordered(
+          4,
+          // Key per soal supaya animasi masuk terulang tiap ganti soal.
+          FadeSlideIn(
+            key: ValueKey('prompt-$_index'),
+            child: Text(_q.prompt, style: AppType.headlineMedium),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _ordered(5, _buildAnswerArea()),
+        const SizedBox(height: 8),
+        if (_answered) ...[
+          _ordered(6, _buildFeedback()),
+          const SizedBox(height: 16),
+        ],
+        if (_error != null) ...[
+          _ordered(
+            6,
+            ErrorCard(key: ErrorCard.keyFor(_errorSerial), message: _error!),
+          ),
+          const SizedBox(height: 16),
+        ],
+        _ordered(
+          7,
+          _answered
+              ? PrimaryButton(
+                  label: _actionLabel,
+                  icon: Icons.arrow_forward,
+                  onPressed: _busy ? null : _next,
+                )
+              : PrimaryButton(
+                  label: _actionLabel,
+                  icon: Icons.check,
+                  onPressed: _canSubmit ? _submit : null,
+                ),
+        ),
+      ],
     );
   }
 
-  /// Kartu umpan balik: Odi, judul benar/salah, lalu rincian jawaban dan
-  /// penjelasan. Dibaca TalkBack sebagai satu pesan utuh begitu muncul.
-  Widget _buildFeedback(TextTheme text) {
+  /// Kartu umpan balik: Odi, judul benar/salah, dan jawaban siswa. Dibaca
+  /// TalkBack sebagai satu pesan utuh begitu muncul.
+  Widget _buildFeedback() {
     final color = _correct ? AppColors.success : AppColors.danger;
     return Semantics(
       liveRegion: true,
@@ -434,19 +462,19 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
                   ),
                 ],
               ),
-              for (final row in _feedbackRows()) ...[
-                const SizedBox(height: 12),
-                Text(
-                  row.$1,
-                  style: AppType.bodySmall.copyWith(fontWeight: FontWeight.w700),
-                ),
-                Text(row.$2, style: AppType.bodyLarge),
-              ],
+              const SizedBox(height: 12),
+              Text(
+                'Jawabanmu',
+                style: AppType.bodySmall.copyWith(fontWeight: FontWeight.w700),
+              ),
+              Text(_yourAnswer(), style: AppType.bodyLarge),
               if (!_correct) ...[
                 const SizedBox(height: 12),
                 Text(
                   'Tetap semangat, kamu pasti bisa!',
-                  style: AppType.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+                  style: AppType.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ],
@@ -456,19 +484,20 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
     );
   }
 
-  Widget _buildAnswerArea(TextTheme text) {
+  Widget _buildAnswerArea() {
+    final locked = _answered || _busy;
     switch (_type) {
       case GameType.quiz:
         return Column(
           children: [
-            for (var i = 0; i < _q.options.length; i++)
+            for (var i = 0; i < _choices.length; i++)
               Bouncy(
                 child: _OptionTile(
                   badge: _letter(i),
-                  label: _q.options[i],
-                  semanticLabel: 'Pilihan ${_letter(i)}, ${_q.options[i]}',
+                  label: _choices[i].text,
+                  semanticLabel: 'Pilihan ${_letter(i)}, ${_choices[i].text}',
                   selected: _picked == i,
-                  onTap: _answered ? null : () => setState(() => _picked = i),
+                  onTap: locked ? null : () => setState(() => _picked = i),
                 ),
               ),
           ],
@@ -476,14 +505,14 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
       case GameType.trueFalse:
         return Column(
           children: [
-            for (var i = 0; i < _q.options.length; i++)
+            for (var i = 0; i < _choices.length; i++)
               Bouncy(
                 child: _OptionTile(
                   badge: i == 0 ? 'B' : 'S',
-                  label: _q.options[i],
-                  semanticLabel: _q.options[i],
+                  label: _choices[i].text,
+                  semanticLabel: _choices[i].text,
                   selected: _picked == i,
-                  onTap: _answered ? null : () => setState(() => _picked = i),
+                  onTap: locked ? null : () => setState(() => _picked = i),
                 ),
               ),
           ],
@@ -493,7 +522,7 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
           padding: const EdgeInsets.only(bottom: 12),
           child: TextField(
             controller: _answer,
-            enabled: !_answered,
+            enabled: !locked,
             style: AppType.bodyLarge,
             textInputAction: TextInputAction.done,
             decoration: fieldDecoration('Jawabanmu'),
@@ -508,9 +537,9 @@ class _PlayGameScreenState extends State<PlayGameScreen> {
               _OrderRow(
                 position: i + 1,
                 total: _order.length,
-                label: _order[i],
-                onUp: _answered || i == 0 ? null : () => _move(i, -1),
-                onDown: _answered || i == _order.length - 1
+                label: _order[i].text,
+                onUp: locked || i == 0 ? null : () => _move(i, -1),
+                onDown: locked || i == _order.length - 1
                     ? null
                     : () => _move(i, 1),
               ),
@@ -623,13 +652,13 @@ class _OrderRow extends StatelessWidget {
   final VoidCallback? onDown;
 
   ButtonStyle get _moveStyle => FilledButton.styleFrom(
-        backgroundColor: AppColors.lilac,
-        foregroundColor: AppColors.primary,
-        disabledBackgroundColor: AppColors.soft,
-        disabledForegroundColor: AppColors.muted,
-        minimumSize: const Size(0, kTouchTarget),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-      );
+    backgroundColor: AppColors.lilac,
+    foregroundColor: AppColors.primary,
+    disabledBackgroundColor: AppColors.soft,
+    disabledForegroundColor: AppColors.muted,
+    minimumSize: const Size(0, kTouchTarget),
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -673,10 +702,7 @@ class _OrderRow extends StatelessWidget {
                                 'Posisi $position dari $total',
                                 style: AppType.bodySmall,
                               ),
-                              Text(
-                                label,
-                                style: AppType.titleMedium,
-                              ),
+                              Text(label, style: AppType.titleMedium),
                             ],
                           ),
                         ),

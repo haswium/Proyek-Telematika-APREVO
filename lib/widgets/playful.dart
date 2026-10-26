@@ -185,9 +185,8 @@ class OceanBackground extends StatelessWidget {
             child: IgnorePointer(
               child: Loop(
                 duration: const Duration(seconds: 14),
-                builder: (context, t) => CustomPaint(
-                  painter: _BubblePainter(t),
-                ),
+                builder: (context, t) =>
+                    CustomPaint(painter: _BubblePainter(t)),
               ),
             ),
           ),
@@ -321,7 +320,8 @@ class SoundWaveLogo extends StatelessWidget {
               for (var i = 0; i < _levels.length; i++)
                 Container(
                   width: barWidth,
-                  height: height *
+                  height:
+                      height *
                       _levels[i] *
                       (0.8 + 0.2 * math.sin(t * 2 * math.pi + i * 1.1)),
                   margin: EdgeInsets.symmetric(horizontal: barWidth * 0.3),

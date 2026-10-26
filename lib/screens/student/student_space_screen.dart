@@ -3,263 +3,299 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/speech.dart';
+import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
 import 'play_game_screen.dart';
-
-/// Materi dari backend belum punya isi teks. Kartu kosong membuat TalkBack
-/// berhenti di elemen tanpa suara, jadi tampilkan kalimat ini.
-const String _emptyBody = 'Isi materi belum tersedia.';
-
-String _spokenBody(LessonMaterial m) =>
-    '${m.title}. ${m.body.isEmpty ? _emptyBody : m.body}';
-
-String _starsText(Attempt? attempt) => attempt == null
-    ? 'Belum dikerjakan'
-    : 'Selesai, ${attempt.stars} dari 3 bintang';
+import 'review_screen.dart';
+import 'section_reader_screen.dart';
 
 /// Layar belajar satu materi, mengikuti desain "Live Audio Lesson":
-/// kartu kepala, pemutar audio materi, lalu pre-test dan post-test.
-class MaterialJourneyScreen extends StatefulWidget {
+/// kartu kepala, materi per sub-bab, lalu pre-test dan post-test dengan
+/// jadwalnya.
+class MaterialJourneyScreen extends StatelessWidget {
   const MaterialJourneyScreen({
     super.key,
+    required this.subject,
     required this.material,
     required this.studentName,
   });
 
+  final Subject subject;
+
+  /// Data dari daftar materi, supaya layar langsung tampil. Status kuis
+  /// terbaru tetap dimuat ulang.
   final LessonMaterial material;
   final String studentName;
-
-  @override
-  State<MaterialJourneyScreen> createState() => _MaterialJourneyScreenState();
-}
-
-class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
-  LessonMaterial get _m => widget.material;
-
-  @override
-  void dispose() {
-    Speech.stop();
-    super.dispose();
-  }
-
-  void _play(TestKind kind) {
-    if (_m.questionsFor(kind).isEmpty) {
-      _say('Guru belum membuat soal ${kind.label}.');
-      return;
-    }
-    Speech.stop();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PlayGameScreen(
-          material: _m,
-          kind: kind,
-          studentName: widget.studentName,
-        ),
-      ),
-    );
-  }
-
-  void _say(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.feedback(context, message);
-  }
 
   @override
   Widget build(BuildContext context) {
     return PurpleScaffold(
       appBar: aprevoAppBar('Materi'),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final name = widget.studentName;
-            final pre = store.latestAttempt(_m, name, TestKind.pre);
-            final post = store.latestAttempt(_m, name, TestKind.post);
-            final needPreFirst = _m.preTest.isNotEmpty && pre == null;
+        child: LoadView<LessonMaterial>(
+          initialData: material,
+          loadingMessage: 'Memuat materi ${material.title}.',
+          load: () => store.studentMaterial(subject.id, material.id),
+          builder: (context, m, _) => _JourneyBody(
+            subject: subject,
+            material: m,
+            studentName: studentName,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                HeroCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Pill(
-                        store.subjectOf(_m).name,
-                        icon: Icons.folder_outlined,
-                        color: AppColors.accent,
-                        textColor: AppColors.ink,
-                      ),
-                      const SizedBox(height: 12),
-                      Semantics(
-                        header: true,
-                        child: Text(
-                          _m.title,
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.white,
-                            height: 1.2,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Jenis soal: ${_m.questionType.label}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: AppColors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                MascotBubble(
-                  mood: post != null ? MascotMood.cheer : MascotMood.happy,
-                  text: _guide(pre, post),
-                ),
-                const SizedBox(height: 16),
-                // Pemutar audio materi.
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const ExcludeSemantics(
-                            child: CircleAvatar(
-                              radius: 24,
-                              backgroundColor: AppColors.lilac,
-                              child: Icon(
-                                Icons.headphones,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: MergeSemantics(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Materi audio',
-                                    style: AppType.bodySmall,
-                                  ),
-                                  Text(_m.title, style: AppType.titleMedium),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      PrimaryButton(
-                        label: 'Dengarkan',
-                        icon: Icons.play_arrow,
-                        onPressed: () => Speech.speak(_spokenBody(_m)),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.stop),
-                              label: const Text('Hentikan'),
-                              onPressed: Speech.stop,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.menu_book_outlined),
-                              label: const Text('Baca teks'),
-                              onPressed: () {
-                                Speech.stop();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        MaterialReaderScreen(material: _m),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SectionTitle('Tes untuk materi ini'),
-                _TestCard(
-                  icon: Icons.flag_outlined,
-                  title: 'Pre-test',
-                  count: _m.preTest.length,
-                  status: _starsText(pre),
-                  done: pre != null,
-                  buttonLabel: pre == null ? 'Mulai Pre-test' : 'Ulangi Pre-test',
-                  onPressed: () => _play(TestKind.pre),
-                ),
-                _TestCard(
-                  icon: needPreFirst
-                      ? Icons.lock_outline
-                      : Icons.emoji_events_outlined,
-                  title: 'Post-test',
-                  count: _m.postTest.length,
-                  status: needPreFirst
-                      ? 'Terkunci. Kerjakan pre-test dulu'
-                      : _starsText(post),
-                  done: post != null,
-                  buttonLabel:
-                      post == null ? 'Mulai Post-test' : 'Ulangi Post-test',
-                  onPressed: () {
-                    if (needPreFirst) {
-                      _say('Kerjakan pre-test dulu, ya.');
-                    } else {
-                      _play(TestKind.post);
-                    }
-                  },
-                ),
-                if (pre != null && post != null)
-                  AppCard(
-                    color: AppColors.mint,
-                    borderColor: AppColors.success,
-                    child: Column(
-                      children: [
-                        Text(
-                          _compare(pre, post),
-                          textAlign: TextAlign.center,
-                          style: AppType.bodyLarge,
-                        ),
-                        const SizedBox(height: 8),
-                        StarRow(stars: post.stars, size: 44),
-                      ],
-                    ),
-                  ),
-              ],
-            );
-          },
+class _JourneyBody extends StatelessWidget {
+  const _JourneyBody({
+    required this.subject,
+    required this.material,
+    required this.studentName,
+  });
+
+  final Subject subject;
+  final LessonMaterial material;
+  final String studentName;
+
+  LessonMaterial get _m => material;
+
+  void _say(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+    Speech.feedback(context, message);
+  }
+
+  void _play(BuildContext context, QuizInfo quiz) {
+    Speech.stop();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayGameScreen(
+          quiz: quiz,
+          materialTitle: _m.title,
+          studentName: studentName,
+          preTest: quiz.kind == TestKind.post
+              ? _m.quiz(TestKind.pre)?.latestAttempt
+              : null,
         ),
       ),
     );
   }
 
+  void _review(BuildContext context, Attempt attempt, {required bool key}) {
+    Speech.stop();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewScreen(attemptId: attempt.id, withKey: key),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pre = _m.quiz(TestKind.pre)?.latestAttempt;
+    final post = _m.quiz(TestKind.post)?.latestAttempt;
+    final sections = _m.sectionCount == 0
+        ? 'Belum ada sub bab'
+        : '${_m.sectionCount} sub bab';
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        HeroCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Pill(
+                subject.name,
+                icon: Icons.folder_outlined,
+                color: AppColors.accent,
+                textColor: AppColors.ink,
+              ),
+              const SizedBox(height: 12),
+              Semantics(
+                header: true,
+                child: Text(
+                  _m.title,
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.white,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                sections,
+                style: const TextStyle(fontSize: 16, color: AppColors.white),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        MascotBubble(
+          mood: post != null ? MascotMood.cheer : MascotMood.happy,
+          text: _guide(pre, post),
+        ),
+        const SizedBox(height: 16),
+        // Materi audio per sub-bab.
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const ExcludeSemantics(
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: AppColors.lilac,
+                      child: Icon(Icons.headphones, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: MergeSemantics(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Materi audio', style: AppType.bodySmall),
+                          Text(_m.title, style: AppType.titleMedium),
+                          Text(sections, style: AppType.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              PrimaryButton(
+                label: 'Dengarkan per sub bab',
+                icon: Icons.play_arrow,
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MaterialSectionsScreen(
+                      materialId: _m.id,
+                      materialTitle: _m.title,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SectionTitle('Tes untuk materi ini'),
+        for (final kind in TestKind.values) _testCard(context, kind),
+        if (pre != null && post != null)
+          AppCard(
+            color: AppColors.mint,
+            borderColor: AppColors.success,
+            child: Column(
+              children: [
+                Text(
+                  _compare(pre, post),
+                  textAlign: TextAlign.center,
+                  style: AppType.bodyLarge,
+                ),
+                const SizedBox(height: 8),
+                StarRow(stars: post.stars, size: 44),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _testCard(BuildContext context, TestKind kind) {
+    final q = _m.quiz(kind);
+    final label = kind.label;
+    if (q == null) {
+      return _TestCard(
+        icon: Icons.hourglass_empty,
+        title: label,
+        status: 'Guru belum membuat $label',
+        actions: const [],
+      );
+    }
+    final latest = q.latestAttempt;
+    final canStart =
+        q.status == QuizStatus.open && !q.locked && !q.limitReached;
+    final parts = <String>[
+      if (q.locked) 'Terkunci. Kerjakan pre-test dulu',
+      q.scheduleText,
+      if (latest != null)
+        'Hasil terakhir: benar ${latest.score} dari ${latest.total}, '
+            '${latest.stars} dari 3 bintang'
+      else
+        'Belum dikerjakan',
+      if (q.limitReached) 'Batas percobaan sudah habis',
+      if (latest != null && !q.discussionAvailable && q.deadlineAt != null)
+        'Pembahasan terbuka setelah ${formatDateTime(q.deadlineAt!)}',
+    ];
+    final String startLabel;
+    if (q.unfinishedAttemptId != null) {
+      startLabel = 'Lanjutkan $label';
+    } else if (latest != null) {
+      startLabel = 'Ulangi $label';
+    } else {
+      startLabel = 'Mulai $label';
+    }
+    return _TestCard(
+      icon: q.locked
+          ? Icons.lock_outline
+          : kind == TestKind.pre
+          ? Icons.flag_outlined
+          : Icons.emoji_events_outlined,
+      title: label,
+      status: parts.join('. '),
+      actions: [
+        if (canStart)
+          _TestAction(
+            label: startLabel,
+            icon: Icons.arrow_forward,
+            primary: latest == null,
+            onPressed: () => _play(context, q),
+          )
+        else if (q.locked)
+          _TestAction(
+            label: startLabel,
+            icon: Icons.lock_outline,
+            primary: false,
+            onPressed: () => _say(context, 'Kerjakan pre-test dulu, ya.'),
+          ),
+        if (latest != null)
+          _TestAction(
+            label: 'Lihat jawaban $label',
+            icon: Icons.fact_check_outlined,
+            primary: false,
+            onPressed: () => _review(context, latest, key: false),
+          ),
+        if (latest != null && q.discussionAvailable)
+          _TestAction(
+            label: 'Pembahasan $label',
+            icon: Icons.lightbulb_outline,
+            primary: false,
+            onPressed: () => _review(context, latest, key: true),
+          ),
+      ],
+    );
+  }
+
   String _guide(Attempt? pre, Attempt? post) {
     if (post != null) {
-      return 'Hebat, materi ini sudah selesai! Kamu boleh mengulang '
-          'post-test untuk menambah bintang.';
+      return 'Hebat, materi ini sudah selesai! Kamu boleh melihat ulang '
+          'jawabanmu kapan saja.';
     }
     if (pre != null) {
-      return 'Pre-test selesai. Sekarang dengarkan materinya, lalu '
-          'kerjakan post-test.';
+      return 'Pre-test selesai. Sekarang dengarkan materinya per sub bab, '
+          'lalu kerjakan post-test.';
     }
     return 'Kita mulai dari pre-test dulu, ya. Tidak apa-apa kalau belum '
         'tahu jawabannya.';
@@ -276,25 +312,33 @@ class _MaterialJourneyScreenState extends State<MaterialJourneyScreen> {
   }
 }
 
-/// Kartu satu tes: jumlah soal, status, dan tombol mulai.
+class _TestAction {
+  const _TestAction({
+    required this.label,
+    required this.icon,
+    required this.primary,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool primary;
+  final VoidCallback onPressed;
+}
+
+/// Kartu satu tes: status dan jadwal dalam satu kalimat, lalu tombolnya.
 class _TestCard extends StatelessWidget {
   const _TestCard({
     required this.icon,
     required this.title,
-    required this.count,
     required this.status,
-    required this.done,
-    required this.buttonLabel,
-    required this.onPressed,
+    required this.actions,
   });
 
   final IconData icon;
   final String title;
-  final int count;
   final String status;
-  final bool done;
-  final String buttonLabel;
-  final VoidCallback onPressed;
+  final List<_TestAction> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -305,11 +349,12 @@ class _TestCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Judul, jumlah soal, dan status dibaca sebagai satu kalimat.
+              // Judul dan status dibaca sebagai satu kalimat.
               Semantics(
-                label: '$title. $count soal. $status',
+                label: '$title. $status.',
                 excludeSemantics: true,
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       width: 48,
@@ -327,102 +372,31 @@ class _TestCard extends StatelessWidget {
                         children: [
                           Text(title, style: AppType.titleMedium),
                           const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              Pill('$count soal'),
-                              Pill(
-                                status,
-                                color: done
-                                    ? AppColors.successBg
-                                    : AppColors.highlight,
-                                textColor:
-                                    done ? AppColors.success : AppColors.ink,
-                              ),
-                            ],
-                          ),
+                          Text('$status.', style: AppType.bodyMedium),
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
-              done
-                  ? Bouncy(
-                      child: OutlinedButton(
-                        onPressed: onPressed,
-                        child: Text(buttonLabel),
+              for (final a in actions) ...[
+                const SizedBox(height: 12),
+                a.primary
+                    ? PrimaryButton(
+                        label: a.label,
+                        icon: a.icon,
+                        onPressed: a.onPressed,
+                      )
+                    : Bouncy(
+                        child: OutlinedButton.icon(
+                          icon: Icon(a.icon),
+                          label: Text(a.label),
+                          onPressed: a.onPressed,
+                        ),
                       ),
-                    )
-                  : PrimaryButton(
-                      label: buttonLabel,
-                      icon: Icons.arrow_forward,
-                      onPressed: onPressed,
-                    ),
+              ],
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Pembaca materi. Dipakai siswa dan guru.
-class MaterialReaderScreen extends StatefulWidget {
-  const MaterialReaderScreen({super.key, required this.material});
-
-  final LessonMaterial material;
-
-  @override
-  State<MaterialReaderScreen> createState() => _MaterialReaderScreenState();
-}
-
-class _MaterialReaderScreenState extends State<MaterialReaderScreen> {
-  @override
-  void dispose() {
-    Speech.stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final m = widget.material;
-    return PurpleScaffold(
-      appBar: aprevoAppBar('Materi'),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Semantics(
-              header: true,
-              child: Text(
-                m.title,
-                style: AppType.headlineMedium,
-              ),
-            ),
-            const SizedBox(height: 16),
-            PrimaryButton(
-              label: 'Dengarkan materi',
-              icon: Icons.volume_up,
-              onPressed: () => Speech.speak(_spokenBody(m)),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.stop),
-              label: const Text('Hentikan suara'),
-              onPressed: Speech.stop,
-            ),
-            const SizedBox(height: 20),
-            AppCard(
-              color: AppColors.soft,
-              child: Text(
-                m.body.isEmpty ? _emptyBody : m.body,
-                style: AppType.bodyLarge,
-              ),
-            ),
-          ],
         ),
       ),
     );

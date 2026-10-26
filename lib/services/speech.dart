@@ -53,7 +53,8 @@ class Speech {
 
   static void announce(String message) {
     final dispatcher = WidgetsBinding.instance.platformDispatcher;
-    final view = dispatcher.implicitView ??
+    final view =
+        dispatcher.implicitView ??
         (dispatcher.views.isEmpty ? null : dispatcher.views.first);
     if (view == null) return;
     SemanticsService.sendAnnouncement(view, message, TextDirection.ltr);

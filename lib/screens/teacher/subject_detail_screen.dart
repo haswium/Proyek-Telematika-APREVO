@@ -4,9 +4,17 @@ import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import 'material_editor_screen.dart';
 import 'new_material_screen.dart';
+
+/// Status satu kuis untuk guru, misalnya "Pre-test: dibuka sampai ...".
+String quizSummary(LessonMaterial m, TestKind kind) {
+  final q = m.quiz(kind);
+  if (q == null) return '${kind.label}: belum dibuat';
+  return '${kind.label}: ${q.scheduleText.toLowerCase()}';
+}
 
 /// Isi satu mata pelajaran untuk guru: kode akses untuk dibagikan, tombol
 /// buat materi, lalu kartu tiap materi (publik maupun draf).
@@ -19,7 +27,8 @@ class SubjectDetailScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MaterialEditorScreen(material: material),
+        builder: (_) =>
+            MaterialEditorScreen(subject: subject, material: material),
       ),
     );
   }
@@ -27,9 +36,7 @@ class SubjectDetailScreen extends StatelessWidget {
   void _createMaterial(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => NewMaterialScreen(subject: subject),
-      ),
+      MaterialPageRoute(builder: (_) => NewMaterialScreen(subject: subject)),
     );
   }
 
@@ -38,11 +45,11 @@ class SubjectDetailScreen extends StatelessWidget {
     return PurpleScaffold(
       appBar: aprevoAppBar(subject.name),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final materials = subject.materials;
-            final published = store.publishedMaterials(subject).length;
+        child: LoadView<List<LessonMaterial>>(
+          loadingMessage: 'Memuat materi ${subject.name}.',
+          load: () => store.teacherMaterials(subject.id),
+          builder: (context, materials, _) {
+            final published = materials.where((m) => m.published).length;
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
@@ -80,7 +87,7 @@ class SubjectDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 PrimaryButton(
-                  label: 'Buat Materi Baru',
+                  label: 'Unggah Materi PDF',
                   icon: Icons.add_circle_outline,
                   onPressed: () => _createMaterial(context),
                 ),
@@ -103,8 +110,8 @@ class SubjectDetailScreen extends StatelessWidget {
                   ),
                 if (materials.isNotEmpty)
                   Text(
-                    'Ketuk "Kelola materi" untuk mengatur soal, melihat siswa, '
-                    'dan hasil.',
+                    'Ketuk "Kelola materi" untuk mengatur jadwal, soal, dan '
+                    'publikasi.',
                     style: AppType.bodySmall,
                   ),
               ],
@@ -133,7 +140,7 @@ class _MaterialCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              Pill(m.questionType.label, icon: gameIcon(m.questionType)),
+              Pill('${m.sectionCount} sub bab', icon: Icons.menu_book_outlined),
               Pill(
                 m.published ? 'Publik' : 'Draf',
                 color: m.published ? AppColors.primary : AppColors.highlight,
@@ -146,24 +153,9 @@ class _MaterialCard extends StatelessWidget {
             header: true,
             child: Text(m.title, style: AppType.titleLarge),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: StatTile(
-                  value: '${m.preTest.length}',
-                  label: 'Soal pre-test',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatTile(
-                  value: '${m.postTest.length}',
-                  label: 'Soal post-test',
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 8),
+          Text(quizSummary(m, TestKind.pre), style: AppType.bodyMedium),
+          Text(quizSummary(m, TestKind.post), style: AppType.bodyMedium),
           const SizedBox(height: 12),
           Bouncy(
             // Tiap kartu punya tombol ini; sebut judulnya supaya TalkBack

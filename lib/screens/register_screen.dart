@@ -110,8 +110,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           role: UserRole.student,
                           icon: Icons.headphones,
                           selected: _role == UserRole.student,
-                          onTap: () =>
-                              setState(() => _role = UserRole.student),
+                          onTap: () => setState(() => _role = UserRole.student),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -120,8 +119,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           role: UserRole.teacher,
                           icon: Icons.school_outlined,
                           selected: _role == UserRole.teacher,
-                          onTap: () =>
-                              setState(() => _role = UserRole.teacher),
+                          onTap: () => setState(() => _role = UserRole.teacher),
                         ),
                       ),
                     ],
@@ -218,10 +216,7 @@ class _RoleCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: selected ? AppColors.accent : AppColors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppColors.ink,
-                width: 2,
-              ),
+              border: Border.all(color: AppColors.ink, width: 2),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,

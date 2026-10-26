@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
+import '../../services/api_client.dart';
 import '../../services/speech.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import 'subject_detail_screen.dart';
 
@@ -17,22 +19,23 @@ class TeacherHomeScreen extends StatelessWidget {
   void _open(BuildContext context, Subject subject) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => SubjectDetailScreen(subject: subject),
-      ),
+      MaterialPageRoute(builder: (_) => SubjectDetailScreen(subject: subject)),
     );
   }
 
   Future<void> _createSubject(BuildContext context) async {
-    final name = await showDialog<String>(
+    // Dialog yang mengirim ke backend, supaya error tampil di dalamnya.
+    final subject = await showDialog<Subject>(
       context: context,
       builder: (_) => const _NewSubjectDialog(),
     );
-    if (name == null) return;
-    // Kode akses mata pelajaran dibuat otomatis di dalam createSubject.
-    final subject = store.createSubject(name);
-    Speech.announce('Mata pelajaran ${subject.name} dibuat.');
+    if (subject == null) return;
+    final message =
+        'Mata pelajaran ${subject.name} dibuat. Kode aksesnya '
+        '${spellCode(subject.accessCode)}.';
+    Speech.announce(message);
     if (!context.mounted) return;
+    Speech.feedback(context, message);
     _open(context, subject);
   }
 
@@ -42,10 +45,10 @@ class TeacherHomeScreen extends StatelessWidget {
     return PurpleScaffold(
       appBar: aprevoAppBar('Mata Pelajaran Saya'),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final subjects = store.subjects;
+        child: LoadView<List<Subject>>(
+          loadingMessage: 'Memuat mata pelajaranmu.',
+          load: store.teacherSubjects,
+          builder: (context, subjects, _) {
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
@@ -114,8 +117,8 @@ class TeacherHomeScreen extends StatelessWidget {
   }
 }
 
-/// Dialog nama mata pelajaran baru. Mengembalikan nama yang sudah dirapikan,
-/// atau `null` kalau dibatalkan.
+/// Dialog nama mata pelajaran baru. Membuat mata pelajaran di backend lalu
+/// mengembalikannya, atau `null` kalau dibatalkan.
 class _NewSubjectDialog extends StatefulWidget {
   const _NewSubjectDialog();
 
@@ -125,6 +128,7 @@ class _NewSubjectDialog extends StatefulWidget {
 
 class _NewSubjectDialogState extends State<_NewSubjectDialog> {
   final _name = TextEditingController();
+  bool _busy = false;
   String? _error;
   int _errorSerial = 0;
 
@@ -134,18 +138,36 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  void _showError(String message) {
+    setState(() {
+      _busy = false;
+      _error = message;
+      _errorSerial++;
+    });
+    Speech.feedback(context, message);
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
     final name = _name.text.trim();
     if (name.isEmpty) {
-      const message = 'Nama mata pelajaran belum diisi.';
-      setState(() {
-        _error = message;
-        _errorSerial++;
-      });
-      Speech.feedback(context, message);
+      _showError('Nama mata pelajaran belum diisi.');
       return;
     }
-    Navigator.pop(context, name);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    Speech.announce('Membuat mata pelajaran $name.');
+    try {
+      // Kode akses dibuat otomatis oleh backend.
+      final subject = await store.createSubject(name);
+      if (!mounted) return;
+      Navigator.pop(context, subject);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _showError('Gagal membuat mata pelajaran. ${e.message}');
+    }
   }
 
   @override
@@ -158,6 +180,7 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
           children: [
             TextField(
               controller: _name,
+              enabled: !_busy,
               autofocus: true,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.done,
@@ -176,10 +199,13 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _busy ? null : () => Navigator.pop(context),
           child: const Text('Batal'),
         ),
-        TextButton(onPressed: _submit, child: const Text('Buat')),
+        TextButton(
+          onPressed: _busy ? null : _submit,
+          child: Text(_busy ? 'Membuat...' : 'Buat'),
+        ),
       ],
     );
   }
@@ -194,7 +220,6 @@ class _SubjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = subject;
-    final published = store.publishedMaterials(s).length;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,18 +234,11 @@ class _SubjectCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: StatTile(value: '${s.students.length}', label: 'Siswa'),
+                child: StatTile(value: '${s.studentCount}', label: 'Siswa'),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: StatTile(
-                  value: '${s.materials.length}',
-                  label: 'Materi',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatTile(value: '$published', label: 'Materi publik'),
+                child: StatTile(value: '${s.materialCount}', label: 'Materi'),
               ),
             ],
           ),

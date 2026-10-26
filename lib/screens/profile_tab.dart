@@ -7,6 +7,7 @@ import '../widgets/common.dart';
 import '../widgets/mascot.dart';
 import '../widgets/playful.dart';
 import 'auth_flow.dart';
+import 'server_settings_screen.dart';
 
 /// Tab Profil, dipakai guru dan siswa: nama, email, peran, dan tombol keluar.
 class ProfileTab extends StatelessWidget {
@@ -63,25 +64,12 @@ class ProfileTab extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  MergeSemantics(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Penyimpanan akun', style: AppType.bodySmall),
-                        Text(
-                          store.online
-                              ? 'Tersimpan di Supabase'
-                              : 'Mode demo, hilang saat aplikasi ditutup',
-                          style: AppType.titleMedium,
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
+            const ServerAddressRow(),
+            const SizedBox(height: 8),
             Bouncy(
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.logout),

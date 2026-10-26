@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
+import '../../services/api_client.dart';
 import '../../services/speech.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -68,12 +69,10 @@ Future<PickedPdf?> pickPdfFile() async {
   );
 }
 
-enum _Source { pdf, typed }
-
 enum _StatusKind { info, uploading, success, error }
 
-/// Guru membuat materi baru di satu mata pelajaran, dengan dua pilihan
-/// sumber: unggah PDF atau ketik isinya. Materi baru selalu draf.
+/// Guru mengunggah PDF sebagai materi baru di satu mata pelajaran. Backend
+/// menyimpan PDF-nya lalu memecahnya per sub-bab. Materi baru selalu draf.
 class NewMaterialScreen extends StatefulWidget {
   const NewMaterialScreen({
     super.key,
@@ -92,10 +91,8 @@ class NewMaterialScreen extends StatefulWidget {
 
 class _NewMaterialScreenState extends State<NewMaterialScreen> {
   final _title = TextEditingController();
-  final _body = TextEditingController();
-  _Source _source = _Source.pdf;
   PickedPdf? _file;
-  LessonMaterial? _uploaded;
+  UploadResult? _uploaded;
 
   /// `true` setelah unggahan gagal, supaya tombolnya menjadi "Coba unggah
   /// lagi". Error lain (judul kosong, file ditolak) tidak mengubahnya.
@@ -111,7 +108,6 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
   @override
   void dispose() {
     _title.dispose();
-    _body.dispose();
     super.dispose();
   }
 
@@ -124,14 +120,6 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
       _statusSerial++;
     });
     if (message != null) Speech.feedback(context, message);
-  }
-
-  void _choose(_Source source) {
-    if (_locked || source == _source) return;
-    setState(() {
-      _source = source;
-      _status = null;
-    });
   }
 
   Future<void> _pick() async {
@@ -173,59 +161,61 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
     }
     _setStatus(
       _StatusKind.uploading,
-      'Mengunggah ${file.name}. Tunggu sebentar.',
+      'Mengunggah ${file.name} dan memecahnya per sub bab. Tunggu sebentar.',
     );
+    final Uint8List bytes;
     try {
-      final bytes = await file.readBytes();
-      final material = await store.uploadMaterialPdf(
+      bytes = await file.readBytes();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _uploadFailed = true);
+      _setStatus(
+        _StatusKind.error,
+        'File ${file.name} tidak bisa dibaca. Pilih ulang filenya, lalu '
+        'coba lagi.',
+      );
+      return;
+    }
+    try {
+      final result = await store.uploadMaterialPdf(
         widget.subject,
         title: title,
         fileName: file.name,
         bytes: bytes,
       );
       if (!mounted) return;
-      setState(() => _uploaded = material);
+      setState(() => _uploaded = result);
       _setStatus(
         _StatusKind.success,
-        'Berhasil. ${file.name} diunggah sebagai materi draf $title.',
+        'Berhasil. ${file.name} diproses menjadi ${result.sections.length} '
+        'sub bab. Materi draf $title siap diberi jadwal dan soal.',
       );
-    } catch (_) {
+    } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _uploadFailed = true);
       _setStatus(
         _StatusKind.error,
-        'Gagal mengunggah ${file.name}. Periksa sambungan internet, lalu '
-        'coba lagi.',
+        'Gagal mengunggah ${file.name}. ${e.message}',
       );
     }
   }
 
-  void _createTyped() {
-    final title = _title.text.trim();
-    if (title.isEmpty) {
-      _setStatus(_StatusKind.error, 'Judul materi belum diisi.');
-      return;
-    }
-    final material = store.createMaterial(
-      widget.subject,
-      title,
-      _body.text.trim(),
-    );
-    _openEditor(material);
-  }
-
-  void _openEditor(LessonMaterial material) {
+  void _openEditor(UploadResult result) {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => MaterialEditorScreen(material: material),
+        builder: (_) => MaterialEditorScreen(
+          subject: widget.subject,
+          material: result.material,
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final pdf = _source == _Source.pdf;
+    final file = _file;
+    final uploaded = _uploaded;
     return PurpleScaffold(
       appBar: aprevoAppBar('Materi baru'),
       body: SafeArea(
@@ -246,7 +236,7 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
                   Semantics(
                     header: true,
                     child: const Text(
-                      'Dari mana isi materinya?',
+                      'Unggah materi PDF',
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
@@ -256,101 +246,71 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Materi baru masuk sebagai draf. Siswa belum bisa '
-                    'melihatnya sampai kamu publikasikan.',
+                    'PDF dipecah per sub bab supaya siswa bisa '
+                    'mendengarkannya satu per satu. Materi baru masuk '
+                    'sebagai draf sampai kamu publikasikan.',
                     style: TextStyle(color: AppColors.white),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _SourceCard(
-                    label: 'Unggah PDF',
-                    icon: Icons.picture_as_pdf_outlined,
-                    selected: pdf,
-                    onTap: () => _choose(_Source.pdf),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _SourceCard(
-                    label: 'Ketik materi',
-                    icon: Icons.keyboard_outlined,
-                    selected: !pdf,
-                    onTap: () => _choose(_Source.typed),
-                  ),
-                ),
-              ],
             ),
             const SizedBox(height: 20),
             TextField(
               controller: _title,
               enabled: !_locked,
               textCapitalization: TextCapitalization.sentences,
-              textInputAction: pdf ? TextInputAction.done : null,
+              textInputAction: TextInputAction.done,
               decoration: fieldDecoration('Judul materi'),
             ),
             const SizedBox(height: 12),
-            if (pdf) ..._pdfSection() else ..._typedSection(),
+            if (file != null) ...[
+              _FileRow(file: file),
+              const SizedBox(height: 12),
+            ],
+            OutlinedButton.icon(
+              icon: const Icon(Icons.attach_file),
+              label: Text(file == null ? 'Pilih file PDF' : 'Ganti file PDF'),
+              onPressed: _locked ? null : _pick,
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 12),
+              child: Text(
+                'Hanya file PDF, paling besar 20 MB.',
+                style: AppType.bodySmall,
+              ),
+            ),
+            if (_status != null) ...[_statusCard(), const SizedBox(height: 12)],
+            if (uploaded == null)
+              PrimaryButton(
+                label: _uploadFailed ? 'Coba unggah lagi' : 'Unggah PDF',
+                icon: Icons.cloud_upload_outlined,
+                onPressed: _uploading ? null : _upload,
+              )
+            else ...[
+              PrimaryButton(
+                label: 'Lanjut atur jadwal dan soal',
+                icon: Icons.arrow_forward,
+                onPressed: () => _openEditor(uploaded),
+              ),
+              const SizedBox(height: 8),
+              SectionTitle(
+                'Sub bab yang ditemukan (${uploaded.sections.length})',
+              ),
+              if (uploaded.sections.isEmpty)
+                const EmptyState(
+                  message: 'Tidak ada sub bab yang terbaca dari PDF ini.',
+                ),
+              for (final s in uploaded.sections)
+                ListRow(
+                  icon: Icons.menu_book_outlined,
+                  title: 'Sub bab ${s.position}: ${s.title}',
+                  subtitle: s.pagesText.isEmpty ? null : s.pagesText,
+                ),
+            ],
           ],
         ),
       ),
     );
-  }
-
-  List<Widget> _typedSection() {
-    return [
-      TextField(
-        controller: _body,
-        maxLines: 8,
-        decoration: fieldDecoration('Isi materi'),
-      ),
-      const SizedBox(height: 12),
-      if (_status != null) ...[_statusCard(), const SizedBox(height: 12)],
-      PrimaryButton(
-        label: 'Lanjut buat soal',
-        icon: Icons.arrow_forward,
-        onPressed: _createTyped,
-      ),
-    ];
-  }
-
-  List<Widget> _pdfSection() {
-    final file = _file;
-    return [
-      if (file != null) ...[
-        _FileRow(file: file),
-        const SizedBox(height: 12),
-      ],
-      OutlinedButton.icon(
-        icon: const Icon(Icons.attach_file),
-        label: Text(file == null ? 'Pilih file PDF' : 'Ganti file PDF'),
-        onPressed: _locked ? null : _pick,
-      ),
-      Padding(
-        padding: const EdgeInsets.only(top: 6, bottom: 12),
-        child: Text(
-          'Hanya file PDF, paling besar 20 MB.',
-          style: AppType.bodySmall,
-        ),
-      ),
-      if (_status != null) ...[_statusCard(), const SizedBox(height: 12)],
-      if (_uploaded == null)
-        PrimaryButton(
-          label: _uploadFailed ? 'Coba unggah lagi' : 'Unggah PDF',
-          icon: Icons.cloud_upload_outlined,
-          onPressed: _uploading ? null : _upload,
-        )
-      else
-        PrimaryButton(
-          label: 'Lanjut buat soal',
-          icon: Icons.arrow_forward,
-          onPressed: () => _openEditor(_uploaded!),
-        ),
-    ];
   }
 
   Widget _statusCard() {
@@ -371,14 +331,11 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
         ),
       );
     } else {
-      icon = Icon(
-        switch (_statusKind) {
-          _StatusKind.uploading => Icons.hourglass_top,
-          _StatusKind.success => Icons.check_circle,
-          _ => Icons.description_outlined,
-        },
-        color: AppColors.primary,
-      );
+      icon = Icon(switch (_statusKind) {
+        _StatusKind.uploading => Icons.hourglass_top,
+        _StatusKind.success => Icons.check_circle,
+        _ => Icons.description_outlined,
+      }, color: AppColors.primary);
     }
     // liveRegion dengan key baru tiap status, sama seperti ErrorCard,
     // supaya TalkBack membacakan setiap perubahan status.
@@ -396,9 +353,7 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
           children: [
             icon,
             const SizedBox(width: 12),
-            Expanded(
-              child: Text(message, style: AppType.bodyMedium),
-            ),
+            Expanded(child: Text(message, style: AppType.bodyMedium)),
           ],
         ),
       ),
@@ -433,64 +388,6 @@ class _FileRow extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Pilihan sumber materi. Dibaca TalkBack sebagai satu tombol dalam grup:
-/// "Sumber materi: Unggah PDF, dipilih".
-class _SourceCard extends StatelessWidget {
-  const _SourceCard({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: 'Sumber materi: $label',
-      button: true,
-      selected: selected,
-      inMutuallyExclusiveGroup: true,
-      onTap: onTap,
-      excludeSemantics: true,
-      child: Bouncy(
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 88),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.accent : AppColors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.ink, width: 2),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: AppColors.ink, size: 28),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );

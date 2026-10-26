@@ -4,9 +4,11 @@ import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/nav_bar.dart';
 import '../../widgets/playful.dart';
 import '../profile_tab.dart';
+import 'results_screen.dart';
 import 'teacher_home_screen.dart';
 
 /// Kerangka guru dengan menu bawah: Pelajaran, Siswa, Hasil, Profil.
@@ -66,21 +68,44 @@ class _TeacherShellState extends State<TeacherShell> {
   }
 }
 
-/// Rata-rata nilai (0 sampai 100) satu tes untuk satu materi, atau `null`
-/// kalau belum ada siswa yang mengerjakannya.
-int? _average(LessonMaterial m, TestKind kind) {
-  var sum = 0.0;
-  var count = 0;
-  for (final name in store.subjectOf(m).students) {
-    final attempt = store.latestAttempt(m, name, kind);
-    if (attempt == null || attempt.total == 0) continue;
-    sum += attempt.score / attempt.total;
-    count++;
+/// Satu siswa di semua mata pelajaran guru, disusun dari data hasil.
+class _StudentSummary {
+  _StudentSummary(this.name);
+
+  final String name;
+  final Set<String> subjects = {};
+  int finished = 0;
+  int stars = 0;
+}
+
+List<_StudentSummary> _students(List<SubjectResults> overview) {
+  final byId = <String, _StudentSummary>{};
+  for (final r in overview) {
+    for (final m in r.materials) {
+      for (final q in m.quizzes) {
+        for (final s in q.students) {
+          final summary = byId.putIfAbsent(
+            s.studentId,
+            () => _StudentSummary(s.name),
+          );
+          summary.subjects.add(r.subject.id);
+          final latest = s.latest;
+          if (q.kind == TestKind.post && latest != null) {
+            summary.finished++;
+            summary.stars += latest.stars;
+          }
+        }
+      }
+    }
   }
-  return count == 0 ? null : (sum / count * 100).round();
+  return byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
 }
 
 /// Tab Siswa: semua siswa dari seluruh mata pelajaran guru.
+///
+/// Backend belum punya daftar anggota mata pelajaran, jadi siswa diambil
+/// dari data hasil: siswa muncul setelah ada pre-test atau post-test di
+/// mata pelajarannya.
 class TeacherStudentsTab extends StatelessWidget {
   const TeacherStudentsTab({super.key});
 
@@ -89,27 +114,38 @@ class TeacherStudentsTab extends StatelessWidget {
     return PurpleScaffold(
       appBar: aprevoAppBar('Siswa'),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final names = <String>{
-              for (final s in store.subjects) ...s.students,
-            }.toList()
-              ..sort();
+        child: LoadView<List<SubjectResults>>(
+          loadingMessage: 'Memuat daftar siswa.',
+          load: store.teacherOverview,
+          builder: (context, overview, _) {
+            final students = _students(overview);
+            final joined = overview.fold<int>(
+              0,
+              (sum, r) => sum + r.studentCount,
+            );
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                SectionTitle('${names.length} siswa bergabung'),
-                if (names.isEmpty)
+                SectionTitle('${students.length} siswa'),
+                Text(
+                  'Total keanggotaan di semua mata pelajaran: $joined.',
+                  style: AppType.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                if (students.isEmpty)
                   const EmptyState(
-                    message: 'Belum ada siswa. Bagikan kode akses mata '
-                        'pelajaran ke siswamu.',
+                    message:
+                        'Belum ada siswa. Bagikan kode akses mata '
+                        'pelajaran ke siswamu, lalu buat pre-test atau '
+                        'post-test.',
                   ),
-                for (final name in names)
+                for (final s in students)
                   ListRow(
                     icon: Icons.person_outline,
-                    title: name,
-                    subtitle: _summary(name),
+                    title: s.name,
+                    subtitle:
+                        'Ikut ${s.subjects.length} mata pelajaran, '
+                        'selesai ${s.finished} materi, ${s.stars} bintang',
                   ),
               ],
             );
@@ -117,21 +153,6 @@ class TeacherStudentsTab extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _summary(String name) {
-    final subjects = store.subjectsOf(name);
-    var finished = 0;
-    var stars = 0;
-    for (final m in store.materialsOf(name)) {
-      final post = store.latestAttempt(m, name, TestKind.post);
-      if (post != null) {
-        finished++;
-        stars += post.stars;
-      }
-    }
-    return 'Ikut ${subjects.length} mata pelajaran, selesai $finished '
-        'materi, $stars bintang';
   }
 }
 
@@ -145,27 +166,41 @@ class TeacherResultsTab extends StatelessWidget {
     return PurpleScaffold(
       appBar: aprevoAppBar('Hasil'),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) => ListView(
+        child: LoadView<List<SubjectResults>>(
+          loadingMessage: 'Memuat hasil siswa.',
+          load: store.teacherOverview,
+          builder: (context, overview, _) => ListView(
             padding: const EdgeInsets.all(20),
             children: [
               Text(
                 'Rata-rata nilai tiap materi dari siswa yang sudah '
-                'mengerjakan.',
+                'mengumpulkan.',
                 style: AppType.bodyMedium,
               ),
               const SizedBox(height: 8),
-              if (store.subjects.isEmpty)
+              if (overview.isEmpty)
                 const EmptyState(message: 'Belum ada mata pelajaran.'),
-              for (final s in store.subjects) ...[
-                SectionTitle(s.name),
-                if (s.materials.isEmpty)
+              for (final r in overview) ...[
+                SectionTitle(r.subject.name),
+                if (r.materials.isEmpty)
                   const EmptyState(message: 'Belum ada materi.'),
-                for (final m in s.materials)
+                for (final m in r.materials)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 14),
-                    child: _ResultCard(material: m),
+                    child: MaterialResultCard(
+                      material: m,
+                      studentCount: r.studentCount,
+                      onOpen: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MaterialResultScreen(
+                            subjectId: r.subject.id,
+                            materialId: m.id,
+                            materialTitle: m.title,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ],
@@ -173,66 +208,5 @@ class TeacherResultsTab extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({required this.material});
-
-  final LessonMaterial material;
-
-  @override
-  Widget build(BuildContext context) {
-    final pre = _average(material, TestKind.pre);
-    final post = _average(material, TestKind.post);
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(material.title, style: AppType.titleLarge),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: StatTile(
-                  value: '${store.subjectOf(material).students.length}',
-                  label: 'Siswa',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatTile(
-                  value: pre == null ? 'Belum ada' : '$pre',
-                  label: 'Nilai pre-test',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatTile(
-                  value: post == null ? 'Belum ada' : '$post',
-                  label: 'Nilai post-test',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(_change(pre, post), style: AppType.bodyMedium),
-        ],
-      ),
-    );
-  }
-
-  String _change(int? pre, int? post) {
-    if (pre == null || post == null) {
-      return 'Perbandingan muncul setelah siswa mengerjakan pre-test dan '
-          'post-test.';
-    }
-    final diff = post - pre;
-    if (diff > 0) return 'Nilai naik $diff poin setelah belajar.';
-    if (diff < 0) return 'Nilai turun ${-diff} poin. Materinya perlu diulang.';
-    return 'Nilai pre-test dan post-test sama.';
   }
 }

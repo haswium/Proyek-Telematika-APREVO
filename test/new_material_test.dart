@@ -1,60 +1,53 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aprevo/data/app_store.dart';
+import 'package:aprevo/models/models.dart';
 import 'package:aprevo/screens/teacher/new_material_screen.dart';
-import 'package:aprevo/theme/app_theme.dart';
 import 'package:aprevo/widgets/common.dart';
 
-/// Sama seperti AprevoApp, dengan animasi dimatikan supaya pumpAndSettle
-/// tidak menunggu animasi berulang.
-Widget _app(Widget home) => MaterialApp(
-  theme: buildAprevoTheme(),
-  locale: const Locale('id', 'ID'),
-  supportedLocales: const [Locale('id', 'ID')],
-  localizationsDelegates: GlobalMaterialLocalizations.delegates,
-  builder: (context, child) => MediaQuery(
-    data: MediaQuery.of(context).copyWith(disableAnimations: true),
-    child: child!,
-  ),
-  home: home,
-);
+import 'fake_server.dart';
 
 const int _mb = 1024 * 1024;
+
+final _subject = Subject(id: 'ipa', name: 'IPA Kelas 5', accessCode: 'KXPRTA');
 
 PickedPdf _pdf(String name, int size, {bool failRead = false}) => PickedPdf(
   name: name,
   size: size,
   readBytes: () async {
     if (failRead) throw Exception('tidak bisa dibaca');
-    return Uint8List(0);
+    return Uint8List.fromList([37, 80, 68, 70]);
   },
 );
 
-/// Pesan di liveRegion: TalkBack membacakannya begitu muncul.
-void _expectLive(WidgetTester tester, String message) {
-  expect(
-    tester.getSemantics(find.bySemanticsLabel(message)),
-    matchesSemantics(label: message, isLiveRegion: true),
-  );
-}
-
-Future<void> _tap(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
-  await tester.tap(finder);
-  await tester.pump();
-}
-
 final _uploadButton = find.widgetWithText(PrimaryButton, 'Unggah PDF');
 
-/// Layar tes dibuat tinggi supaya ListView membangun semua tombol.
-void _tallScreen(WidgetTester tester) {
-  tester.view.physicalSize = const Size(800, 2400);
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
-}
+Map<String, dynamic> _uploaded() => {
+  'message': 'PDF berhasil diunggah dan diekstraksi.',
+  'material': {
+    'id': 'm1',
+    'title': 'Gaya dan Gerak',
+    'subject_id': 'ipa',
+    'is_published': false,
+  },
+  'sections': [
+    {
+      'id': 's1',
+      'position': 1,
+      'title': 'Pendahuluan',
+      'page_start': 1,
+      'page_end': 1,
+    },
+    {
+      'id': 's2',
+      'position': 2,
+      'title': 'Gaya Gesek',
+      'page_start': 2,
+      'page_end': 3,
+    },
+  ],
+};
 
 void main() {
   group('pemeriksaan PDF', () {
@@ -79,109 +72,104 @@ void main() {
   testWidgets('unggah PDF: file besar ditolak, lalu unggah berhasil', (
     tester,
   ) async {
-    _tallScreen(tester);
+    tallScreen(tester);
+    final server = FakeServer({
+      'POST /teacher/materials/upload': (_) => _uploaded(),
+    }, delay: const Duration(seconds: 1))..install();
     final handle = tester.ensureSemantics();
-    final subject = store.createSubject('Uji Unggah');
     var next = _pdf('besar.pdf', 25 * _mb);
     await tester.pumpWidget(
-      _app(NewMaterialScreen(subject: subject, pickFile: () async => next)),
+      testApp(NewMaterialScreen(subject: _subject, pickFile: () async => next)),
     );
 
-    expect(
-      tester.getSemantics(find.bySemanticsLabel('Sumber materi: Unggah PDF')),
-      matchesSemantics(
-        label: 'Sumber materi: Unggah PDF',
-        isButton: true,
-        hasSelectedState: true,
-        isSelected: true,
-        isInMutuallyExclusiveGroup: true,
-        hasTapAction: true,
-      ),
-    );
-
-    await _tap(tester, find.text('Pilih file PDF'));
-    _expectLive(
+    await tapAndPump(tester, find.text('Pilih file PDF'));
+    expectLive(
       tester,
       'File besar.pdf terlalu besar, 25,0 MB. Batas ukuran PDF 20 MB. '
       'Pilih file yang lebih kecil.',
     );
 
     next = _pdf('modul.pdf', 2 * _mb);
-    await _tap(tester, find.text('Pilih file PDF'));
-    _expectLive(tester, 'File dipilih: modul.pdf, 2,0 MB.');
+    await tapAndPump(tester, find.text('Pilih file PDF'));
+    expectLive(tester, 'File dipilih: modul.pdf, 2,0 MB.');
     expect(find.bySemanticsLabel('File PDF: modul.pdf, 2,0 MB'), findsOne);
 
-    await _tap(tester, _uploadButton);
-    _expectLive(tester, 'Judul materi belum diisi.');
+    await tapAndPump(tester, _uploadButton);
+    expectLive(tester, 'Judul materi belum diisi.');
 
     await tester.enterText(find.byType(TextField), 'Gaya dan Gerak');
-    await _tap(tester, _uploadButton);
-    _expectLive(tester, 'Mengunggah modul.pdf. Tunggu sebentar.');
+    await tapAndPump(tester, _uploadButton);
+    expectLive(
+      tester,
+      'Mengunggah modul.pdf dan memecahnya per sub bab. Tunggu sebentar.',
+    );
 
     await tester.pump(const Duration(seconds: 2));
-    _expectLive(
+    expectLive(
       tester,
-      'Berhasil. modul.pdf diunggah sebagai materi draf Gaya dan Gerak.',
+      'Berhasil. modul.pdf diproses menjadi 2 sub bab. Materi draf Gaya dan '
+      'Gerak siap diberi jadwal dan soal.',
     );
-    final material = subject.materials.single;
-    expect(material.sourceFileName, 'modul.pdf');
-    expect(material.published, isFalse);
-
-    await _tap(tester, find.text('Lanjut buat soal'));
-    await tester.pumpAndSettle();
-    expect(find.text('Dari PDF: modul.pdf'), findsOneWidget);
+    final upload = server.requests.single;
+    final body = String.fromCharCodes(upload.bodyBytes);
+    expect(upload.headers['content-type'], startsWith('multipart/form-data'));
+    expect(body, contains('name="title"'));
+    expect(body, contains('Gaya dan Gerak'));
+    expect(body, contains('name="subject_id"'));
+    expect(body, contains('filename="modul.pdf"'));
+    expect(find.text('Sub bab 2: Gaya Gesek'), findsOneWidget);
+    expect(find.text('Lanjut atur jadwal dan soal'), findsOneWidget);
     handle.dispose();
   });
 
-  testWidgets('unggah PDF gagal: pesan gagal dan tombol coba lagi', (
-    tester,
-  ) async {
-    _tallScreen(tester);
+  testWidgets('file tidak terbaca: pesan dan tombol coba lagi', (tester) async {
+    tallScreen(tester);
+    final server = FakeServer({})..install();
     final handle = tester.ensureSemantics();
-    final subject = store.createSubject('Uji Gagal');
     await tester.pumpWidget(
-      _app(
+      testApp(
         NewMaterialScreen(
-          subject: subject,
+          subject: _subject,
           pickFile: () async => _pdf('rusak.pdf', _mb, failRead: true),
         ),
       ),
     );
     await tester.enterText(find.byType(TextField), 'Materi Rusak');
-    await _tap(tester, find.text('Pilih file PDF'));
-    await _tap(tester, _uploadButton);
-    await tester.pump(const Duration(seconds: 2));
-    _expectLive(
+    await tapAndPump(tester, find.text('Pilih file PDF'));
+    await tapAndPump(tester, _uploadButton);
+    await tester.pumpAndSettle();
+    expectLive(
       tester,
-      'Gagal mengunggah rusak.pdf. Periksa sambungan internet, lalu coba '
-      'lagi.',
+      'File rusak.pdf tidak bisa dibaca. Pilih ulang filenya, lalu coba lagi.',
     );
     expect(find.text('Coba unggah lagi'), findsOneWidget);
-    expect(subject.materials, isEmpty);
+    expect(server.requests, isEmpty);
     handle.dispose();
   });
 
-  testWidgets('ketik materi: judul wajib, lalu masuk ke editor', (
+  testWidgets('server menolak PDF: pesan dari backend dibacakan', (
     tester,
   ) async {
-    _tallScreen(tester);
+    tallScreen(tester);
+    FakeServer({
+      'POST /teacher/materials/upload': (_) =>
+          jsonResponse({'detail': 'PDF tidak bisa diproses'}, 400),
+    }).install();
     final handle = tester.ensureSemantics();
-    final subject = store.createSubject('Uji Ketik');
-    await tester.pumpWidget(_app(NewMaterialScreen(subject: subject)));
-
-    await _tap(tester, find.text('Ketik materi'));
-    await _tap(tester, find.text('Lanjut buat soal'));
-    _expectLive(tester, 'Judul materi belum diisi.');
-
-    await tester.enterText(find.byType(TextField).first, 'Magnet');
-    await tester.enterText(
-      find.byType(TextField).last,
-      'Magnet menarik benda dari besi.',
+    await tester.pumpWidget(
+      testApp(
+        NewMaterialScreen(
+          subject: _subject,
+          pickFile: () async => _pdf('modul.pdf', _mb),
+        ),
+      ),
     );
-    await _tap(tester, find.text('Lanjut buat soal'));
+    await tester.enterText(find.byType(TextField), 'Magnet');
+    await tapAndPump(tester, find.text('Pilih file PDF'));
+    await tapAndPump(tester, _uploadButton);
     await tester.pumpAndSettle();
-    expect(subject.materials.single.sourceFileName, isNull);
-    expect(find.text('Magnet menarik benda dari besi.'), findsOneWidget);
+    expectLive(tester, 'Gagal mengunggah modul.pdf. PDF tidak bisa diproses.');
+    expect(find.text('Coba unggah lagi'), findsOneWidget);
     handle.dispose();
   });
 }

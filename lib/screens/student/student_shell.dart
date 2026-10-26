@@ -4,6 +4,7 @@ import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/load_view.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/nav_bar.dart';
 import '../../widgets/playful.dart';
@@ -75,18 +76,21 @@ class StudentProgressTab extends StatelessWidget {
     return PurpleScaffold(
       appBar: aprevoAppBar('Progres'),
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            final subjects = store.subjectsOf(studentName);
-            final materials = store.materialsOf(studentName);
+        child: LoadView<List<(Subject, List<LessonMaterial>)>>(
+          loadingMessage: 'Memuat progres belajarmu.',
+          load: store.studentProgress,
+          builder: (context, groups, _) {
             var stars = 0;
             var finished = 0;
-            for (final m in materials) {
-              final post = store.latestAttempt(m, studentName, TestKind.post);
-              if (post != null) {
-                finished++;
-                stars += post.stars;
+            var count = 0;
+            for (final (_, materials) in groups) {
+              for (final m in materials) {
+                count++;
+                final post = m.quiz(TestKind.post)?.latestAttempt;
+                if (post != null) {
+                  finished++;
+                  stars += post.stars;
+                }
               }
             }
             return ListView(
@@ -94,29 +98,24 @@ class StudentProgressTab extends StatelessWidget {
               children: [
                 MascotBubble(
                   mood: stars > 0 ? MascotMood.cheer : MascotMood.happy,
-                  text: subjects.isEmpty
+                  text: groups.isEmpty
                       ? 'Belum ada mata pelajaran. Buka tab Belajar dan '
-                          'masukkan kode dari gurumu.'
+                            'masukkan kode dari gurumu.'
                       : 'Kamu sudah mengumpulkan $stars bintang dan '
-                          'menyelesaikan $finished dari ${materials.length} '
-                          'materi.',
+                            'menyelesaikan $finished dari $count materi.',
                 ),
                 const SizedBox(height: 8),
-                for (final s in subjects) ...[
-                  SectionTitle(s.name),
-                  if (store.publishedMaterials(s).isEmpty)
+                for (final (subject, materials) in groups) ...[
+                  SectionTitle(subject.name),
+                  if (materials.isEmpty)
                     const EmptyState(message: 'Belum ada materi.'),
-                  for (final m in store.publishedMaterials(s))
+                  for (final m in materials)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: _ProgressCard(
                         title: m.title,
-                        pre: store.latestAttempt(m, studentName, TestKind.pre),
-                        post: store.latestAttempt(
-                          m,
-                          studentName,
-                          TestKind.post,
-                        ),
+                        pre: m.quiz(TestKind.pre)?.latestAttempt,
+                        post: m.quiz(TestKind.post)?.latestAttempt,
                       ),
                     ),
                 ],

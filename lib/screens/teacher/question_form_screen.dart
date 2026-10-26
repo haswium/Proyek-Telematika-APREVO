@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
 import '../../models/models.dart';
+import '../../services/speech.dart';
 import '../../widgets/common.dart';
 import '../../widgets/playful.dart';
 
@@ -20,7 +21,6 @@ class QuestionFormScreen extends StatefulWidget {
 class _QuestionFormScreenState extends State<QuestionFormScreen> {
   final _prompt = TextEditingController();
   final _explanation = TextEditingController();
-  final _imageDescription = TextEditingController();
   final _answer = TextEditingController();
   final List<TextEditingController> _options = List.generate(
     4,
@@ -35,7 +35,6 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
     if (q == null) return;
     _prompt.text = q.prompt;
     _explanation.text = q.explanation ?? '';
-    _imageDescription.text = q.imageDescription ?? '';
     _answer.text = q.answerText;
     _correct = q.correctIndex;
     if (widget.type != GameType.trueFalse) {
@@ -49,7 +48,6 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
   void dispose() {
     _prompt.dispose();
     _explanation.dispose();
-    _imageDescription.dispose();
     _answer.dispose();
     for (final c in _options) {
       c.dispose();
@@ -58,9 +56,10 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
   }
 
   void _error(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+    Speech.feedback(context, message);
   }
 
   String? _orNull(TextEditingController c) {
@@ -87,6 +86,10 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
       case GameType.quiz:
         if (filled.length < 4) {
           _error('Isi keempat pilihan jawaban.');
+          return;
+        }
+        if (filled.map((t) => t.toLowerCase()).toSet().length < 4) {
+          _error('Pilihan jawaban tidak boleh sama.');
           return;
         }
         options = filled;
@@ -116,7 +119,6 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
         correctIndex: correctIndex,
         answerText: answerText,
         explanation: _orNull(_explanation),
-        imageDescription: _orNull(_imageDescription),
       ),
     );
   }
@@ -143,20 +145,11 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
             ..._answerFields(text),
             const SizedBox(height: 16),
             TextField(
-              controller: _imageDescription,
-              maxLines: 3,
-              decoration: fieldDecoration(
-                'Deskripsi gambar (opsional)',
-                hint: 'Dibacakan ke siswa sebagai pengganti gambar',
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
               controller: _explanation,
               maxLines: 3,
               decoration: fieldDecoration(
                 'Penjelasan jawaban',
-                hint: 'Dibacakan Odi saat siswa menjawab, terutama kalau salah',
+                hint: 'Dibuka ke siswa setelah tenggat kuis lewat',
               ),
             ),
             const SizedBox(height: 24),
@@ -224,6 +217,12 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
               'Jawaban benar',
               hint: 'Huruf besar dan kecil tidak dibedakan',
             ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Kalau ada beberapa jawaban yang diterima, pisahkan dengan '
+            'titik koma. Contoh: ketiga; 3',
+            style: AppType.bodySmall,
           ),
         ];
       case GameType.ordering:

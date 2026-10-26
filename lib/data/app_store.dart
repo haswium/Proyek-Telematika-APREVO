@@ -1,53 +1,52 @@
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
 import '../models/models.dart';
+import '../services/api_client.dart';
+import '../services/settings.dart';
 
-/// Penyimpanan sementara di memori supaya UI bisa dicoba tanpa backend.
+/// Akun lewat Supabase Auth, semua data lain lewat backend FastAPI
+/// (`docs/kontrak-api.md`).
 ///
-/// Setiap method di sini adalah titik sambung ke Supabase nanti:
-/// ganti isinya dengan query, tanda tangannya biarkan sama supaya layar
-/// tidak perlu diubah.
+/// Method data melempar [ApiException] dengan pesan berbahasa Indonesia
+/// yang siap dibacakan. Setelah data berubah (gabung, unggah, kumpulkan
+/// kuis, dan lainnya), [notifyListeners] dipanggil supaya layar yang
+/// sedang terbuka memuat ulang datanya (lihat `widgets/load_view.dart`).
 class AppStore extends ChangeNotifier {
-  AppStore() {
-    _seed();
-  }
+  AppStore({ApiClient? api}) : api = api ?? _supabaseApi();
 
-  final List<Subject> subjects = [];
-  final Random _random = Random();
-  int _nextId = 1;
+  /// Diganti di tes dengan klien yang memakai `MockClient`.
+  ApiClient api;
 
-  String _id() => 'local-${_nextId++}';
+  static ApiClient _supabaseApi() => ApiClient(
+    token: () async {
+      if (!store.online) return null;
+      return Supabase.instance.client.auth.currentSession?.accessToken;
+    },
+    refreshToken: () async {
+      if (!store.online) return false;
+      try {
+        final response = await Supabase.instance.client.auth.refreshSession();
+        return response.session != null;
+      } catch (_) {
+        return false;
+      }
+    },
+  );
 
   // ---- Akun.
-  // Kalau kunci anon sudah diisi di supabase_config.dart, masuk dan daftar
-  // memakai Supabase Auth (akun asli, tersimpan). Kalau belum, memakai akun
-  // contoh di bawah ini (mode demo, hilang saat aplikasi ditutup).
 
   /// Diisi `true` oleh `main()` setelah `Supabase.initialize` berhasil.
-  /// Widget test tidak menjalankan `main()`, jadi tes otomatis memakai mode
-  /// demo dan tidak pernah menghubungi Supabase.
+  /// Widget test tidak menjalankan `main()`, jadi tes tidak pernah
+  /// menghubungi Supabase.
   bool online = false;
 
-  final List<Account> _accounts = [
-    Account(
-      name: 'Bu Rina',
-      email: 'guru@aprevo.id',
-      password: '123456',
-      role: UserRole.teacher,
-    ),
-    Account(
-      name: 'Dimas',
-      email: 'siswa@aprevo.id',
-      password: '123456',
-      role: UserRole.student,
-    ),
-  ];
-
   Account? currentUser;
+
+  static const String _notConfigured =
+      'Aplikasi belum tersambung ke Supabase. Isi kunci anon di '
+      'lib/config/supabase_config.dart.';
 
   /// Nama dan peran disimpan di metadata akun Supabase saat daftar.
   Account _fromUser(User user) {
@@ -57,7 +56,6 @@ class AppStore extends ChangeNotifier {
     return Account(
       name: name.isNotEmpty ? name : email.split('@').first,
       email: email,
-      password: '',
       role: meta['role'] == 'teacher' ? UserRole.teacher : UserRole.student,
     );
   }
@@ -93,20 +91,12 @@ class AppStore extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
-    final clean = email.trim().toLowerCase();
-    if (!online) {
-      for (final account in _accounts) {
-        if (account.email == clean) {
-          if (account.password != password) return 'Password salah.';
-          currentUser = account;
-          return null;
-        }
-      }
-      return 'Akun dengan email ini tidak ditemukan.';
-    }
+    if (!online) return _notConfigured;
     try {
-      final response = await Supabase.instance.client.auth
-          .signInWithPassword(email: clean, password: password);
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+        email: email.trim().toLowerCase(),
+        password: password,
+      );
       final user = response.user;
       if (user == null) return 'Gagal masuk. Coba lagi.';
       currentUser = _fromUser(user);
@@ -118,13 +108,10 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  /// Email siswa yang sudah melihat layar sambutan.
-  final Set<String> _onboarded = {};
-
   bool needsOnboarding(Account account) =>
-      account.role == UserRole.student && !_onboarded.contains(account.email);
+      account.role == UserRole.student && !Settings.isOnboarded(account.email);
 
-  void markOnboarded(Account account) => _onboarded.add(account.email);
+  void markOnboarded(Account account) => Settings.markOnboarded(account.email);
 
   /// Mengembalikan pesan error, atau `null` kalau akun dibuat dan langsung
   /// masuk. Kalau Supabase meminta konfirmasi email, pesannya menjelaskan itu.
@@ -134,21 +121,8 @@ class AppStore extends ChangeNotifier {
     required String password,
     required UserRole role,
   }) async {
+    if (!online) return _notConfigured;
     final clean = email.trim().toLowerCase();
-    if (!online) {
-      if (_accounts.any((a) => a.email == clean)) {
-        return 'Email ini sudah terdaftar. Silakan masuk.';
-      }
-      final account = Account(
-        name: name.trim(),
-        email: clean,
-        password: password,
-        role: role,
-      );
-      _accounts.add(account);
-      currentUser = account;
-      return null;
-    }
     try {
       final response = await Supabase.instance.client.auth.signUp(
         email: clean,
@@ -178,144 +152,157 @@ class AppStore extends ChangeNotifier {
     if (online) Supabase.instance.client.auth.signOut();
   }
 
-  /// Semua materi dari semua mata pelajaran, termasuk draf.
-  List<LessonMaterial> get materials => [
-    for (final subject in subjects) ...subject.materials,
-  ];
+  // ---- Bersama guru dan siswa.
 
-  static const String _codeLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  /// Sub-bab satu materi, urut dari `position`.
+  Future<List<MaterialSection>> sections(String materialId) async {
+    final data = await api.get('/materials/$materialId/sections');
+    return [
+      for (final s in data['sections'] as List? ?? const [])
+        MaterialSection.fromJson(s as Map<String, dynamic>),
+    ];
+  }
 
-  String _generateAccessCode() {
-    while (true) {
-      final code = List.generate(
-        kAccessCodeLength,
-        (_) => _codeLetters[_random.nextInt(_codeLetters.length)],
-      ).join();
-      if (!subjects.any((s) => s.accessCode == code)) return code;
+  // ---- Guru.
+
+  Future<List<Subject>> teacherSubjects() async {
+    final data = await api.get('/teacher/subjects');
+    return [
+      for (final s in data['subjects'] as List? ?? const [])
+        Subject.fromJson(s as Map<String, dynamic>),
+    ];
+  }
+
+  /// Kode aksesnya dibuat backend.
+  Future<Subject> createSubject(String name) async {
+    final data = await api.post('/teacher/subjects', {'name': name.trim()});
+    notifyListeners();
+    return Subject.fromJson(data['subject'] as Map<String, dynamic>);
+  }
+
+  /// Semua materi satu mata pelajaran, termasuk draf.
+  Future<List<LessonMaterial>> teacherMaterials(String subjectId) async {
+    final data = await api.get('/teacher/subjects/$subjectId/materials');
+    return [
+      for (final m in data['materials'] as List? ?? const [])
+        LessonMaterial.fromJson(m as Map<String, dynamic>),
+    ];
+  }
+
+  Future<LessonMaterial> teacherMaterial(
+    String subjectId,
+    String materialId,
+  ) async {
+    final materials = await teacherMaterials(subjectId);
+    for (final m in materials) {
+      if (m.id == materialId) return m;
     }
+    throw const ApiException('Materi tidak ditemukan.', statusCode: 404);
   }
 
-  /// Guru membuat mata pelajaran. Kode aksesnya dibuat otomatis di sini.
-  Subject createSubject(String name) {
-    final subject = Subject(
-      id: _id(),
-      name: name,
-      accessCode: _generateAccessCode(),
-    );
-    subjects.add(subject);
-    notifyListeners();
-    return subject;
-  }
-
-  /// Guru menambah materi ke satu mata pelajaran. Materi baru selalu draf.
-  LessonMaterial createMaterial(Subject subject, String title, String body) {
-    final material = LessonMaterial(
-      id: _id(),
-      subjectId: subject.id,
-      title: title,
-      body: body,
-    );
-    subject.materials.add(material);
-    notifyListeners();
-    return material;
-  }
-
-  /// Guru mengunggah PDF sebagai materi baru (draf) di satu mata pelajaran.
-  ///
-  /// TIRUAN untuk mode demo: [bytes] belum dikirim ke mana pun, dan isi
-  /// materinya teks contoh. Nanti diganti dengan POST
-  /// /teacher/materials/upload ke backend (branch feat/backend-materials).
-  /// Kalau unggahan gagal, method ini melempar exception.
-  Future<LessonMaterial> uploadMaterialPdf(
+  /// PDF dikirim ke backend, disimpan, lalu dipecah per sub-bab.
+  /// Materi baru selalu draf.
+  Future<UploadResult> uploadMaterialPdf(
     Subject subject, {
     required String title,
     required String fileName,
     required Uint8List bytes,
   }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
-    final material = LessonMaterial(
-      id: _id(),
-      subjectId: subject.id,
-      title: title,
-      sourceFileName: fileName,
-      body:
-          'Materi $title diunggah dari file $fileName. Di mode demo, isi '
-          'PDF belum dibaca. Setelah aplikasi tersambung ke server, teks dari '
-          'PDF akan muncul di sini dan bisa didengarkan.',
+    final data = await api.upload(
+      '/teacher/materials/upload',
+      fields: {'title': title, 'subject_id': subject.id},
+      fileField: 'file',
+      fileName: fileName,
+      bytes: bytes,
     );
-    subject.materials.add(material);
+    final sections = [
+      for (final s in data['sections'] as List? ?? const [])
+        MaterialSection.fromJson(s as Map<String, dynamic>),
+    ];
+    final material = data['material'] as Map<String, dynamic>? ?? const {};
     notifyListeners();
-    return material;
+    return UploadResult(
+      material: LessonMaterial.fromJson({
+        ...material,
+        'section_count': sections.length,
+      }),
+      sections: sections,
+    );
   }
 
-  /// Siswa bergabung ke mata pelajaran lewat kode aksesnya. Huruf kecil,
-  /// spasi, dan strip dalam ketikan siswa tetap diterima.
-  JoinResult joinSubject(String code, String studentName) {
-    final clean = cleanAccessCode(code);
-    for (final subject in subjects) {
-      if (subject.accessCode != clean) continue;
-      if (subject.students.contains(studentName)) {
-        return JoinResult(JoinStatus.alreadyJoined, subject);
-      }
-      subject.students.add(studentName);
-      notifyListeners();
-      return JoinResult(JoinStatus.joined, subject);
-    }
-    return const JoinResult(JoinStatus.notFound);
-  }
-
-  /// Mata pelajaran yang sudah diikuti seorang siswa.
-  List<Subject> subjectsOf(String studentName) =>
-      subjects.where((s) => s.students.contains(studentName)).toList();
-
-  /// Materi yang boleh dilihat siswa: hanya yang sudah dipublikasikan.
-  List<LessonMaterial> publishedMaterials(Subject subject) =>
-      subject.materials.where((m) => m.published).toList();
-
-  /// Materi publik dari semua mata pelajaran yang diikuti seorang siswa.
-  List<LessonMaterial> materialsOf(String studentName) => [
-    for (final subject in subjectsOf(studentName))
-      ...publishedMaterials(subject),
-  ];
-
-  /// Mata pelajaran tempat sebuah materi berada.
-  Subject subjectOf(LessonMaterial material) =>
-      subjects.firstWhere((s) => s.id == material.subjectId);
-
-  /// Dipanggil setelah mengubah isi materi (jenis soal, daftar soal).
-  void touch() => notifyListeners();
-
-  void setPublished(LessonMaterial material, bool value) {
-    material.published = value;
+  Future<void> setPublished(String materialId, bool value) async {
+    await api.patch('/teacher/materials/$materialId', {'is_published': value});
     notifyListeners();
   }
 
-  void addAttempt(LessonMaterial material, Attempt attempt) {
-    material.attempts.add(attempt);
+  Future<void> createQuiz(
+    String materialId,
+    TestKind kind, {
+    required String availableFrom,
+    required String deadlineAt,
+  }) async {
+    await api.post('/teacher/materials/$materialId/quizzes', {
+      'kind': kind.api,
+      'available_from': availableFrom,
+      'deadline_at': deadlineAt,
+    });
     notifyListeners();
   }
 
-  /// Pengerjaan terakhir seorang siswa untuk satu tes, atau `null`.
-  Attempt? latestAttempt(
-    LessonMaterial material,
-    String studentName,
-    TestKind kind,
-  ) {
-    for (final a in material.attempts.reversed) {
-      if (a.studentName == studentName && a.kind == kind) return a;
-    }
-    return null;
+  Future<void> updateSchedule(
+    String quizId, {
+    required String availableFrom,
+    required String deadlineAt,
+  }) async {
+    await api.patch('/teacher/quizzes/$quizId/schedule', {
+      'available_from': availableFrom,
+      'deadline_at': deadlineAt,
+    });
+    notifyListeners();
+  }
+
+  /// Soal tersimpan satu kuis, lengkap dengan kunci jawaban.
+  Future<TeacherQuiz> teacherQuiz(QuizInfo info) async {
+    final data = await api.get('/quizzes/${info.id}');
+    final raw = [
+      for (final q in data['questions'] as List? ?? const [])
+        q as Map<String, dynamic>,
+    ];
+    return TeacherQuiz(
+      info: info,
+      questions: [for (final q in raw) Question.fromApi(q)],
+      type: raw.isEmpty ? null : gameTypeFromApi(raw.first['type']),
+    );
+  }
+
+  /// Mengirim soal draf ke satu kuis sekaligus.
+  Future<void> addQuestions(
+    String quizId,
+    GameType type,
+    List<Question> questions,
+  ) async {
+    await api.post('/quizzes/$quizId/questions', {
+      'questions': [for (final q in questions) q.toApi(type)],
+    });
+    notifyListeners();
+  }
+
+  Future<SubjectResults> subjectResults(String subjectId) async {
+    final data = await api.get('/teacher/subjects/$subjectId/results');
+    return SubjectResults.fromJson(data);
+  }
+
+  /// Hasil semua mata pelajaran guru, untuk tab Siswa dan Hasil.
+  Future<List<SubjectResults>> teacherOverview() async {
+    final subjects = await teacherSubjects();
+    return Future.wait([for (final s in subjects) subjectResults(s.id)]);
   }
 
   /// TIRUAN AI Game Generator. Hanya membuat soal contoh dari judul materi
   /// supaya alur "generate lalu review" bisa didemokan. Ganti dengan
   /// pemanggilan backend AI.
-  Future<List<Question>> generateQuestions(
-    GameType type,
-    LessonMaterial material,
-  ) async {
+  Future<List<Question>> generateQuestions(GameType type, String topic) async {
     await Future<void>.delayed(const Duration(milliseconds: 1200));
-    final topic = material.title;
     const note = 'Tulis penjelasan yang membantu siswa memahami jawabannya.';
     switch (type) {
       case GameType.quiz:
@@ -367,240 +354,127 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  void _seed() {
-    final ipa = Subject(id: _id(), name: 'IPA Kelas 5', accessCode: 'KXPRTA');
-    final bumi = Subject(
-      id: _id(),
-      name: 'Bumi dan Antariksa',
-      accessCode: 'BMRANT',
-    );
+  // ---- Siswa.
 
-    // Materi 1: jenis soal Quiz.
-    final foto = LessonMaterial(
-      id: _id(),
-      subjectId: ipa.id,
-      title: 'Fotosintesis',
-      questionType: GameType.quiz,
-      published: true,
-      body:
-          'Fotosintesis adalah proses tumbuhan membuat makanannya sendiri. '
-          'Proses ini terjadi di daun, pada bagian yang disebut kloroplas. '
-          'Di dalam kloroplas ada klorofil, zat hijau daun yang menyerap '
-          'cahaya matahari. Tumbuhan memerlukan cahaya matahari, air, dan '
-          'karbon dioksida. Hasilnya adalah glukosa sebagai makanan dan '
-          'oksigen yang dilepaskan ke udara.',
+  Future<List<Subject>> studentSubjects() async {
+    final data = await api.get('/student/subjects');
+    return [
+      for (final s in data['subjects'] as List? ?? const [])
+        Subject.fromJson(s as Map<String, dynamic>),
+    ];
+  }
+
+  /// Siswa bergabung lewat kode akses. Huruf kecil, spasi, dan strip
+  /// dirapikan dulu. Kode yang tidak ada menjadi [JoinStatus.notFound];
+  /// error lain dilempar sebagai [ApiException].
+  Future<JoinResult> joinSubject(String code) async {
+    try {
+      final data = await api.post('/student/subjects/join', {
+        'code': cleanAccessCode(code),
+      });
+      notifyListeners();
+      return JoinResult(
+        data['already_joined'] == true
+            ? JoinStatus.alreadyJoined
+            : JoinStatus.joined,
+        Subject.fromJson(data['subject'] as Map<String, dynamic>),
+      );
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return const JoinResult(JoinStatus.notFound);
+      rethrow;
+    }
+  }
+
+  /// Materi yang dipublikasikan beserta status kuisnya.
+  Future<List<LessonMaterial>> studentMaterials(String subjectId) async {
+    final data = await api.get('/student/subjects/$subjectId/materials');
+    return [
+      for (final m in data['materials'] as List? ?? const [])
+        LessonMaterial.fromJson(m as Map<String, dynamic>),
+    ];
+  }
+
+  Future<LessonMaterial> studentMaterial(
+    String subjectId,
+    String materialId,
+  ) async {
+    final materials = await studentMaterials(subjectId);
+    for (final m in materials) {
+      if (m.id == materialId) return m;
+    }
+    throw const ApiException(
+      'Materi ini tidak lagi tersedia. Mungkin guru menariknya kembali '
+      'menjadi draf.',
+      statusCode: 404,
     );
-    foto.preTest.addAll([
-      Question(
-        prompt: 'Di bagian tumbuhan mana fotosintesis terutama terjadi?',
-        options: ['Akar', 'Batang', 'Daun', 'Bunga'],
-        correctIndex: 2,
-        explanation:
-            'Fotosintesis terjadi di daun karena daun punya banyak '
-            'kloroplas. Akar bertugas menyerap air, dan batang '
-            'menyalurkannya ke daun.',
-      ),
-      Question(
-        prompt: 'Apa yang dibutuhkan tumbuhan untuk fotosintesis?',
-        options: [
-          'Cahaya matahari, air, dan karbon dioksida',
-          'Oksigen dan glukosa',
-          'Tanah dan pupuk saja',
-          'Angin dan hujan',
-        ],
-        correctIndex: 0,
-        explanation:
-            'Bahan fotosintesis ada tiga: cahaya matahari, air, dan karbon '
-            'dioksida. Oksigen dan glukosa adalah hasilnya, bukan bahannya.',
-      ),
+  }
+
+  /// Semua mata pelajaran siswa beserta materinya, untuk tab Progres.
+  Future<List<(Subject, List<LessonMaterial>)>> studentProgress() async {
+    final subjects = await studentSubjects();
+    final materials = await Future.wait([
+      for (final s in subjects) studentMaterials(s.id),
     ]);
-    foto.postTest.addAll([
-      Question(
-        prompt: 'Gas apa yang dilepaskan tumbuhan saat fotosintesis?',
-        options: ['Oksigen', 'Karbon dioksida', 'Nitrogen', 'Hidrogen'],
-        correctIndex: 0,
-        imageDescription:
-            'Diagram sehelai daun. Panah dari matahari menuju daun. '
-            'Panah karbon dioksida masuk ke daun, dan panah oksigen '
-            'keluar dari daun.',
-        explanation:
-            'Tumbuhan menyerap karbon dioksida dan melepaskan oksigen. '
-            'Oksigen inilah yang kita hirup saat bernapas.',
-      ),
-      Question(
-        prompt: 'Zat hijau daun yang menyerap cahaya matahari disebut apa?',
-        options: ['Glukosa', 'Klorofil', 'Stomata', 'Kloroplas'],
-        correctIndex: 1,
-        explanation:
-            'Zat hijau daun adalah klorofil. Kloroplas adalah tempatnya, '
-            'sedangkan klorofil adalah zat di dalamnya yang menyerap cahaya.',
-      ),
-      Question(
-        prompt: 'Apa hasil fotosintesis yang menjadi makanan tumbuhan?',
-        options: ['Air', 'Oksigen', 'Glukosa', 'Karbon dioksida'],
-        correctIndex: 2,
-        explanation:
-            'Makanan tumbuhan adalah glukosa, sejenis gula. Oksigen juga '
-            'dihasilkan, tetapi dilepaskan ke udara.',
-      ),
-    ]);
+    return [
+      for (var i = 0; i < subjects.length; i++) (subjects[i], materials[i]),
+    ];
+  }
 
-    // Materi 2: jenis soal Benar atau Salah.
-    final napas = LessonMaterial(
-      id: _id(),
-      subjectId: ipa.id,
-      title: 'Sistem Pernapasan',
-      questionType: GameType.trueFalse,
-      published: true,
-      body:
-          'Saat bernapas, udara masuk lewat hidung, melewati tenggorokan, '
-          'lalu sampai ke paru-paru. Di paru-paru, oksigen diserap ke dalam '
-          'darah dan karbon dioksida dikeluarkan. Otot diafragma di bawah '
-          'paru-paru membantu kita menarik dan menghembuskan napas.',
+  /// Mengambil soal lalu memulai percobaan. Kalau ada percobaan yang belum
+  /// dikumpulkan, backend mengembalikan percobaan itu.
+  Future<QuizSession> startQuiz(String quizId) async {
+    final quiz = await api.get('/student/quizzes/$quizId');
+    final attempt = await api.post('/quizzes/$quizId/attempts');
+    final info = quiz['quiz'] as Map<String, dynamic>? ?? const {};
+    final row = attempt['attempt'] as Map<String, dynamic>? ?? const {};
+    return QuizSession(
+      quizId: quizId,
+      attemptId: row['id'].toString(),
+      title: (info['title'] ?? '').toString(),
+      resumed: (attempt['message'] ?? '').toString().startsWith('Melanjutkan'),
+      questions: [
+        for (final q in quiz['questions'] as List? ?? const [])
+          StudentQuestion.fromJson(q as Map<String, dynamic>),
+      ],
     );
-    napas.preTest.add(
-      Question(
-        prompt: 'Udara yang kita hirup berakhir di lambung.',
-        options: const ['Benar', 'Salah'],
-        correctIndex: 1,
-        explanation:
-            'Udara berakhir di paru-paru, bukan lambung. Lambung adalah '
-            'bagian dari sistem pencernaan.',
-      ),
-    );
-    napas.postTest.addAll([
-      Question(
-        prompt: 'Di paru-paru, oksigen diserap ke dalam darah.',
-        options: const ['Benar', 'Salah'],
-        correctIndex: 0,
-        explanation:
-            'Benar. Di paru-paru terjadi pertukaran gas: oksigen masuk ke '
-            'darah dan karbon dioksida keluar.',
-      ),
-      Question(
-        prompt: 'Diafragma adalah otot yang membantu kita bernapas.',
-        options: const ['Benar', 'Salah'],
-        correctIndex: 0,
-        explanation:
-            'Benar. Diafragma berada di bawah paru-paru dan bergerak naik '
-            'turun saat kita menarik dan menghembuskan napas.',
-      ),
-    ]);
+  }
 
-    // Materi 3: jenis soal Puzzle Urutan.
-    final air = LessonMaterial(
-      id: _id(),
-      subjectId: ipa.id,
-      title: 'Daur Air',
-      questionType: GameType.ordering,
-      published: true,
-      body:
-          'Daur air adalah perjalanan air yang berulang. Pertama, panas '
-          'matahari menguapkan air laut. Uap air naik dan mendingin menjadi '
-          'awan. Awan yang berat menurunkan hujan. Air hujan mengalir lewat '
-          'sungai kembali ke laut.',
+  /// Menyimpan jawaban satu soal. Mengembalikan benar atau salah saja,
+  /// tanpa jawaban benar dan pembahasan.
+  Future<bool> saveAnswer(
+    String attemptId,
+    String questionId,
+    StudentAnswer answer,
+  ) async {
+    final data = await api.put(
+      '/student/attempts/$attemptId/answers/$questionId',
+      answer.toJson(questionId),
     );
-    air.preTest.add(
-      Question(
-        prompt: 'Susun perjalanan air dari awal sampai akhir.',
-        options: [
-          'Air laut menguap',
-          'Uap air menjadi awan',
-          'Hujan turun',
-        ],
-        explanation:
-            'Air harus menguap dulu supaya bisa menjadi awan, dan awan '
-            'harus terbentuk dulu sebelum hujan turun.',
-      ),
-    );
-    air.postTest.add(
-      Question(
-        prompt: 'Susun daur air secara lengkap dari awal sampai akhir.',
-        options: [
-          'Panas matahari menguapkan air laut',
-          'Uap air mendingin menjadi awan',
-          'Awan menurunkan hujan',
-          'Air mengalir lewat sungai ke laut',
-        ],
-        explanation:
-            'Urutannya: menguap, menjadi awan, turun sebagai hujan, lalu '
-            'mengalir kembali ke laut. Setelah itu daurnya berulang.',
-      ),
-    );
+    return data['is_correct'] == true;
+  }
 
-    // Materi 4: jenis soal Isian Singkat.
-    final planet = LessonMaterial(
-      id: _id(),
-      subjectId: bumi.id,
-      title: 'Tata Surya',
-      questionType: GameType.shortAnswer,
-      published: true,
-      body:
-          'Tata surya terdiri atas Matahari dan delapan planet yang '
-          'mengelilinginya. Planet terdekat dari Matahari adalah Merkurius. '
-          'Bumi adalah planet ketiga. Planet terbesar adalah Jupiter.',
+  Future<SubmitResult> submitAttempt(String attemptId) async {
+    final data = await api.post('/student/attempts/$attemptId/submit');
+    notifyListeners();
+    return SubmitResult(
+      attemptId: attemptId,
+      score: (data['correct_count'] as num?)?.toInt() ?? 0,
+      total: (data['total_questions'] as num?)?.toInt() ?? 0,
+      deadlinePassed: data['deadline_passed'] == true,
     );
-    planet.preTest.add(
-      Question(
-        prompt: 'Bumi adalah planet ke berapa dari Matahari? Jawab dengan kata.',
-        answerText: 'ketiga',
-        explanation:
-            'Urutannya Merkurius, Venus, lalu Bumi. Jadi Bumi adalah planet '
-            'ketiga dari Matahari.',
-      ),
-    );
-    planet.postTest.addAll([
-      Question(
-        prompt: 'Apa nama planet terbesar di tata surya?',
-        answerText: 'Jupiter',
-        explanation: 'Jupiter adalah planet terbesar di tata surya.',
-      ),
-      Question(
-        prompt: 'Apa nama planet yang paling dekat dengan Matahari?',
-        answerText: 'Merkurius',
-        explanation:
-            'Merkurius adalah planet terdekat dari Matahari, sebelum Venus '
-            'dan Bumi.',
-      ),
-    ]);
+  }
 
-    // Materi 5: masih draf, jadi tidak terlihat oleh siswa.
-    final gerhana = LessonMaterial(
-      id: _id(),
-      subjectId: bumi.id,
-      title: 'Gerhana',
-      questionType: GameType.quiz,
-      body:
-          'Gerhana matahari terjadi saat Bulan berada di antara Matahari dan '
-          'Bumi, sehingga cahaya Matahari tertutup Bulan.',
-    );
-
-    // Dimas belum ikut Bumi dan Antariksa, supaya alur memasukkan kode
-    // BMRANT bisa didemokan.
-    ipa.students.addAll(['Dimas', 'Sari']);
-    foto.attempts.addAll([
-      Attempt(
-        studentName: 'Sari',
-        materialId: foto.id,
-        materialTitle: foto.title,
-        kind: TestKind.pre,
-        score: 1,
-        total: 2,
-      ),
-      Attempt(
-        studentName: 'Sari',
-        materialId: foto.id,
-        materialTitle: foto.title,
-        kind: TestKind.post,
-        score: 3,
-        total: 3,
-      ),
-    ]);
-    ipa.materials.addAll([foto, napas, air]);
-    bumi.materials.addAll([planet, gerhana]);
-    subjects.addAll([ipa, bumi]);
+  /// [withKey] `false`: lihat ulang jawaban sendiri (tanpa kunci).
+  /// `true`: pembahasan, hanya setelah tenggat lewat.
+  Future<AttemptReview> attemptReview(
+    String attemptId, {
+    required bool withKey,
+  }) async {
+    final path = withKey ? 'discussion' : 'result';
+    final data = await api.get('/student/attempts/$attemptId/$path');
+    return AttemptReview.fromJson(data, withKey: withKey);
   }
 }
 
-/// Satu instance untuk seluruh aplikasi. Cukup untuk tahap prototipe.
+/// Satu instance untuk seluruh aplikasi.
 final AppStore store = AppStore();

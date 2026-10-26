@@ -221,7 +221,11 @@ class _OdiPainter extends CustomPainter {
       fill.color = AppColors.ink;
       canvas.drawCircle(pupil, s * 0.038, fill);
       fill.color = AppColors.white;
-      canvas.drawCircle(pupil + Offset(-s * 0.012, -s * 0.012), s * 0.012, fill);
+      canvas.drawCircle(
+        pupil + Offset(-s * 0.012, -s * 0.012),
+        s * 0.012,
+        fill,
+      );
     }
 
     // Mulut.

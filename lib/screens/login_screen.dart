@@ -7,6 +7,7 @@ import '../widgets/common.dart';
 import '../widgets/playful.dart';
 import 'auth_flow.dart';
 import 'register_screen.dart';
+import 'server_settings_screen.dart';
 
 /// Layar masuk. Satu form untuk guru dan siswa; perannya diambil dari akun.
 class LoginScreen extends StatefulWidget {
@@ -66,7 +67,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// Fitur yang butuh Supabase Auth dan belum tersambung.
   void _notYet(String feature) {
-    final message = '$feature akan aktif setelah aplikasi tersambung ke '
+    final message =
+        '$feature akan aktif setelah aplikasi tersambung ke '
         'Supabase.';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -154,12 +156,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton(
                     onPressed: () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const RegisterScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
                     ),
                     child: const Text('Belum punya akun? Daftar sekarang'),
                   ),
+                  const SizedBox(height: 12),
+                  const ServerAddressRow(),
                 ],
               ),
             ),
