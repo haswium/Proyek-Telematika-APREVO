@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
@@ -214,6 +215,7 @@ class AppStore extends ChangeNotifier {
       fileField: 'file',
       fileName: fileName,
       bytes: bytes,
+      contentType: MediaType('application', 'pdf'),
     );
     final sections = [
       for (final s in data['sections'] as List? ?? const [])

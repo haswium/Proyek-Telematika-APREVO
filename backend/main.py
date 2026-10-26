@@ -1506,11 +1506,13 @@ async def upload_material_pdf(
     if subject_id is not None:
         get_owned_subject(subject_id, teacher_id)
 
-    if file.content_type != "application/pdf":
+    # content_type dari klien tidak dipercaya: HP sering mengirim PDF sebagai
+    # application/octet-stream. Yang diperiksa ekstensi dan isi file.
+    if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File harus berformat PDF.")
     file_bytes = await file.read()
     if not file_bytes.startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="Isi file bukan pdf yang valid.")
+        raise HTTPException(status_code=400, detail="Isi file bukan PDF yang valid.")
     max_size = 20 * 1024 * 1024
     if len(file_bytes) > max_size:
         raise HTTPException(status_code=413, detail="Ukuran PDF maksimal 20 MB.")

@@ -113,7 +113,12 @@ huruf yang lebih besar, baris tebal, atau penomoran (`BAB 1`, `1.2 Judul`).
 Kalau tetap tidak ada, satu sub-bab per halaman. Teks sebelum judul pertama
 menjadi sub-bab "Pendahuluan".
 
-Error: `400` bukan PDF atau tidak bisa diproses, `403` bukan guru, `404`
+File dianggap PDF kalau namanya berakhiran `.pdf` dan isinya diawali `%PDF-`.
+`content_type` dari klien tidak dipakai, karena HP sering mengirimnya sebagai
+`application/octet-stream`. Aplikasi tetap mengirim `application/pdf`.
+
+Error: `400` bukan PDF (`"File harus berformat PDF."` atau `"Isi file bukan
+PDF yang valid."`) atau tidak bisa diproses, `403` bukan guru, `404`
 mata pelajaran tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 
 ### PATCH `/teacher/materials/{material_id}`

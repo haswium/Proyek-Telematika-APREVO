@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import 'settings.dart';
 
@@ -62,18 +63,27 @@ class ApiClient {
       _send('PATCH', path, body);
 
   /// Unggah satu file lewat multipart, bersama kolom teks [fields].
+  ///
+  /// [contentType] wajib diisi: tanpa itu `http` mengirim
+  /// `application/octet-stream`.
   Future<Map<String, dynamic>> upload(
     String path, {
     required Map<String, String> fields,
     required String fileField,
     required String fileName,
     required Uint8List bytes,
+    required MediaType contentType,
   }) {
     return _run(() async {
       final request = http.MultipartRequest('POST', _uri(path))
         ..fields.addAll(fields)
         ..files.add(
-          http.MultipartFile.fromBytes(fileField, bytes, filename: fileName),
+          http.MultipartFile.fromBytes(
+            fileField,
+            bytes,
+            filename: fileName,
+            contentType: contentType,
+          ),
         );
       request.headers.addAll(await _headers(json: false));
       return http.Response.fromStream(await _http.send(request));

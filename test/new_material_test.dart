@@ -117,6 +117,10 @@ void main() {
     expect(body, contains('Gaya dan Gerak'));
     expect(body, contains('name="subject_id"'));
     expect(body, contains('filename="modul.pdf"'));
+    // Tanpa contentType, http mengirim application/octet-stream dan
+    // backend dulu menolaknya.
+    expect(body, contains('content-type: application/pdf'));
+    expect(body, isNot(contains('application/octet-stream')));
     expect(find.text('Sub bab 2: Gaya Gesek'), findsOneWidget);
     expect(find.text('Lanjut atur jadwal dan soal'), findsOneWidget);
     handle.dispose();
