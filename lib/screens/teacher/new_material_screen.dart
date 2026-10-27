@@ -185,10 +185,6 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
       final pages =
           'Berhasil. ${file.name} diproses menjadi '
           '${result.sections.length} halaman.';
-      _setStatus(
-        _StatusKind.uploading,
-        '$pages Sekarang AI membuat deskripsi gambar. Tunggu sebentar.',
-      );
       final images = await _describeImages(result.material.id);
       if (!mounted) return;
       setState(() => _uploaded = result);
@@ -206,17 +202,18 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
     }
   }
 
-  /// Deskripsi AI dibuat langsung setelah unggah. Kalau gagal, materi tetap
-  /// tersimpan; guru bisa mencoba lagi di menu Gambar dan deskripsi.
+  /// Deskripsi AI langsung dimulai setelah unggah dan berjalan di latar
+  /// belakang. Kalau gagal dimulai, materi tetap tersimpan; guru bisa
+  /// mencoba lagi di menu Gambar dan deskripsi.
   Future<String> _describeImages(String materialId) async {
     try {
-      final pending = await store.describeImages(materialId);
-      if (pending == 0) {
-        return 'Gambar sudah dideskripsikan AI. Periksa deskripsinya di menu '
-            'Gambar dan deskripsi sebelum terbit.';
+      final job = await store.startDescribeImages(materialId);
+      if (job.total == 0) {
+        return 'Tidak ada gambar yang perlu dideskripsikan.';
       }
-      return '$pending gambar belum punya deskripsi. Buka menu Gambar dan '
-          'deskripsi untuk mencoba lagi atau menulisnya sendiri.';
+      return 'AI sedang membuat deskripsi ${job.total} gambar di latar '
+          'belakang. Pantau progresnya dan periksa hasilnya di menu Gambar '
+          'dan deskripsi sebelum terbit.';
     } on ApiException catch (e) {
       return 'Deskripsi gambar belum dibuat: ${e.message} Coba lagi di menu '
           'Gambar dan deskripsi.';

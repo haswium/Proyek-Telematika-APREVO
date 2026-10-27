@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
@@ -9,9 +11,16 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 
+/// Seberapa sering progres deskripsi diperiksa selama proses berjalan.
+const Duration kDescribePollInterval = Duration(seconds: 3);
+
 /// Gambar di PDF materi: guru meminta deskripsi AI, lalu memeriksa,
 /// memperbaiki, atau menandai gambar dekoratif sebelum materi terbit.
 /// Siswa mendengar "Gambar: deskripsi" di posisi gambar dalam halaman.
+///
+/// Deskripsi dibuat di latar belakang, satu gambar sekali jalan. Progresnya
+/// ("3 dari 12 gambar selesai") diperbarui berkala tanpa dibacakan; TalkBack
+/// hanya diberi tahu saat proses dimulai, ada gambar yang gagal, dan selesai.
 class MaterialImagesScreen extends StatefulWidget {
   const MaterialImagesScreen({
     super.key,
@@ -27,30 +36,126 @@ class MaterialImagesScreen extends StatefulWidget {
 }
 
 class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
-  bool _describing = false;
+  DescribeStatus? _job;
+  Timer? _poll;
+  bool _starting = false;
   String? _status;
+  Set<String> _knownFailures = {};
+  VoidCallback? _reloadImages;
+
+  bool get _running => _starting || (_job?.running ?? false);
+
+  @override
+  void initState() {
+    super.initState();
+    // Proses mungkin sudah berjalan, misalnya dimulai saat unggah.
+    _check(initial: true);
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _say(String message) {
+    setState(() => _status = message);
+    announce(message);
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    _poll = Timer.periodic(kDescribePollInterval, (_) => _check());
+  }
+
+  void _stopPolling() {
+    _poll?.cancel();
+    _poll = null;
+  }
 
   Future<void> _describe() async {
-    setState(() {
-      _describing = true;
-      _status = 'Membuat deskripsi gambar dengan AI. Tunggu sebentar.';
-    });
-    announce(_status!);
-    String message;
+    setState(() => _starting = true);
     try {
-      final pending = await store.describeImages(widget.materialId);
-      message = pending == 0
-          ? 'Deskripsi gambar selesai dibuat. Periksa setiap deskripsi.'
-          : '$pending gambar masih belum punya deskripsi. Pilih tombol ini '
-                'lagi untuk mencoba ulang, atau tulis deskripsinya sendiri.';
+      final job = await store.startDescribeImages(widget.materialId);
+      if (!mounted) return;
+      setState(() {
+        _starting = false;
+        _job = job;
+        _knownFailures = {for (final f in job.failed) f.imageId};
+      });
+      if (!job.running) {
+        _say('Semua gambar sudah punya deskripsi atau ditandai dekoratif.');
+        return;
+      }
+      _say(
+        job.total == 0
+            ? 'Memeriksa gambar materi. Hasilnya diumumkan saat selesai.'
+            : 'AI mulai membuat deskripsi ${job.total} gambar, satu per satu. '
+                  'Hasilnya diumumkan saat selesai atau saat ada yang gagal.',
+      );
+      _startPolling();
     } on ApiException catch (e) {
-      message = e.message;
+      if (!mounted) return;
+      setState(() => _starting = false);
+      _say(e.message);
+    }
+  }
+
+  Future<void> _check({bool initial = false}) async {
+    final DescribeStatus job;
+    try {
+      job = await store.describeStatus(widget.materialId);
+    } on ApiException catch (e) {
+      if (!mounted || initial) return;
+      _stopPolling();
+      _say('Progres deskripsi tidak bisa dibaca. ${e.message}');
+      return;
     }
     if (!mounted) return;
+    final previous = _job;
+    final fresh = [
+      for (final f in job.failed)
+        if (!_knownFailures.contains(f.imageId)) f,
+    ];
     setState(() {
-      _describing = false;
-      _status = message;
+      _job = job;
+      _knownFailures = {for (final f in job.failed) f.imageId};
     });
+    if (initial) {
+      if (job.running) _startPolling();
+      return;
+    }
+    if (previous == null || previous.done != job.done || fresh.isNotEmpty) {
+      _reloadImages?.call();
+    }
+    final finished = !job.running && (previous?.running ?? false);
+    if (finished) {
+      _stopPolling();
+      _say(_finishedMessage(job));
+    } else if (fresh.isNotEmpty) {
+      _say(_failureMessage(fresh));
+    }
+  }
+
+  String _finishedMessage(DescribeStatus job) {
+    final error = job.error;
+    if (error != null) return '$error.';
+    final done = 'Deskripsi gambar selesai: ${job.done} dari ${job.total}.';
+    if (job.failed.isEmpty) return '$done Periksa setiap deskripsi.';
+    return '$done ${job.failed.length} gambar gagal. Coba lagi satu per satu '
+        'lewat tombol di kartu gambarnya.';
+  }
+
+  String _failureMessage(List<FailedImage> fresh) {
+    final first = fresh.first;
+    final where = first.pageNumber == null
+        ? ''
+        : ' di halaman ${first.pageNumber}';
+    final who = fresh.length == 1
+        ? 'Satu gambar$where'
+        : '${fresh.length} gambar';
+    return '$who gagal dideskripsikan: ${first.message}. Gambar lain tetap '
+        'diproses.';
   }
 
   /// Ringkasan gambar yang menghalangi materi terbit.
@@ -102,65 +207,116 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
     ];
   }
 
+  /// Progres proses latar belakang. Teks biasa, bukan liveRegion, supaya
+  /// TalkBack tidak membacakan setiap perubahan angka.
+  Widget _progress(DescribeStatus job) {
+    final running = job.running;
+    return AppCard(
+      color: AppColors.soft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            running
+                ? 'Sedang berjalan: ${job.progressText}'
+                : 'Terakhir: ${job.progressText}',
+            style: AppType.titleMedium,
+          ),
+          const SizedBox(height: 10),
+          ExcludeSemantics(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: job.total == 0 ? null : job.done / job.total,
+                minHeight: 10,
+                color: AppColors.primary,
+                backgroundColor: AppColors.lilac,
+              ),
+            ),
+          ),
+          if (job.failed.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              '${job.failed.length} gambar gagal, bisa dicoba ulang di '
+              'kartunya.',
+              style: AppType.bodyMedium,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final job = _job;
+    final failures = {
+      for (final f in job?.failed ?? <FailedImage>[]) f.imageId: f.message,
+    };
     return PurpleScaffold(
       appBar: aprevoAppBar('Gambar materi'),
       body: SafeArea(
         child: LoadView<List<PageImage>>(
           loadingMessage: 'Memuat gambar ${widget.materialTitle}.',
           load: () => store.teacherImages(widget.materialId),
-          builder: (context, images, _) => ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Semantics(
-                header: true,
-                child: Text(
-                  widget.materialTitle,
-                  style: AppType.headlineMedium,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'AI membuat deskripsi setiap gambar untuk siswa. AI bisa '
-                'salah, jadi periksa dan perbaiki sebelum materi terbit. '
-                'Gambar dekoratif tidak dibacakan ke siswa.',
-                style: AppType.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: PrimaryButton(
-                  label: _describing
-                      ? 'Sedang membuat deskripsi...'
-                      : 'Buat deskripsi gambar dengan AI',
-                  icon: Icons.auto_awesome,
-                  onPressed: _describing ? null : _describe,
-                ),
-              ),
-              if (_status != null) ...[
-                const SizedBox(height: 10),
+          builder: (context, images, reload) {
+            _reloadImages = reload;
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
                 Semantics(
-                  liveRegion: true,
-                  child: Text(_status!, style: AppType.bodyMedium),
+                  header: true,
+                  child: Text(
+                    widget.materialTitle,
+                    style: AppType.headlineMedium,
+                  ),
                 ),
-              ],
-              const SizedBox(height: 20),
-              if (images.isEmpty)
-                const EmptyState(message: 'Materi ini tidak punya gambar.'),
-              ..._pending(images),
-              for (var i = 0; i < images.length; i++) ...[
-                _ImageCard(
-                  key: ValueKey(images[i].id),
-                  materialId: widget.materialId,
-                  image: images[i],
-                  number: i + 1,
-                  total: images.length,
+                const SizedBox(height: 6),
+                Text(
+                  'AI membuat deskripsi setiap gambar untuk siswa. AI bisa '
+                  'salah, jadi periksa dan perbaiki sebelum materi terbit. '
+                  'Gambar dekoratif tidak dibacakan ke siswa.',
+                  style: AppType.bodyMedium,
                 ),
                 const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: PrimaryButton(
+                    label: _running
+                        ? 'Sedang membuat deskripsi...'
+                        : 'Buat deskripsi gambar dengan AI',
+                    icon: Icons.auto_awesome,
+                    onPressed: _running ? null : _describe,
+                  ),
+                ),
+                if (_status != null) ...[
+                  const SizedBox(height: 10),
+                  Text(_status!, style: AppType.bodyMedium),
+                ],
+                if (job != null && (job.running || job.total > 0)) ...[
+                  const SizedBox(height: 12),
+                  _progress(job),
+                ],
+                const SizedBox(height: 20),
+                if (images.isEmpty)
+                  const EmptyState(message: 'Materi ini tidak punya gambar.'),
+                ..._pending(images),
+                for (var i = 0; i < images.length; i++) ...[
+                  _ImageCard(
+                    key: ValueKey(images[i].id),
+                    materialId: widget.materialId,
+                    image: images[i],
+                    number: i + 1,
+                    total: images.length,
+                    failure: failures[images[i].id],
+                    canRetry: !_running,
+                    onRetried: () => _check(),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ],
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -174,12 +330,20 @@ class _ImageCard extends StatefulWidget {
     required this.image,
     required this.number,
     required this.total,
+    this.failure,
+    this.canRetry = true,
+    this.onRetried,
   });
 
   final String materialId;
   final PageImage image;
   final int number;
   final int total;
+
+  /// Pesan kalau AI gagal mendeskripsikan gambar ini.
+  final String? failure;
+  final bool canRetry;
+  final VoidCallback? onRetried;
 
   @override
   State<_ImageCard> createState() => _ImageCardState();
@@ -192,6 +356,17 @@ class _ImageCardState extends State<_ImageCard> {
   late bool _decorative = widget.image.isDecorative;
   bool _saving = false;
   String? _feedback;
+
+  @override
+  void didUpdateWidget(_ImageCard old) {
+    super.didUpdateWidget(old);
+    // Deskripsi baru dari AI masuk ke kolom, kecuali guru sedang mengubahnya.
+    final before = old.image.description ?? '';
+    final after = widget.image.description ?? '';
+    if (after != before && _description.text == before) {
+      _description.text = after;
+    }
+  }
 
   @override
   void dispose() {
@@ -234,9 +409,34 @@ class _ImageCardState extends State<_ImageCard> {
     });
   }
 
+  Future<void> _retry() async {
+    setState(() {
+      _saving = true;
+      _feedback = 'AI sedang mendeskripsikan gambar ini.';
+    });
+    String message;
+    try {
+      final image = await store.retryImageDescription(
+        widget.materialId,
+        widget.image.id,
+      );
+      _description.text = image.description ?? '';
+      message = 'Deskripsi ${_title.toLowerCase()} dibuat. Periksa hasilnya.';
+      widget.onRetried?.call();
+    } on ApiException catch (e) {
+      message = e.message;
+    }
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      _feedback = message;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final preview = widget.image.previewUrl;
+    final failure = widget.failure;
     return AppCard(
       color: AppColors.soft,
       child: Column(
@@ -263,6 +463,19 @@ class _ImageCardState extends State<_ImageCard> {
                     style: AppType.bodySmall,
                   ),
                 ),
+              ),
+            ),
+          ],
+          if (failure != null && !_decorative) ...[
+            const SizedBox(height: 10),
+            Text('Gagal: $failure.', style: AppType.bodyMedium),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.refresh),
+                label: const Text('Coba lagi untuk gambar ini'),
+                onPressed: _saving || !widget.canRetry ? null : _retry,
               ),
             ),
           ],

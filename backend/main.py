@@ -1,9 +1,19 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
 import os
+import time
+from dataclasses import dataclass, field
 from supabase import create_client, ClientOptions
 from postgrest.exceptions import APIError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -2073,61 +2083,197 @@ def undescribed_image_pages(material_id):
     return pages
 
 
-@app.post("/teacher/materials/{material_id}/generate-image-description")
+# Jeda antar panggilan Gemini. Versi gratis membatasi jumlah permintaan per
+# menit, jadi gambar dideskripsikan satu per satu dengan jeda.
+GEMINI_DELAY_SECONDS = float(os.getenv("GEMINI_DELAY_SECONDS") or "4")
+# Jeda tambahan setelah Gemini menjawab "batas pemakaian tercapai".
+GEMINI_RATE_LIMIT_PAUSE_SECONDS = float(
+    os.getenv("GEMINI_RATE_LIMIT_PAUSE_SECONDS") or "30"
+)
+
+
+@dataclass
+class DescribeJob:
+    """Progres pembuatan deskripsi gambar satu materi.
+
+    Disimpan di memori proses backend. Kalau backend dimulai ulang, progresnya
+    hilang, tetapi deskripsi yang sudah dibuat tetap tersimpan di database
+    dan gambar sisanya bisa diproses lagi.
+    """
+
+    total: int = 0
+    done: int = 0
+    running: bool = True
+    error: Optional[str] = None
+    # image_id -> pesan kegagalan, untuk dicoba ulang satu per satu.
+    failed: dict = field(default_factory=dict)
+
+
+DESCRIBE_JOBS: dict[str, DescribeJob] = {}
+
+
+def is_rate_limited(error: Exception) -> bool:
+    text = str(error)
+    return "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower()
+
+
+def describe_failure_message(error: Exception) -> str:
+    if isinstance(error, GeminiKeyMissing):
+        return GEMINI_KEY_MISSING_DETAIL
+    if is_rate_limited(error):
+        return "Batas pemakaian Gemini tercapai. Coba lagi beberapa menit lagi"
+    return "AI gagal mendeskripsikan gambar ini. Coba lagi"
+
+
+def describe_one(row):
+    """Mendeskripsikan satu gambar dan menyimpannya. Melempar error asli
+    kalau gagal, supaya pemanggil bisa menilai jenis kegagalannya."""
+    image_bytes = supabase_admin.storage.from_("material-images").download(
+        row["image_url"]
+    )
+    description = describe_image(image_bytes).strip()
+    if not description:
+        raise ValueError("Deskripsi kosong")
+    response = (
+        supabase_admin.table("material_images")
+        .update({"description": description})
+        .eq("id", row["id"])
+        .execute()
+    )
+    return response.data[0] if response.data else {**row, "description": description}
+
+
+def prepare_image_rows(material, teacher_id):
+    """Materi lama yang gambarnya belum tersimpan diproses dari PDF-nya."""
+    material_id = material["id"]
+    known_keys = {row["image_key"] for row in material_image_rows(material_id)}
+    missing = set(material_content_image_keys(material_id)) - known_keys
+    if missing and material.get("file_url"):
+        pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(
+            material["file_url"]
+        )
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            store_page_images(pdf, material_id, teacher_id, known_keys, [])
+
+
+def run_describe_job(job: DescribeJob, material, teacher_id):
+    """Dijalankan di latar belakang setelah endpoint menjawab."""
+    try:
+        prepare_image_rows(material, teacher_id)
+        rows = [
+            row for row in ordered_image_rows(material["id"]) if needs_description(row)
+        ]
+        job.total = len(rows)
+        for index, row in enumerate(rows):
+            if index:
+                time.sleep(GEMINI_DELAY_SECONDS)
+            try:
+                describe_one(row)
+                job.done += 1
+            except Exception as error:
+                logger.exception("Gagal mendeskripsikan %s", row["image_key"])
+                job.failed[str(row["id"])] = describe_failure_message(error)
+                # Gambar lain tetap diproses; setelah kena batas pemakaian,
+                # tunggu lebih lama sebelum lanjut.
+                if is_rate_limited(error):
+                    time.sleep(GEMINI_RATE_LIMIT_PAUSE_SECONDS)
+    except Exception:
+        logger.exception("Proses deskripsi gambar materi %s berhenti", material["id"])
+        job.error = "Proses deskripsi berhenti karena kesalahan server. Coba lagi"
+    finally:
+        job.running = False
+
+
+def describe_status(material_id):
+    rows = {str(row["id"]): row for row in material_image_rows(material_id)}
+    job = DESCRIBE_JOBS.get(material_id)
+    failed = []
+    if job is not None:
+        for image_id, message in job.failed.items():
+            row = rows.get(image_id)
+            # Gambar yang sudah berhasil dicoba ulang tidak lagi gagal.
+            if row is not None and needs_description(row):
+                failed.append(
+                    {
+                        "image_id": image_id,
+                        "page_number": row.get("page_number"),
+                        "message": message,
+                    }
+                )
+    return {
+        "material_id": material_id,
+        "running": bool(job and job.running),
+        "total": job.total if job else 0,
+        "done": job.done if job else 0,
+        "failed": failed,
+        "error": job.error if job else None,
+        "pending": sum(needs_description(row) for row in rows.values()),
+    }
+
+
+@app.post(
+    "/teacher/materials/{material_id}/generate-image-description",
+    status_code=202,
+)
 def generate_material_image_description(
     material_id: str,
+    background_tasks: BackgroundTasks,
     auth=Depends(require_teacher),
 ):
-    """Mendeskripsikan gambar materi yang belum punya deskripsi dengan Gemini.
+    """Memulai pembuatan deskripsi gambar di latar belakang.
 
-    Aman dipanggil ulang: gambar yang sudah dideskripsikan atau dekoratif
-    dilewati, jadi pemanggilan berikutnya hanya mencoba gambar yang gagal.
-    Materi lama yang gambarnya belum tersimpan diproses dari PDF-nya.
+    Langsung menjawab dengan status awal. Progresnya dibaca lewat
+    GET .../image-description. Gambar yang sudah berdeskripsi atau dekoratif
+    dilewati, jadi aman dipanggil ulang.
     """
     material = get_owned_material(material_id, auth["user_id"])
     require_gemini()
-    described = failed = 0
-    try:
-        rows = material_image_rows(material_id)
-        known_keys = {row["image_key"] for row in rows}
-        missing = set(material_content_image_keys(material_id)) - known_keys
-        if missing and material.get("file_url"):
-            pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(
-                material["file_url"]
-            )
-            with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
-                store_page_images(pdf, material_id, auth["user_id"], known_keys, [])
-            rows = material_image_rows(material_id)
-        for row in rows:
-            if not needs_description(row):
-                continue
-            try:
-                image_bytes = supabase_admin.storage.from_("material-images").download(
-                    row["image_url"]
-                )
-                description = describe_image(image_bytes).strip()
-            except Exception:
-                logger.exception("Gagal mendeskripsikan %s", row["image_key"])
-                failed += 1
-                continue
-            supabase_admin.table("material_images").update(
-                {"description": description}
-            ).eq("id", row["id"]).execute()
-            described += 1
-    except Exception as error:
-        print(f"Error deskripsi gambar materi {material_id}:", repr(error))
+    job = DESCRIBE_JOBS.get(material_id)
+    if job is None or not job.running:
+        pending = [row for row in material_image_rows(material_id) if needs_description(row)]
+        job = DescribeJob(total=len(pending))
+        DESCRIBE_JOBS[material_id] = job
+        background_tasks.add_task(run_describe_job, job, material, auth["user_id"])
+    return describe_status(material_id)
+
+
+@app.get("/teacher/materials/{material_id}/image-description")
+def get_image_description_status(material_id: str, auth=Depends(require_teacher)):
+    """Progres pembuatan deskripsi, misalnya 3 dari 12 gambar selesai."""
+    get_owned_material(material_id, auth["user_id"])
+    return describe_status(material_id)
+
+
+@app.post("/teacher/materials/{material_id}/images/{image_id}/describe")
+def describe_single_image(material_id: str, image_id: str, auth=Depends(require_teacher)):
+    """Mencoba ulang deskripsi satu gambar. Cukup satu panggilan Gemini,
+    jadi dijawab langsung tanpa proses latar belakang."""
+    get_owned_material(material_id, auth["user_id"])
+    require_gemini()
+    job = DESCRIBE_JOBS.get(material_id)
+    if job is not None and job.running:
         raise HTTPException(
-            status_code=502,
-            detail="Gagal memproses gambar atau menyimpan deskripsi. Periksa log backend",
-        ) from error
-    images = [public_image(row) for row in ordered_image_rows(material_id)]
-    return {
-        "material_id": material_id,
-        "total_described": described,
-        "total_failed": failed,
-        "total_pending": sum(image["needs_description"] for image in images),
-        "images": images,
-    }
+            status_code=409,
+            detail="Deskripsi gambar lain sedang dibuat. Tunggu sampai selesai",
+        )
+    row = next(
+        (r for r in material_image_rows(material_id) if str(r["id"]) == image_id),
+        None,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    try:
+        saved = describe_one(row)
+    except Exception as error:
+        logger.exception("Gagal mendeskripsikan ulang %s", row["image_key"])
+        message = describe_failure_message(error)
+        if job is not None:
+            job.failed[image_id] = message
+        status = 429 if is_rate_limited(error) else 502
+        raise HTTPException(status_code=status, detail=message) from error
+    if job is not None:
+        job.failed.pop(image_id, None)
+    return {"message": "Deskripsi gambar dibuat", "image": public_image(saved)}
 
 
 @app.get("/teacher/materials/{material_id}/images")

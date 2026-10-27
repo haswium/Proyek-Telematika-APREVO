@@ -206,6 +206,10 @@ def no_gemini(monkeypatch):
 
     monkeypatch.setattr(main, "describe_image", blocked)
     monkeypatch.setattr(main, "generate_quiz", blocked)
+    # Tanpa jeda antar panggilan, dan progres tidak terbawa antar tes.
+    monkeypatch.setattr(main, "GEMINI_DELAY_SECONDS", 0)
+    monkeypatch.setattr(main, "GEMINI_RATE_LIMIT_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(main, "DESCRIBE_JOBS", {})
 
 
 @pytest.fixture

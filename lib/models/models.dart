@@ -497,6 +497,62 @@ class PageImage {
   bool get needsDescription => !isDecorative && description == null;
 }
 
+/// Gambar yang gagal dideskripsikan AI, bisa dicoba ulang satu per satu.
+class FailedImage {
+  FailedImage({required this.imageId, this.pageNumber, required this.message});
+
+  factory FailedImage.fromJson(Map<String, dynamic> json) {
+    final page = json['page_number'];
+    return FailedImage(
+      imageId: _str(json['image_id']),
+      pageNumber: page is num ? page.toInt() : null,
+      message: _str(json['message']),
+    );
+  }
+
+  final String imageId;
+  final int? pageNumber;
+  final String message;
+}
+
+/// Progres pembuatan deskripsi gambar yang berjalan di latar belakang.
+class DescribeStatus {
+  DescribeStatus({
+    this.running = false,
+    this.total = 0,
+    this.done = 0,
+    this.failed = const [],
+    this.error,
+    this.pending = 0,
+  });
+
+  factory DescribeStatus.fromJson(Map<String, dynamic> json) {
+    final error = json['error'];
+    return DescribeStatus(
+      running: json['running'] == true,
+      total: _int(json['total']),
+      done: _int(json['done']),
+      failed: [for (final f in _list(json['failed'])) FailedImage.fromJson(f)],
+      error: error is String && error.trim().isNotEmpty ? error.trim() : null,
+      pending: _int(json['pending']),
+    );
+  }
+
+  final bool running;
+  final int total;
+  final int done;
+  final List<FailedImage> failed;
+
+  /// Proses berhenti di tengah karena kesalahan server.
+  final String? error;
+
+  /// Gambar yang masih belum punya deskripsi dan bukan dekoratif.
+  final int pending;
+
+  /// "3 dari 12 gambar selesai".
+  String get progressText => '$done dari $total gambar selesai';
+}
+
 /// Halaman satu materi beserta gambar yang dirujuk isinya.
 class MaterialPages {
   MaterialPages({required this.sections, this.images = const {}});

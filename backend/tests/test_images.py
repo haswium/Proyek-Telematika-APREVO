@@ -98,37 +98,143 @@ def test_unggah_menyimpan_gambar_tanpa_memanggil_gemini(
     assert gemini == []
 
 
-def test_deskripsi_dibuat_sekali_untuk_gambar_yang_menunggu(
+def start(client, material_id):
+    return client.post(f"/teacher/materials/{material_id}/generate-image-description")
+
+
+def status(client, material_id):
+    return client.get(f"/teacher/materials/{material_id}/image-description").json()
+
+
+def make_photos_pdf(count):
+    """Satu halaman dengan beberapa foto yang perlu dideskripsikan."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for i in range(count):
+        photo = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 8, 8), False)
+        photo.clear_with(30 + i * 40)
+        page.insert_image(pymupdf.Rect(72, 72 + i * 150, 272, 202 + i * 150), pixmap=photo)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_proses_dimulai_di_latar_belakang_lalu_progres_dibaca(
     client, login, fake_db, storage, gemini
 ):
     material_id, _ = upload(client, login, fake_db)
-    path = f"/teacher/materials/{material_id}/generate-image-description"
-    body = client.post(path).json()
+    response = start(client, material_id)
+    # Endpoint langsung menjawab dengan status awal.
+    assert response.status_code == 202
+    assert response.json() | {"failed": []} == {
+        "material_id": material_id,
+        "running": True,
+        "total": 1,
+        "done": 0,
+        "failed": [],
+        "error": None,
+        "pending": 1,
+    }
+    # TestClient menjalankan tugas latar belakang sebelum kembali.
     assert len(gemini) == 1
-    assert (body["total_described"], body["total_pending"]) == (1, 0)
-    photo = next(i for i in body["images"] if not i["is_decorative"])
+    assert status(client, material_id) | {"material_id": None} == {
+        "material_id": None,
+        "running": False,
+        "total": 1,
+        "done": 1,
+        "failed": [],
+        "error": None,
+        "pending": 0,
+    }
+    photo = images(client, material_id)[0]
     assert photo["description"] == "Budi memasukkan uang koin ke celengan."
 
-    assert client.post(path).json()["total_described"] == 0
+    # Dipanggil lagi: tidak ada yang perlu dideskripsikan.
+    start(client, material_id)
     assert len(gemini) == 1
+    assert status(client, material_id)["total"] == 0
 
 
-def test_gambar_gagal_dideskripsikan_bisa_dicoba_lagi(
+def test_gambar_gagal_tidak_menghentikan_gambar_lain_dan_ada_jeda(
+    client, login, fake_db, storage, monkeypatch
+):
+    _, subject, _ = setup_subject(client, login, fake_db)
+    response = client.post(
+        "/teacher/materials/upload",
+        data={"title": "Foto", "subject_id": subject["id"]},
+        files={"file": ("foto.pdf", make_photos_pdf(3), "application/pdf")},
+    )
+    material_id = response.json()["material"]["id"]
+    calls = []
+
+    def describe(_bytes):
+        calls.append(len(calls))
+        if len(calls) == 2:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+        return f"Foto {len(calls)}."
+
+    sleeps = []
+    monkeypatch.setattr(main, "describe_image", describe)
+    monkeypatch.setattr(main, "GEMINI_DELAY_SECONDS", 4)
+    monkeypatch.setattr(main, "GEMINI_RATE_LIMIT_PAUSE_SECONDS", 30)
+    monkeypatch.setattr(main.time, "sleep", sleeps.append)
+    start(client, material_id)
+
+    body = status(client, material_id)
+    assert len(calls) == 3
+    assert (body["total"], body["done"], body["pending"]) == (3, 2, 1)
+    assert [f["message"] for f in body["failed"]] == [
+        "Batas pemakaian Gemini tercapai. Coba lagi beberapa menit lagi"
+    ]
+    # Jeda antar gambar, ditambah jeda panjang setelah kena batas pemakaian.
+    assert sleeps == [4, 30, 4]
+
+
+def test_gambar_gagal_dicoba_ulang_satu_per_satu(
     client, login, fake_db, storage, monkeypatch
 ):
     material_id, _ = upload(client, login, fake_db)
-    path = f"/teacher/materials/{material_id}/generate-image-description"
 
     def broken(_bytes):
-        raise RuntimeError("kuota habis")
+        raise RuntimeError("server Gemini sibuk")
 
     monkeypatch.setattr(main, "describe_image", broken)
-    body = client.post(path).json()
-    assert (body["total_failed"], body["total_pending"]) == (1, 1)
+    start(client, material_id)
+    failed = status(client, material_id)["failed"]
+    assert [(f["page_number"], f["message"]) for f in failed] == [
+        (1, "AI gagal mendeskripsikan gambar ini. Coba lagi")
+    ]
+    retry = f"/teacher/materials/{material_id}/images/{failed[0]['image_id']}/describe"
+    response = client.post(retry)
+    assert response.status_code == 502
+    assert response.json()["detail"] == "AI gagal mendeskripsikan gambar ini. Coba lagi"
 
     monkeypatch.setattr(main, "describe_image", lambda _bytes: "Celengan.")
-    body = client.post(path).json()
-    assert (body["total_described"], body["total_pending"]) == (1, 0)
+    response = client.post(retry)
+    assert response.status_code == 200, response.text
+    assert response.json()["image"]["description"] == "Celengan."
+    body = status(client, material_id)
+    assert (body["failed"], body["pending"]) == ([], 0)
+
+
+def test_proses_yang_berjalan_tidak_dimulai_dua_kali(
+    client, login, fake_db, storage, gemini
+):
+    material_id, _ = upload(client, login, fake_db)
+    main.DESCRIBE_JOBS[material_id] = main.DescribeJob(total=5, done=2)
+    body = start(client, material_id).json()
+    assert (body["running"], body["total"], body["done"]) == (True, 5, 2)
+    assert gemini == []
+    photo = images(client, material_id)[0]
+    response = client.post(f"/teacher/materials/{material_id}/images/{photo['id']}/describe")
+    assert response.status_code == 409
+
+
+def test_guru_lain_tidak_bisa_melihat_progres(client, login, fake_db, storage, gemini):
+    material_id, _ = upload(client, login, fake_db)
+    login("teacher", "Pak Lain")
+    response = client.get(f"/teacher/materials/{material_id}/image-description")
+    assert response.status_code == 404
 
 
 def test_terbit_ditolak_selama_ada_gambar_tanpa_deskripsi(
@@ -222,11 +328,9 @@ def test_materi_lama_tanpa_baris_gambar_diproses_dari_pdf(
     material_id, _ = upload(client, login, fake_db)
     # Seperti materi yang diunggah sebelum gambar disimpan saat unggah.
     fake_db["material_images"] = []
-    body = client.post(
-        f"/teacher/materials/{material_id}/generate-image-description"
-    ).json()
-    assert len(body["images"]) == 2
-    assert body["total_pending"] == 0
+    start(client, material_id)
+    assert len(images(client, material_id)) == 2
+    assert status(client, material_id)["pending"] == 0
 
 
 def test_ai_soal_tidak_menerima_penanda_gambar(client, login, fake_db, monkeypatch):

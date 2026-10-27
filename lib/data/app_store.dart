@@ -244,15 +244,30 @@ class AppStore extends ChangeNotifier {
   Future<List<PageImage>> teacherImages(String materialId) async =>
       _images(await api.get('/teacher/materials/$materialId/images'));
 
-  /// Meminta AI mendeskripsikan gambar yang belum punya deskripsi.
-  /// Mengembalikan jumlah gambar yang masih belum punya deskripsi.
-  Future<int> describeImages(String materialId) async {
+  /// Memulai pembuatan deskripsi gambar oleh AI di latar belakang.
+  /// Server langsung menjawab; progresnya dibaca dengan [describeStatus].
+  Future<DescribeStatus> startDescribeImages(String materialId) async =>
+      DescribeStatus.fromJson(
+        await api.post(
+          '/teacher/materials/$materialId/generate-image-description',
+        ),
+      );
+
+  Future<DescribeStatus> describeStatus(String materialId) async =>
+      DescribeStatus.fromJson(
+        await api.get('/teacher/materials/$materialId/image-description'),
+      );
+
+  /// Mencoba ulang deskripsi AI untuk satu gambar yang gagal.
+  Future<PageImage> retryImageDescription(
+    String materialId,
+    String imageId,
+  ) async {
     final data = await api.post(
-      '/teacher/materials/$materialId/generate-image-description',
+      '/teacher/materials/$materialId/images/$imageId/describe',
     );
     notifyListeners();
-    final pending = data['total_pending'];
-    return pending is num ? pending.toInt() : 0;
+    return PageImage.fromJson(data['image'] as Map<String, dynamic>);
   }
 
   Future<void> updateImage(

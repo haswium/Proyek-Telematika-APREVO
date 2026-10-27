@@ -76,7 +76,9 @@ void main() {
     final server = FakeServer({
       'POST /teacher/materials/upload': (_) => _uploaded(),
       'POST /teacher/materials/m1/generate-image-description': (_) => {
-        'total_pending': 1,
+        'running': true,
+        'total': 3,
+        'done': 0,
       },
     }, delay: const Duration(seconds: 1))..install();
     final handle = tester.ensureSemantics();
@@ -107,21 +109,15 @@ void main() {
       'Mengunggah modul.pdf dan memecahnya per halaman. Tunggu sebentar.',
     );
 
-    await tester.pump(const Duration(seconds: 1));
+    // Unggah, lalu proses deskripsi dimulai tanpa ditunggu selesai.
+    await tester.pump(const Duration(seconds: 2));
     await tester.pump();
     expectLive(
       tester,
-      'Berhasil. modul.pdf diproses menjadi 2 halaman. Sekarang AI membuat '
-      'deskripsi gambar. Tunggu sebentar.',
-    );
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
-    expectLive(
-      tester,
-      'Berhasil. modul.pdf diproses menjadi 2 halaman. 1 gambar belum punya '
-      'deskripsi. Buka menu Gambar dan deskripsi untuk mencoba lagi atau '
-      'menulisnya sendiri. Materi draf Gaya dan Gerak siap diberi jadwal dan '
-      'soal.',
+      'Berhasil. modul.pdf diproses menjadi 2 halaman. AI sedang membuat '
+      'deskripsi 3 gambar di latar belakang. Pantau progresnya dan periksa '
+      'hasilnya di menu Gambar dan deskripsi sebelum terbit. Materi draf '
+      'Gaya dan Gerak siap diberi jadwal dan soal.',
     );
     expect(
       server.requests.last.url.path,
