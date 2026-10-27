@@ -16,7 +16,7 @@ os.environ["SUPABASE_KEY"] = "test-anon-key"
 os.environ["SUPABASE_SERVICE_KEY"] = "test-service-key"
 os.environ["ENABLE_DEBUG_ENDPOINTS"] = "0"
 # Kunci palsu supaya endpoint AI melewati pemeriksaan kunci. Tes tidak
-# pernah memanggil Gemini.
+# pernah memanggil Gemini: describe_image dan generate_quiz diganti tiruan.
 os.environ["GEMINI_API_KEY"] = "test-gemini-key"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -194,6 +194,18 @@ class FakeSupabase:
 class FakeUser:
     def __init__(self, user_id):
         self.id = user_id
+
+
+@pytest.fixture(autouse=True)
+def no_gemini(monkeypatch):
+    """Panggilan Gemini sungguhan langsung gagal. Tes yang butuh AI memasang
+    tiruannya sendiri dengan monkeypatch."""
+
+    def blocked(*_args, **_kwargs):
+        raise AssertionError("Tes tidak boleh memanggil Gemini sungguhan.")
+
+    monkeypatch.setattr(main, "describe_image", blocked)
+    monkeypatch.setattr(main, "generate_quiz", blocked)
 
 
 @pytest.fixture

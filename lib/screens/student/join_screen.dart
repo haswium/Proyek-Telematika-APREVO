@@ -50,6 +50,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
+        settings: kMaterialListRoute,
         builder: (_) => StudentSubjectScreen(
           subject: subject,
           studentName: widget.studentName,

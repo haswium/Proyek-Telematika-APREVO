@@ -456,6 +456,57 @@ class MaterialSection {
   }
 }
 
+/// Gambar di halaman materi. Di isi halaman, posisinya ditandai baris
+/// `[[gambar:<imageKey>]]`.
+class PageImage {
+  PageImage({
+    required this.id,
+    required this.imageKey,
+    this.pageNumber,
+    this.description,
+    this.isDecorative = false,
+    this.previewUrl,
+  });
+
+  factory PageImage.fromJson(Map<String, dynamic> json) {
+    final page = json['page_number'];
+    final description = json['description'];
+    final preview = json['preview_url'];
+    return PageImage(
+      id: _str(json['id']),
+      imageKey: _str(json['image_key']),
+      pageNumber: page is num ? page.toInt() : null,
+      description: description is String && description.trim().isNotEmpty
+          ? description.trim()
+          : null,
+      isDecorative: json['is_decorative'] == true,
+      previewUrl: preview is String ? preview : null,
+    );
+  }
+
+  final String id;
+  final String imageKey;
+  final int? pageNumber;
+  final String? description;
+  final bool isDecorative;
+
+  /// Tautan sementara untuk pratinjau, hanya untuk guru.
+  final String? previewUrl;
+
+  /// Belum punya deskripsi dan bukan dekoratif: menghalangi materi terbit.
+  bool get needsDescription => !isDecorative && description == null;
+}
+
+/// Halaman satu materi beserta gambar yang dirujuk isinya.
+class MaterialPages {
+  MaterialPages({required this.sections, this.images = const {}});
+
+  final List<MaterialSection> sections;
+
+  /// Gambar menurut `imageKey`.
+  final Map<String, PageImage> images;
+}
+
 /// Hasil `POST /teacher/materials/upload`.
 class UploadResult {
   UploadResult({required this.material, required this.sections});

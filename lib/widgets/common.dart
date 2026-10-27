@@ -5,6 +5,10 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'playful.dart';
 
+/// Rute layar daftar materi (siswa dan guru). Tombol "Selesai" di halaman
+/// terakhir materi kembali ke rute ini.
+const RouteSettings kMaterialListRoute = RouteSettings(name: 'daftar-materi');
+
 AppBar aprevoAppBar(
   String title, {
   PreferredSizeWidget? bottom,

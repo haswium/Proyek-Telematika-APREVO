@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
 import os
@@ -16,7 +17,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
 import logging
-from pdf_sections import split_pdf_bytes
+from pdf_sections import image_keys, page_images, plain_text, split_pdf_bytes
 from ai_client import GeminiKeyMissing, gemini_client
 from ai_quiz import generate_quiz
 from PIL import UnidentifiedImageError
@@ -52,6 +53,24 @@ EXTRA_CORS_ORIGINS = [
 ]
 
 app = FastAPI()
+
+SERVER_ERROR_DETAIL = (
+    "Server mengalami kesalahan saat memproses permintaan. Coba lagi nanti, "
+    "atau hubungi pengelola server kalau terus terjadi."
+)
+
+
+# Dipasang sebelum CORSMiddleware sehingga berada DI DALAM CORS: error yang
+# tidak tertangkap tetap dijawab 500 dengan header CORS. Tanpa ini, browser
+# membuang respons 500 dan aplikasi web mengira server tidak bisa dihubungi.
+@app.middleware("http")
+async def server_error_json(request, call_next):
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("Error tak tertangkap: %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": SERVER_ERROR_DETAIL})
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -1545,6 +1564,7 @@ async def upload_material_pdf(
         )
 
     material = None
+    image_paths = []
     try:
         result = (
             supabase_admin.table("materials")
@@ -1567,10 +1587,20 @@ async def upload_material_pdf(
         saved_sections = (
             supabase_admin.table("material_sections").insert(section_rows).execute()
         ).data or []
+        # Gambar disimpan sekarang (belum dideskripsikan), supaya daftar
+        # gambar dan syarat terbit langsung lengkap. Deskripsi AI dibuat lewat
+        # endpoint generate-image-description, yang dipanggil aplikasi
+        # setelah unggah selesai.
+        with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
+            store_page_images(pdf, material["id"], teacher_id, set(), image_paths)
     except Exception as e:
         print("ERROR SIMPAN MATERI:", repr(e))
         if material is not None:
             try:
+                # Tabel lama material_images tidak memakai on delete cascade.
+                supabase_admin.table("material_images").delete().eq(
+                    "material_id", material["id"]
+                ).execute()
                 supabase_admin.table("materials").delete().eq(
                     "id", material["id"]
                 ).execute()
@@ -1578,6 +1608,8 @@ async def upload_material_pdf(
                 pass
         try:
             supabase_admin.storage.from_("materials-pdf").remove([file_path])
+            if image_paths:
+                supabase_admin.storage.from_("material-images").remove(image_paths)
         except Exception:
             pass
         raise HTTPException(
@@ -1802,6 +1834,19 @@ def update_material(
     changes = data.model_dump(exclude_none=True)
     if not changes:
         raise HTTPException(status_code=400, detail="Tidak ada perubahan")
+    if changes.get("is_published"):
+        pages = undescribed_image_pages(material_id)
+        if pages:
+            known = sorted({page for page in pages if page})
+            where = f" (halaman {', '.join(map(str, known))})" if known else ""
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Materi belum bisa diterbitkan: {len(pages)} gambar{where} "
+                    "belum punya deskripsi atau tanda dekoratif. Lengkapi di "
+                    "menu Gambar dan deskripsi"
+                ),
+            )
     response = (
         supabase_admin.table("materials")
         .update(changes)
@@ -1874,7 +1919,9 @@ def generate_material_quiz(
         .execute()
     )
     sections = sections_result.data or []
-    materi = "\n\n".join(section.get("content") or "" for section in sections).strip()
+    materi = "\n\n".join(
+        plain_text(section.get("content") or "") for section in sections
+    ).strip()
     if not materi:
         raise HTTPException(
             status_code=422, detail="Materi belum memiliki teks yang dapat digunakan."
@@ -1900,107 +1947,253 @@ def generate_material_quiz(
     }
 
 
+# Format yang disimpan apa adanya. Format lain (JPEG 2000, JBIG2, TIFF, dll.)
+# diubah ke PNG supaya bisa dibuka Pillow dan dikirim ke Gemini.
+IMAGE_MIME_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "jpe": "image/jpeg",
+    "jfif": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+}
+IMAGE_PREVIEW_SECONDS = 60 * 60
+
+
+def image_file(pdf, xref):
+    """Berkas gambar dari PDF: (bytes, ekstensi, content type)."""
+    extracted = pdf.extract_image(xref)
+    extension = (extracted.get("ext") or "").lower().lstrip(".")
+    if extension in IMAGE_MIME_TYPES:
+        return extracted["image"], extension, IMAGE_MIME_TYPES[extension]
+    pixmap = pymupdf.Pixmap(pdf, xref)
+    if pixmap.colorspace is not None and pixmap.colorspace.n > 3:
+        pixmap = pymupdf.Pixmap(pymupdf.csRGB, pixmap)
+    return pixmap.tobytes("png"), "png", "image/png"
+
+
+def store_page_images(pdf, material_id, teacher_id, known_keys, uploaded_paths):
+    """Menyimpan gambar PDF yang belum punya baris di material_images.
+
+    Gambar baru belum punya deskripsi. Ikon kecil dan latar penuh langsung
+    ditandai dekoratif sehingga tidak perlu dideskripsikan.
+    """
+    for page_number, page in enumerate(pdf, start=1):
+        for image in page_images(page, page_number):
+            if image.key in known_keys:
+                continue
+            known_keys.add(image.key)
+            data, extension, content_type = image_file(pdf, image.xref)
+            image_path = (
+                f"{teacher_id}/{material_id}/images/"
+                f"page-{page_number}-{image.key}.{extension}"
+            )
+            supabase_admin.storage.from_("material-images").upload(
+                path=image_path,
+                file=data,
+                file_options={"content-type": content_type, "upsert": "true"},
+            )
+            uploaded_paths.append(image_path)
+            supabase_admin.table("material_images").insert(
+                {
+                    "material_id": material_id,
+                    "image_key": image.key,
+                    "page_number": page_number,
+                    "image_url": image_path,
+                    "description": None,
+                    "is_decorative": image.decorative,
+                    "audio_url": None,
+                }
+            ).execute()
+
+
+def material_image_rows(material_id):
+    response = (
+        supabase_admin.table("material_images")
+        .select("id, image_key, page_number, image_url, description, is_decorative")
+        .eq("material_id", material_id)
+        .execute()
+    )
+    rows = [row for row in (response.data or []) if row.get("image_key")]
+    return sorted(rows, key=lambda row: (row.get("page_number") or 0, row["image_key"]))
+
+
+def needs_description(row):
+    return not row.get("is_decorative") and not (row.get("description") or "").strip()
+
+
+def public_image(row):
+    return {
+        "id": row["id"],
+        "image_key": row["image_key"],
+        "page_number": row.get("page_number"),
+        "description": row.get("description"),
+        "is_decorative": bool(row.get("is_decorative")),
+        "needs_description": needs_description(row),
+    }
+
+
+def material_content_image_keys(material_id):
+    """Kunci gambar yang dirujuk isi halaman materi."""
+    response = (
+        supabase_admin.table("material_sections")
+        .select("content")
+        .eq("material_id", material_id)
+        .execute()
+    )
+    keys = []
+    for section in response.data or []:
+        for key in image_keys(section.get("content") or ""):
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def ordered_image_rows(material_id):
+    """Gambar materi menurut urutan baca: urutan penanda di isi halaman,
+    lalu gambar yang tidak dirujuk menurut halamannya."""
+    order = {key: i for i, key in enumerate(material_content_image_keys(material_id))}
+    return sorted(
+        material_image_rows(material_id),
+        key=lambda row: (order.get(row["image_key"], len(order)), row.get("page_number") or 0),
+    )
+
+
+def undescribed_image_pages(material_id):
+    """Halaman yang masih punya gambar tanpa deskripsi dan bukan dekoratif.
+    Gambar yang belum punya baris sama sekali juga dihitung."""
+    rows = {row["image_key"]: row for row in material_image_rows(material_id)}
+    pages = []
+    for key in material_content_image_keys(material_id):
+        row = rows.get(key)
+        if row is None or needs_description(row):
+            pages.append((row or {}).get("page_number"))
+    return pages
+
+
 @app.post("/teacher/materials/{material_id}/generate-image-description")
 def generate_material_image_description(
     material_id: str,
     auth=Depends(require_teacher),
 ):
+    """Mendeskripsikan gambar materi yang belum punya deskripsi dengan Gemini.
+
+    Aman dipanggil ulang: gambar yang sudah dideskripsikan atau dekoratif
+    dilewati, jadi pemanggilan berikutnya hanya mencoba gambar yang gagal.
+    Materi lama yang gambarnya belum tersimpan diproses dari PDF-nya.
+    """
     material = get_owned_material(material_id, auth["user_id"])
     require_gemini()
-    file_path = material.get("file_url")
-    if not file_path:
-        raise HTTPException(
-            status_code=422,
-            detail="Path PDF materi tidak ditemukan.",
-        )
+    described = failed = 0
     try:
-        pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(file_path)
-        saved_images = []
-        skipped_images = 0
-        seen_xrefs = set()
-        existing_result = (
-            supabase_admin.table("material_images")
-            .select("image_url")
-            .eq("material_id", material_id)
-            .execute()
-        )
-        existing_paths = {
-            row["image_url"]
-            for row in (existing_result.data or [])
-            if row.get("image_url")
-        }
-        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
-            for page_number, page in enumerate(pdf, start=1):
-                for image_info in page.get_images(full=True):
-                    xref = image_info[0]
-                    if not xref or xref in seen_xrefs:
-                        continue
-                    seen_xrefs.add(xref)
-                    extracted = pdf.extract_image(xref)
-                    image_bytes = extracted["image"]
-                    extension = extracted.get("ext", "png")
-                    image_path = (
-                        f"{auth['user_id']}/{material_id}/"
-                        f"images/page-{page_number}-xref-{xref}.{extension}"
-                    )
-                    if image_path in existing_paths:
-                        skipped_images += 1
-                        continue
-                    description = describe_image(image_bytes)
-                    mime_types = {
-                        "png": "image/png",
-                        "jpg": "image/jpeg",
-                        "jpeg": "image/jpeg",
-                        "jpe": "image/jpeg",
-                        "jfif": "image/jpeg",
-                        "webp": "image/webp",
-                        "gif": "image/gif",
-                        "bmp": "image/bmp",
-                        "tif": "image/tiff",
-                        "tiff": "image/tiff",
-                        "jp2": "image/jp2",
-                        "jpx": "image/jpx",
-                        "j2k": "image/jp2",
-                    }
-                    extension = extension.lower().lstrip(".")
-                    content_type = mime_types.get(extension)
-                    if content_type is None:
-                        raise ValueError(
-                            f"Format gambar hasil ekstraksi belum didukung: {extension}"
-                        )
-                    supabase_admin.storage.from_("material-images").upload(
-                        path=image_path,
-                        file=image_bytes,
-                        file_options={"content-type": content_type, "upsert": "true"},
-                    )
-                    result = (
-                        supabase_admin.table("material_images")
-                        .insert(
-                            {
-                                "material_id": material_id,
-                                "image_url": image_path,
-                                "description": description,
-                                "audio_url": None,
-                            }
-                        )
-                        .execute()
-                    )
-                    saved_images.extend(result.data or [])
-                    existing_paths.add(image_path)
-    except HTTPException:
-        raise
+        rows = material_image_rows(material_id)
+        known_keys = {row["image_key"] for row in rows}
+        missing = set(material_content_image_keys(material_id)) - known_keys
+        if missing and material.get("file_url"):
+            pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(
+                material["file_url"]
+            )
+            with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                store_page_images(pdf, material_id, auth["user_id"], known_keys, [])
+            rows = material_image_rows(material_id)
+        for row in rows:
+            if not needs_description(row):
+                continue
+            try:
+                image_bytes = supabase_admin.storage.from_("material-images").download(
+                    row["image_url"]
+                )
+                description = describe_image(image_bytes).strip()
+            except Exception:
+                logger.exception("Gagal mendeskripsikan %s", row["image_key"])
+                failed += 1
+                continue
+            supabase_admin.table("material_images").update(
+                {"description": description}
+            ).eq("id", row["id"]).execute()
+            described += 1
     except Exception as error:
         print(f"Error deskripsi gambar materi {material_id}:", repr(error))
         raise HTTPException(
             status_code=502,
             detail="Gagal memproses gambar atau menyimpan deskripsi. Periksa log backend",
         ) from error
+    images = [public_image(row) for row in ordered_image_rows(material_id)]
     return {
         "material_id": material_id,
-        "total_images_saved": len(saved_images),
-        "total_images_skipped": skipped_images,
-        "images": saved_images,
+        "total_described": described,
+        "total_failed": failed,
+        "total_pending": sum(image["needs_description"] for image in images),
+        "images": images,
     }
+
+
+@app.get("/teacher/materials/{material_id}/images")
+def list_material_images(material_id: str, auth=Depends(require_teacher)):
+    """Gambar materi untuk diperiksa guru, dengan tautan pratinjau sementara."""
+    get_owned_material(material_id, auth["user_id"])
+    images = []
+    for row in ordered_image_rows(material_id):
+        preview_url = None
+        try:
+            signed = supabase_admin.storage.from_("material-images").create_signed_url(
+                row["image_url"], IMAGE_PREVIEW_SECONDS
+            )
+            preview_url = signed.get("signedURL") or signed.get("signedUrl")
+        except Exception as error:
+            print("Gagal membuat tautan pratinjau gambar:", repr(error))
+        images.append({**public_image(row), "preview_url": preview_url})
+    return {"material_id": material_id, "images": images}
+
+
+class MaterialImageUpdateRequest(BaseModel):
+    description: Optional[str] = Field(default=None, max_length=2000)
+    is_decorative: Optional[bool] = None
+
+
+@app.patch("/teacher/materials/{material_id}/images/{image_id}")
+def update_material_image(
+    material_id: str,
+    image_id: str,
+    data: MaterialImageUpdateRequest,
+    auth=Depends(require_teacher),
+):
+    """Guru memperbaiki deskripsi AI atau menandai gambar dekoratif."""
+    material = get_owned_material(material_id, auth["user_id"])
+    changes = {}
+    if data.description is not None:
+        changes["description"] = data.description.strip() or None
+    if data.is_decorative is not None:
+        changes["is_decorative"] = data.is_decorative
+    if not changes:
+        raise HTTPException(status_code=400, detail="Tidak ada perubahan.")
+    current = next(
+        (row for row in material_image_rows(material_id) if str(row["id"]) == image_id),
+        None,
+    )
+    if current is None:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    # Siswa tidak boleh menemui gambar tanpa deskripsi di materi yang terbit.
+    if material.get("is_published") and needs_description({**current, **changes}):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Materi sudah terbit, jadi gambar ini harus punya deskripsi "
+                "atau ditandai dekoratif"
+            ),
+        )
+    response = (
+        supabase_admin.table("material_images")
+        .update(changes)
+        .eq("id", image_id)
+        .eq("material_id", material_id)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    return {"message": "Gambar disimpan", "image": public_image(response.data[0])}
 
 
 @app.patch("/teacher/quizzes/{quiz_id}/schedule")
@@ -2356,4 +2549,6 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
     return {
         "material": {"id": material["id"], "title": material["title"]},
         "sections": sections_response.data or [],
+        # Deskripsi untuk penanda [[gambar:...]] di isi halaman.
+        "images": [public_image(row) for row in material_image_rows(material_id)],
     }

@@ -18,7 +18,10 @@ class TeacherHomeScreen extends StatelessWidget {
   void _open(BuildContext context, Subject subject) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => SubjectDetailScreen(subject: subject)),
+      MaterialPageRoute(
+        settings: kMaterialListRoute,
+        builder: (_) => SubjectDetailScreen(subject: subject),
+      ),
     );
   }
 

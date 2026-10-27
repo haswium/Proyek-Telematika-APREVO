@@ -9,6 +9,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import '../student/section_reader_screen.dart';
+import 'material_images_screen.dart';
 import 'question_form_screen.dart';
 import 'quiz_schedule_screen.dart';
 import 'results_screen.dart';
@@ -299,6 +300,23 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
             context,
             MaterialPageRoute(
               builder: (_) => MaterialSectionsScreen(
+                materialId: m.id,
+                materialTitle: m.title,
+              ),
+            ),
+          ),
+        ),
+        ListRow(
+          icon: Icons.image_outlined,
+          title: 'Gambar dan deskripsi',
+          subtitle: 'Periksa deskripsi AI sebelum terbit',
+          semanticLabel:
+              'Gambar dan deskripsi materi ${m.title}. Periksa deskripsi AI '
+              'sebelum terbit',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MaterialImagesScreen(
                 materialId: m.id,
                 materialTitle: m.title,
               ),

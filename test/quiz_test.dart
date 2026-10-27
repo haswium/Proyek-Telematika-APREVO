@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aprevo/models/models.dart';
 import 'package:aprevo/screens/student/play_game_screen.dart';
 import 'package:aprevo/screens/student/review_screen.dart';
-import 'package:aprevo/screens/student/section_reader_screen.dart';
 import 'package:aprevo/services/time_format.dart';
 
 import 'fake_server.dart';
@@ -63,62 +62,6 @@ Map<String, dynamic> _review({required bool withKey}) => {
 };
 
 void main() {
-  testWidgets('sub bab: pindah berikutnya diumumkan dengan posisinya', (
-    tester,
-  ) async {
-    tallScreen(tester);
-    FakeServer({
-      'GET /materials/m1/sections': (_) => {
-        'material': {'id': 'm1', 'title': 'Tumbuhan'},
-        'sections': [
-          for (var i = 1; i <= 3; i++)
-            {
-              'id': 's$i',
-              'position': i,
-              'title': 'Bagian $i',
-              'content': 'Isi bagian $i.',
-              'image_description': i == 2 ? 'Gambar daun.' : null,
-              'page_start': i,
-              'page_end': i,
-            },
-        ],
-      },
-    }).install();
-    final handle = tester.ensureSemantics();
-    await tester.pumpWidget(
-      testApp(
-        const MaterialSectionsScreen(
-          materialId: 'm1',
-          materialTitle: 'Tumbuhan',
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.bySemanticsLabel('Sub bab 1 dari 3: Bagian 1, halaman 1'),
-      findsOneWidget,
-    );
-
-    await tapAndPump(tester, find.text('Sub bab 1: Bagian 1'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sub bab 1 dari 3'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Sub bab sebelumnya, tidak ada'),
-      findsOneWidget,
-    );
-    tester.takeAnnouncements();
-
-    await tapAndPump(tester, find.text('Berikutnya'));
-    expect(find.text('Sub bab 2 dari 3'), findsOneWidget);
-    expect(find.text('Isi bagian 2.'), findsOneWidget);
-    expect(find.text('Deskripsi gambar: Gambar daun.'), findsOneWidget);
-    expect(
-      tester.takeAnnouncements().map((a) => a.message),
-      contains('Sub bab 2 dari 3: Bagian 2'),
-    );
-    handle.dispose();
-  });
-
   testWidgets('kuis: tiap soal hanya benar/salah, lalu hasil', (tester) async {
     tallScreen(tester);
     final server = FakeServer({

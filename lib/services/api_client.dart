@@ -203,7 +203,7 @@ class ApiClient {
     if (code == 404) return 'Data tidak ditemukan.';
     if (code == 413) return 'File terlalu besar.';
     if (code >= 500) {
-      return 'Server sedang bermasalah (kode $code). Coba lagi sebentar '
+      return 'Server mengalami kesalahan (kode $code). Coba lagi sebentar '
           'lagi.';
     }
     return 'Permintaan gagal (kode $code). Coba lagi.';

@@ -75,6 +75,9 @@ void main() {
     tallScreen(tester);
     final server = FakeServer({
       'POST /teacher/materials/upload': (_) => _uploaded(),
+      'POST /teacher/materials/m1/generate-image-description': (_) => {
+        'total_pending': 1,
+      },
     }, delay: const Duration(seconds: 1))..install();
     final handle = tester.ensureSemantics();
     var next = _pdf('besar.pdf', 25 * _mb);
@@ -101,16 +104,30 @@ void main() {
     await tapAndPump(tester, _uploadButton);
     expectLive(
       tester,
-      'Mengunggah modul.pdf dan memecahnya per sub bab. Tunggu sebentar.',
+      'Mengunggah modul.pdf dan memecahnya per halaman. Tunggu sebentar.',
     );
 
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
     expectLive(
       tester,
-      'Berhasil. modul.pdf diproses menjadi 2 sub bab. Materi draf Gaya dan '
-      'Gerak siap diberi jadwal dan soal.',
+      'Berhasil. modul.pdf diproses menjadi 2 halaman. Sekarang AI membuat '
+      'deskripsi gambar. Tunggu sebentar.',
     );
-    final upload = server.requests.single;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expectLive(
+      tester,
+      'Berhasil. modul.pdf diproses menjadi 2 halaman. 1 gambar belum punya '
+      'deskripsi. Buka menu Gambar dan deskripsi untuk mencoba lagi atau '
+      'menulisnya sendiri. Materi draf Gaya dan Gerak siap diberi jadwal dan '
+      'soal.',
+    );
+    expect(
+      server.requests.last.url.path,
+      '/teacher/materials/m1/generate-image-description',
+    );
+    final upload = server.requests.first;
     final body = String.fromCharCodes(upload.bodyBytes);
     expect(upload.headers['content-type'], startsWith('multipart/form-data'));
     expect(body, contains('name="title"'));
@@ -121,7 +138,7 @@ void main() {
     // backend dulu menolaknya.
     expect(body, contains('content-type: application/pdf'));
     expect(body, isNot(contains('application/octet-stream')));
-    expect(find.text('Sub bab 2: Gaya Gesek'), findsOneWidget);
+    expect(find.text('Halaman 2: Gaya Gesek'), findsOneWidget);
     expect(find.text('Lanjut atur jadwal dan soal'), findsOneWidget);
     handle.dispose();
   });

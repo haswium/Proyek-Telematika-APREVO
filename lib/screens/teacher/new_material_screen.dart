@@ -159,7 +159,7 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
     }
     _setStatus(
       _StatusKind.uploading,
-      'Mengunggah ${file.name} dan memecahnya per sub bab. Tunggu sebentar.',
+      'Mengunggah ${file.name} dan memecahnya per halaman. Tunggu sebentar.',
     );
     final Uint8List bytes;
     try {
@@ -182,11 +182,19 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
         bytes: bytes,
       );
       if (!mounted) return;
+      final pages =
+          'Berhasil. ${file.name} diproses menjadi '
+          '${result.sections.length} halaman.';
+      _setStatus(
+        _StatusKind.uploading,
+        '$pages Sekarang AI membuat deskripsi gambar. Tunggu sebentar.',
+      );
+      final images = await _describeImages(result.material.id);
+      if (!mounted) return;
       setState(() => _uploaded = result);
       _setStatus(
         _StatusKind.success,
-        'Berhasil. ${file.name} diproses menjadi ${result.sections.length} '
-        'sub bab. Materi draf $title siap diberi jadwal dan soal.',
+        '$pages $images Materi draf $title siap diberi jadwal dan soal.',
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -195,6 +203,23 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
         _StatusKind.error,
         'Gagal mengunggah ${file.name}. ${e.message}',
       );
+    }
+  }
+
+  /// Deskripsi AI dibuat langsung setelah unggah. Kalau gagal, materi tetap
+  /// tersimpan; guru bisa mencoba lagi di menu Gambar dan deskripsi.
+  Future<String> _describeImages(String materialId) async {
+    try {
+      final pending = await store.describeImages(materialId);
+      if (pending == 0) {
+        return 'Gambar sudah dideskripsikan AI. Periksa deskripsinya di menu '
+            'Gambar dan deskripsi sebelum terbit.';
+      }
+      return '$pending gambar belum punya deskripsi. Buka menu Gambar dan '
+          'deskripsi untuk mencoba lagi atau menulisnya sendiri.';
+    } on ApiException catch (e) {
+      return 'Deskripsi gambar belum dibuat: ${e.message} Coba lagi di menu '
+          'Gambar dan deskripsi.';
     }
   }
 
@@ -244,9 +269,10 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'PDF dipecah per sub bab supaya siswa bisa '
-                    'membacanya satu per satu. Materi baru masuk '
-                    'sebagai draf sampai kamu publikasikan.',
+                    'PDF dipecah per halaman supaya siswa bisa '
+                    'membacanya satu per satu, dan AI membuat deskripsi '
+                    'gambarnya. Materi baru masuk sebagai draf sampai kamu '
+                    'publikasikan.',
                     style: TextStyle(color: AppColors.white),
                   ),
                 ],
@@ -292,17 +318,18 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
               ),
               const SizedBox(height: 8),
               SectionTitle(
-                'Sub bab yang ditemukan (${uploaded.sections.length})',
+                'Halaman yang terbaca (${uploaded.sections.length})',
               ),
               if (uploaded.sections.isEmpty)
                 const EmptyState(
-                  message: 'Tidak ada sub bab yang terbaca dari PDF ini.',
+                  message: 'Tidak ada halaman yang terbaca dari PDF ini.',
                 ),
               for (final s in uploaded.sections)
                 ListRow(
                   icon: Icons.menu_book_outlined,
-                  title: 'Sub bab ${s.position}: ${s.title}',
-                  subtitle: s.pagesText.isEmpty ? null : s.pagesText,
+                  title: s.title.trim().isEmpty
+                      ? 'Halaman ${s.position}'
+                      : 'Halaman ${s.position}: ${s.title.trim()}',
                 ),
             ],
           ],

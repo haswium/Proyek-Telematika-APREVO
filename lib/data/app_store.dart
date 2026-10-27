@@ -155,14 +155,22 @@ class AppStore extends ChangeNotifier {
 
   // ---- Bersama guru dan siswa.
 
-  /// Sub-bab satu materi, urut dari `position`.
-  Future<List<MaterialSection>> sections(String materialId) async {
+  /// Halaman satu materi, urut dari `position`, beserta gambarnya.
+  Future<MaterialPages> sections(String materialId) async {
     final data = await api.get('/materials/$materialId/sections');
-    return [
-      for (final s in data['sections'] as List? ?? const [])
-        MaterialSection.fromJson(s as Map<String, dynamic>),
-    ];
+    return MaterialPages(
+      sections: [
+        for (final s in data['sections'] as List? ?? const [])
+          MaterialSection.fromJson(s as Map<String, dynamic>),
+      ],
+      images: {for (final image in _images(data)) image.imageKey: image},
+    );
   }
+
+  static List<PageImage> _images(Map<String, dynamic> data) => [
+    for (final i in data['images'] as List? ?? const [])
+      PageImage.fromJson(i as Map<String, dynamic>),
+  ];
 
   // ---- Guru.
 
@@ -230,6 +238,34 @@ class AppStore extends ChangeNotifier {
       }),
       sections: sections,
     );
+  }
+
+  /// Gambar materi dengan tautan pratinjau, untuk diperiksa guru.
+  Future<List<PageImage>> teacherImages(String materialId) async =>
+      _images(await api.get('/teacher/materials/$materialId/images'));
+
+  /// Meminta AI mendeskripsikan gambar yang belum punya deskripsi.
+  /// Mengembalikan jumlah gambar yang masih belum punya deskripsi.
+  Future<int> describeImages(String materialId) async {
+    final data = await api.post(
+      '/teacher/materials/$materialId/generate-image-description',
+    );
+    notifyListeners();
+    final pending = data['total_pending'];
+    return pending is num ? pending.toInt() : 0;
+  }
+
+  Future<void> updateImage(
+    String materialId,
+    String imageId, {
+    String? description,
+    bool? isDecorative,
+  }) async {
+    await api.patch('/teacher/materials/$materialId/images/$imageId', {
+      'description': ?description,
+      'is_decorative': ?isDecorative,
+    });
+    notifyListeners();
   }
 
   Future<void> setPublished(String materialId, bool value) async {

@@ -71,7 +71,43 @@ void main() {
     });
 
     test('error server tanpa detail', () {
-      expect(ApiClient.errorMessage(500, null), contains('kode 500'));
+      expect(
+        ApiClient.errorMessage(500, null),
+        'Server mengalami kesalahan (kode 500). Coba lagi sebentar lagi.',
+      );
+    });
+
+    test('server menjawab 500: bukan pesan tidak bisa terhubung', () async {
+      Future<void> expectServerError(
+        http.Response response,
+        String message,
+      ) async {
+        final api = ApiClient(
+          client: MockClient((_) async => response),
+          baseUrl: () => fakeBaseUrl,
+        );
+        await expectLater(
+          api.get('/materials/m1/sections'),
+          throwsA(
+            isA<ApiException>()
+                .having((e) => e.statusCode, 'statusCode', 500)
+                .having((e) => e.message, 'message', message),
+          ),
+        );
+      }
+
+      // Pesan dari backend (middleware error 500).
+      await expectServerError(
+        jsonResponse({
+          'detail': 'Server mengalami kesalahan saat memproses permintaan.',
+        }, 500),
+        'Server mengalami kesalahan saat memproses permintaan.',
+      );
+      // Badan bukan JSON, misalnya dari proxy.
+      await expectServerError(
+        http.Response('Internal Server Error', 500),
+        'Server mengalami kesalahan (kode 500). Coba lagi sebentar lagi.',
+      );
     });
 
     test('server mati: pesan menyebut alamatnya', () async {
