@@ -15,6 +15,9 @@ os.environ["SUPABASE_URL"] = "http://localhost:54321"
 os.environ["SUPABASE_KEY"] = "test-anon-key"
 os.environ["SUPABASE_SERVICE_KEY"] = "test-service-key"
 os.environ["ENABLE_DEBUG_ENDPOINTS"] = "0"
+# Kunci palsu supaya endpoint AI melewati pemeriksaan kunci. Tes tidak
+# pernah memanggil Gemini.
+os.environ["GEMINI_API_KEY"] = "test-gemini-key"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

@@ -17,6 +17,7 @@ from uuid import uuid4
 import pymupdf
 import logging
 from pdf_sections import split_pdf_bytes
+from ai_client import GeminiKeyMissing, gemini_client
 from ai_quiz import generate_quiz
 from PIL import UnidentifiedImageError
 from ai_image import describe_image
@@ -25,6 +26,7 @@ import mimetypes
 print("DEBUG: MAIN.PY TERLOAD", flush=True)
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -1844,11 +1846,26 @@ def create_quiz(
     return {"message": "Kuis berhasil dibuat", "quiz": response.data[0]}
 
 
+GEMINI_KEY_MISSING_DETAIL = (
+    "Fitur AI belum aktif karena GEMINI_API_KEY belum diatur di backend/.env. "
+    "Hubungi pengelola server."
+)
+
+
+def require_gemini():
+    """Endpoint AI menolak dengan 503 kalau kunci Gemini belum diatur."""
+    try:
+        gemini_client()
+    except GeminiKeyMissing as error:
+        raise HTTPException(status_code=503, detail=GEMINI_KEY_MISSING_DETAIL) from error
+
+
 @app.post("/teacher/materials/{material_id}/generate-quiz")
 def generate_material_quiz(
     material_id: str, data: GenerateQuizRequest, auth=Depends(require_teacher)
 ):
     material = get_owned_material(material_id, auth["user_id"])
+    require_gemini()
     sections_result = (
         supabase_admin.table("material_sections")
         .select("position, content")
@@ -1889,6 +1906,7 @@ def generate_material_image_description(
     auth=Depends(require_teacher),
 ):
     material = get_owned_material(material_id, auth["user_id"])
+    require_gemini()
     file_path = material.get("file_url")
     if not file_path:
         raise HTTPException(

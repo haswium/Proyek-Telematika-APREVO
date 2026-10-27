@@ -1,15 +1,5 @@
-import os
-from dotenv import load_dotenv
-from google import genai    
+from ai_client import gemini_client
 from schemas.ai_output import AIOutput
-
-load_dotenv()
-
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise RuntimeError("GEMINI_API_KEY belum ditemukan di .env")
-
-client = genai.Client(api_key=api_key)
 
 type_rules = {
     "multiple_choice": """
@@ -73,7 +63,7 @@ def generate_quiz(
     - Struktur utama: {{"questions": [...]}}
     """
 
-    response = client.models.generate_content(
+    response = gemini_client().models.generate_content(
         model="gemini-3.5-flash-lite",
         contents=prompt,
         config={"response_mime_type": "application/json"},

@@ -5,3 +5,5 @@ python-dotenv==1.2.4
 python-multipart==0.0.32
 pymupdf==2.0
 pydantic==2.13.5
+google-genai==2.33.0
+pillow==13.0.0

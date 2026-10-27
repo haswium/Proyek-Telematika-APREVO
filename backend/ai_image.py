@@ -1,20 +1,12 @@
 from io import BytesIO
-import os
-from dotenv import load_dotenv
-from google import genai
 from PIL import Image
 
-load_dotenv()
-
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise RuntimeError("GEMINI_API_KEY belum ditemukan di .env")
-
-client = genai.Client(api_key=api_key)
+from ai_client import gemini_client
 
 
 def describe_image(image_bytes: bytes) -> str:
     """Menghasilkan deskripsi gambar yang sesuai untuk siswa tunanetra."""
+    client = gemini_client()
     with Image.open(BytesIO(image_bytes)) as image:
         image.load()
         response = client.models.generate_content(
