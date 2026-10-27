@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
-import '../../services/speech.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/playful.dart';
@@ -119,7 +118,6 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
       _status = message;
       _statusSerial++;
     });
-    if (message != null) Speech.feedback(context, message);
   }
 
   Future<void> _pick() async {
@@ -247,7 +245,7 @@ class _NewMaterialScreenState extends State<NewMaterialScreen> {
                   const SizedBox(height: 4),
                   const Text(
                     'PDF dipecah per sub bab supaya siswa bisa '
-                    'mendengarkannya satu per satu. Materi baru masuk '
+                    'membacanya satu per satu. Materi baru masuk '
                     'sebagai draf sampai kamu publikasikan.',
                     style: TextStyle(color: AppColors.white),
                   ),

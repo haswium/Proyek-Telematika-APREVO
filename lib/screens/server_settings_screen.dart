@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../config/api_config.dart';
 import '../data/app_store.dart';
 import '../services/settings.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playful.dart';
@@ -39,7 +38,6 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
       _status = message;
       _serial++;
     });
-    Speech.feedback(context, message);
   }
 
   /// Alamat yang sudah dirapikan, atau `null` (dengan pesan error).

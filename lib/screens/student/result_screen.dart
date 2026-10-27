@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
-import '../../services/speech.dart';
 import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -73,7 +72,7 @@ class _ResultScreenState extends State<ResultScreen> {
 
   String get _nextStep {
     if (widget.kind == TestKind.pre) {
-      return 'Langkah berikutnya: dengarkan materinya, lalu kerjakan '
+      return 'Langkah berikutnya: baca materinya, lalu kerjakan '
           'post-test.';
     }
     final pre = widget.preTest;
@@ -85,10 +84,10 @@ class _ResultScreenState extends State<ResultScreen> {
           'Sekarang nilaimu naik!';
     }
     if (after == before) {
-      return 'Nilaimu sama dengan pre-test. Coba dengarkan materinya '
+      return 'Nilaimu sama dengan pre-test. Coba baca materinya '
           'sekali lagi.';
     }
-    return 'Nilai pre-test kamu lebih tinggi. Dengarkan lagi materinya, '
+    return 'Nilai pre-test kamu lebih tinggi. Baca lagi materinya, '
         'lalu ulangi post-test.';
   }
 
@@ -111,7 +110,6 @@ class _ResultScreenState extends State<ResultScreen> {
       '$_stars dari 3 bintang. $_praise $_nextStep $_discussionNote';
 
   void _openReview(bool withKey) {
-    Speech.stop();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -119,25 +117,6 @@ class _ResultScreenState extends State<ResultScreen> {
             ReviewScreen(attemptId: widget.attemptId, withKey: withKey),
       ),
     );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      // Kalau TalkBack menyala, liveRegion di bawah yang membacakan.
-      // Kalau tidak, Odi membacakannya sendiri.
-      if (!MediaQuery.of(context).accessibleNavigation) {
-        Speech.speak(_summary);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    Speech.stop();
-    super.dispose();
   }
 
   @override
@@ -225,12 +204,6 @@ class _ResultScreenState extends State<ResultScreen> {
                 onPressed: () => _openReview(true),
               ),
             ],
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.volume_up),
-              label: const Text('Dengarkan hasil'),
-              onPressed: () => Speech.speak(_summary),
-            ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               icon: const Icon(Icons.arrow_back),

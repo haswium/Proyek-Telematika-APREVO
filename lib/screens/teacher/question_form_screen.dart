@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
 import '../../models/models.dart';
-import '../../services/speech.dart';
 import '../../widgets/common.dart';
 import '../../widgets/playful.dart';
 
@@ -59,7 +58,6 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.feedback(context, message);
   }
 
   String? _orNull(TextEditingController c) {

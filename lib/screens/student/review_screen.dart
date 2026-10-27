@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
-import '../../services/speech.dart';
 import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -29,12 +28,6 @@ class ReviewScreen extends StatefulWidget {
 }
 
 class _ReviewScreenState extends State<ReviewScreen> {
-  @override
-  void dispose() {
-    Speech.stop();
-    super.dispose();
-  }
-
   String get _title => widget.withKey ? 'Pembahasan' : 'Jawabanku';
 
   @override
@@ -55,7 +48,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
-  /// Kalimat lengkap satu soal, untuk TalkBack dan tombol Dengarkan.
+  /// Kalimat lengkap satu soal, untuk TalkBack.
   String _itemText(AttemptReview review, int i) {
     final item = review.items[i];
     final b = StringBuffer(
@@ -139,7 +132,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               number: i + 1,
               item: review.items[i],
               withKey: review.withKey,
-              spoken: _itemText(review, i),
+              semanticLabel: _itemText(review, i),
             ),
           ),
       ],
@@ -147,20 +140,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 }
 
-/// Satu soal: dibaca TalkBack sebagai satu kalimat utuh, dengan tombol
-/// Dengarkan di bawahnya.
+/// Satu soal: dibaca TalkBack sebagai satu kalimat utuh.
 class _ReviewCard extends StatelessWidget {
   const _ReviewCard({
     required this.number,
     required this.item,
     required this.withKey,
-    required this.spoken,
+    required this.semanticLabel,
   });
 
   final int number;
   final ReviewItem item;
   final bool withKey;
-  final String spoken;
+  final String semanticLabel;
 
   Widget _row(String label, String value) => Padding(
     padding: const EdgeInsets.only(top: 10),
@@ -186,7 +178,7 @@ class _ReviewCard extends StatelessWidget {
         children: [
           Semantics(
             container: true,
-            label: spoken,
+            label: semanticLabel,
             excludeSemantics: true,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,19 +205,6 @@ class _ReviewCard extends StatelessWidget {
                 if (why != null && why.trim().isNotEmpty)
                   _row('Penjelasan', why.trim()),
               ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Semantics(
-            container: true,
-            label: 'Dengarkan soal $number',
-            button: true,
-            onTap: () => Speech.speak(spoken),
-            excludeSemantics: true,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.volume_up),
-              label: const Text('Dengarkan'),
-              onPressed: () => Speech.speak(spoken),
             ),
           ),
         ],

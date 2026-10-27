@@ -14,7 +14,7 @@ String materialProgress(LessonMaterial m) {
   final post = m.quiz(TestKind.post)?.latestAttempt;
   if (post != null) return 'Selesai, ${post.stars} dari 3 bintang';
   if (m.quiz(TestKind.pre)?.latestAttempt != null) {
-    return 'Pre-test selesai, lanjut dengarkan materi';
+    return 'Pre-test selesai, lanjut baca materi';
   }
   return '${m.sectionCount} sub bab, belum dimulai';
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../models/models.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playful.dart';
@@ -40,7 +39,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {

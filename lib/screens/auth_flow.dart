@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../models/models.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import 'student/student_shell.dart';
 import 'student/onboarding_screen.dart';
@@ -30,7 +29,6 @@ void goHome(BuildContext context, Account account) {
 /// Keluar dari akun dan kembali ke layar sambutan.
 void logout(BuildContext context) {
   store.signOut();
-  Speech.stop();
   Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const WelcomeScreen()),
     (route) => false,

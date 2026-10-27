@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
-import '../../services/speech.dart';
+import '../../services/announce.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -89,7 +89,6 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.feedback(context, message);
   }
 
   Future<void> _schedule(TestKind kind, QuizInfo? existing) async {
@@ -125,7 +124,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
         list[index] = result;
       }
     });
-    Speech.announce(
+    announce(
       index == null
           ? 'Soal draf ${kind.label} ditambahkan. Jangan lupa simpan ke '
                 'server.'
@@ -141,7 +140,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
       _generating = null;
       _drafts[kind]!.addAll(generated);
     });
-    Speech.announce(
+    announce(
       '${generated.length} soal draf ${kind.label} dibuat. Periksa, lalu '
       'simpan ke server.',
     );
@@ -172,7 +171,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     final drafts = _drafts[kind]!;
     if (drafts.isEmpty) return;
     setState(() => _saving = kind);
-    Speech.announce('Menyimpan ${drafts.length} soal ${kind.label}.');
+    announce('Menyimpan ${drafts.length} soal ${kind.label}.');
     try {
       await store.addQuestions(quiz.id, type, List.of(drafts));
       if (!mounted) return;
@@ -442,7 +441,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                 : () {
                     setState(() => drafts.removeAt(i));
                     // Tombol yang difokus TalkBack ikut hilang, jadi beri tahu.
-                    Speech.announce('Draf $label soal ${i + 1} dihapus.');
+                    announce('Draf $label soal ${i + 1} dihapus.');
                   },
           ),
         ),

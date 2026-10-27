@@ -102,7 +102,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | 5.1 | Geser kanan dari awal | "Siap untuk belajar?, judul", kalimat penjelasan, lalu tiga poin. Ikon centang dan ikon headphone tidak difokus | | |
-| 5.2 | Ketuk dua kali "Dengarkan sambutan" | Sambutan dibacakan suara aplikasi | | |
+| 5.2 | Geser kanan sampai habis | Tidak ada tombol "Dengarkan". Aplikasi tidak bersuara sendiri | | |
 | 5.3 | Ketuk dua kali "Mulai Belajar" | Pindah ke Materi Saya | | |
 
 ## 6. Materi Saya (tab Belajar siswa)
@@ -125,8 +125,8 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | 7.1 | Geser kanan dari awal | "Kode akses: A P V 7 K 2 9" (dieja per huruf), lalu judul materi sebagai judul, lalu "Jenis soal: Quiz" | | |
-| 7.2 | Kartu audio | "Materi audio, Fotosintesis" dalam satu fokus | | |
-| 7.3 | Ketuk dua kali "Dengarkan" | Isi materi dibacakan. "Hentikan" menghentikannya | | |
+| 7.2 | Kartu materi | "Materi, Fotosintesis" dalam satu fokus | | |
+| 7.3 | Ketuk dua kali "Baca materi" | Daftar sub bab terbuka. Tidak ada tombol "Dengarkan" atau "Hentikan suara" | | |
 | 7.4 | Ketuk dua kali "Baca teks" | Layar teks materi terbuka. Isinya terbaca. Untuk materi dari backend: "Isi materi belum tersedia." | | |
 | 7.5 | Kartu Pre-test | "Pre-test. 2 soal. Belum dikerjakan" dalam satu fokus, lalu tombol "Mulai Pre-test" | | |
 | 7.6 | Kartu Post-test sebelum pre-test | "Post-test. 3 soal. Terkunci. Kerjakan pre-test dulu" | | |
@@ -138,7 +138,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | 8.1 | Buka layar soal | Terdengar "Soal 1 dari 2. Pilih satu jawaban yang benar." | | |
-| 8.2 | Geser kanan dari awal | Urutan: "Soal 1 dari 2, judul", instruksi, "Dengarkan soal, tombol", pertanyaan, pilihan A sampai D, "Periksa Jawaban" | | |
+| 8.2 | Geser kanan dari awal | Urutan: "Soal 1 dari 2, judul", instruksi, pertanyaan, pilihan A sampai D, "Periksa Jawaban" | | |
 | 8.3 | Batang progres | Tidak difokus | | |
 | 8.4 | Fokus ke pilihan | "Pilihan A, Akar, tombol" dalam satu fokus (huruf dan teks tidak terpisah) | | |
 | 8.5 | Ketuk dua kali satu pilihan | Terdengar "dipilih" | | |
@@ -147,7 +147,6 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 8.8 | Setelah umpan balik, geser kanan | Kartu umpan balik ada di antara pilihan jawaban dan tombol "Soal berikutnya" | | |
 | 8.9 | Ketuk dua kali "Soal berikutnya" | Terdengar "Soal 2 dari 2..." | | |
 | 8.10 | Jawab **benar** | Umpan balik "Benar! Hebat!" dengan jawaban dan penjelasan | | |
-| 8.11 | Ketuk dua kali "Dengarkan soal" | Soal dan semua pilihan dibacakan suara aplikasi | | |
 
 ## 9. Layar soal: benar atau salah (APV-3NPS)
 
@@ -169,7 +168,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | 11.1 | Fokus ke satu item | "Posisi 1 dari 3: [teks item]" dalam satu fokus | | |
-| 11.2 | Geser kanan dari item | "Dengarkan [teks item], tombol", "Naikkan [teks item], tombol", "Turunkan [teks item], tombol" | | |
+| 11.2 | Geser kanan dari item | "Naikkan [teks item], tombol", "Turunkan [teks item], tombol" | | |
 | 11.3 | Tombol "Naikkan" di item pertama | Terbaca dinonaktifkan | | |
 | 11.4 | Ketuk dua kali "Turunkan" di item pertama | Terdengar "[teks item] pindah ke urutan 2." | | |
 | 11.5 | Setelah memindah, geser ke item lagi | Posisi dan teks item sudah sesuai urutan baru | | |
@@ -183,7 +182,6 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 12.1 | Selesaikan satu tes | Ringkasan dibacakan sendiri: "[Pre-test] [judul] selesai. Kamu benar ... dari ... soal, ... dari 3 bintang..." | | |
 | 12.2 | Geser kanan dari awal | Gambar Odi tidak difokus. Fokus pertama langsung ke ringkasan hasil | | |
 | 12.3 | Bintang | Tidak dibaca per ikon, sudah masuk dalam ringkasan | | |
-| 12.4 | Ketuk dua kali "Dengarkan hasil" | Ringkasan dibacakan suara aplikasi | | |
 | 12.5 | Ketuk dua kali "Kembali ke langkah belajar" | Kembali ke layar materi. Post-test sudah tidak terkunci | | |
 
 ## 13. Tab Progres siswa
@@ -246,15 +244,16 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 
 ## Tanpa TalkBack
 
-Matikan TalkBack, lalu ulangi beberapa langkah ini. Aplikasi harus
-membacakan umpan balik penting dengan suaranya sendiri.
+Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya
+suara sendiri (tanpa TTS), jadi aplikasi harus **diam**. Semua informasi
+tetap tampil di layar.
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| T1 | Masuk pertama kali sebagai siswa baru | Sambutan dibacakan otomatis | | |
-| T2 | Masukkan kode akses salah | Pesan error dibacakan suara aplikasi | | |
-| T3 | Jawab satu soal | Umpan balik dibacakan suara aplikasi | | |
-| T4 | Selesaikan satu tes | Ringkasan hasil dibacakan suara aplikasi | | |
+| T1 | Masuk pertama kali sebagai siswa baru | Sambutan tampil, tidak ada suara | | |
+| T2 | Masukkan kode akses salah | Pesan error tampil, tidak ada suara | | |
+| T3 | Jawab satu soal | Umpan balik tampil, tidak ada suara | | |
+| T4 | Selesaikan satu tes | Ringkasan hasil tampil, tidak ada suara | | |
 
 ## Masalah yang ditemukan
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
-import '../../services/speech.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/playful.dart';
@@ -23,29 +22,11 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   static const List<String> _points = [
     'Gunakan TalkBack, pembaca layar di HP-mu',
-    'Nikmati pembelajaran audio-first',
+    'Semua materi bisa dibaca dengan TalkBack',
     'Mudah, aman, dan inklusif',
   ];
 
-  String get _spoken =>
-      'Siap untuk belajar, ${widget.studentName}? APREVO telah disesuaikan '
-      'untuk kemudahan belajarmu. ${_points.join('. ')}. '
-      'Tekan tombol Mulai Belajar di bagian bawah.';
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      // Kalau TalkBack mati, sambutannya dibacakan lewat suara.
-      if (!MediaQuery.of(context).accessibleNavigation) {
-        Speech.speak(_spoken);
-      }
-    });
-  }
-
   void _start() {
-    Speech.stop();
     final user = store.currentUser;
     if (user != null) store.markOnboarded(user);
     Navigator.pushReplacement(
@@ -159,12 +140,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                       ),
                     ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.volume_up),
-                    label: const Text('Dengarkan sambutan'),
-                    onPressed: () => Speech.speak(_spoken),
-                  ),
                 ],
               ),
             ),

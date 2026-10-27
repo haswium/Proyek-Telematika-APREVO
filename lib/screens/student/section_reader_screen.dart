@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
-import '../../services/speech.dart';
+import '../../services/announce.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -44,7 +44,7 @@ class MaterialSectionsScreen extends StatelessWidget {
                 sections.isEmpty
                     ? 'Belum ada sub bab.'
                     : '${sections.length} sub bab. Pilih satu untuk '
-                          'didengarkan.',
+                          'dibaca.',
                 style: AppType.bodyMedium,
               ),
               const SizedBox(height: 16),
@@ -87,7 +87,7 @@ class MaterialSectionsScreen extends StatelessWidget {
   }
 }
 
-/// Pembaca satu sub-bab, dengan tombol Dengarkan dan pindah ke sub-bab
+/// Pembaca satu sub-bab, dengan tombol pindah ke sub-bab
 /// sebelumnya atau berikutnya. Setiap pindah diumumkan:
 /// "Sub bab 2 dari 5: Judul".
 class SectionReaderScreen extends StatefulWidget {
@@ -121,34 +121,15 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _announce());
   }
 
-  @override
-  void dispose() {
-    Speech.stop();
-    super.dispose();
-  }
-
   void _announce() {
     if (!mounted) return;
     final message = '$_position: ${_s.title}';
-    Speech.announce(message);
-    Speech.feedback(context, message);
-  }
-
-  /// Teks yang dibacakan tombol Dengarkan.
-  String _spoken() {
-    final b = StringBuffer('$_position. ${_s.title}. ');
-    b.write(_s.content.trim().isEmpty ? _emptyContent : _s.content.trim());
-    final image = _s.imageDescription;
-    if (image != null && image.trim().isNotEmpty) {
-      b.write(' Deskripsi gambar: ${image.trim()}');
-    }
-    return b.toString();
+    announce(message);
   }
 
   void _go(int delta) {
     final next = _index + delta;
     if (next < 0 || next >= _total) return;
-    Speech.stop();
     setState(() => _index = next);
     _announce();
   }
@@ -174,18 +155,6 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
               const SizedBox(height: 4),
               Text(_s.pagesText, style: AppType.bodySmall),
             ],
-            const SizedBox(height: 16),
-            PrimaryButton(
-              label: 'Dengarkan sub bab ini',
-              icon: Icons.volume_up,
-              onPressed: () => Speech.speak(_spoken()),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.stop),
-              label: const Text('Hentikan suara'),
-              onPressed: Speech.stop,
-            ),
             const SizedBox(height: 16),
             Row(
               children: [

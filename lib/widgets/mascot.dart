@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import 'common.dart';
 import 'playful.dart';
@@ -62,15 +61,11 @@ class Mascot extends StatelessWidget {
 
     if (decorative) return ExcludeSemantics(child: picture);
 
-    void speak() => Speech.speak(description);
     return Semantics(
       label: description,
       image: true,
-      button: true,
-      onTap: speak,
-      onTapHint: 'mendengar deskripsi Odi',
       excludeSemantics: true,
-      child: GestureDetector(onTap: speak, child: picture),
+      child: picture,
     );
   }
 }

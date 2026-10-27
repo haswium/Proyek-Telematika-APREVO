@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
-import '../../services/speech.dart';
 import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -68,11 +67,9 @@ class _JourneyBody extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.feedback(context, message);
   }
 
   void _play(BuildContext context, QuizInfo quiz) {
-    Speech.stop();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -89,7 +86,6 @@ class _JourneyBody extends StatelessWidget {
   }
 
   void _review(BuildContext context, Attempt attempt, {required bool key}) {
-    Speech.stop();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -145,7 +141,7 @@ class _JourneyBody extends StatelessWidget {
           text: _guide(pre, post),
         ),
         const SizedBox(height: 16),
-        // Materi audio per sub-bab.
+        // Materi per sub-bab.
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,7 +161,7 @@ class _JourneyBody extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Materi audio', style: AppType.bodySmall),
+                          Text('Materi', style: AppType.bodySmall),
                           Text(_m.title, style: AppType.titleMedium),
                           Text(sections, style: AppType.bodySmall),
                         ],
@@ -176,8 +172,8 @@ class _JourneyBody extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               PrimaryButton(
-                label: 'Dengarkan per sub bab',
-                icon: Icons.play_arrow,
+                label: 'Baca materi',
+                icon: Icons.menu_book,
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -294,7 +290,7 @@ class _JourneyBody extends StatelessWidget {
           'jawabanmu kapan saja.';
     }
     if (pre != null) {
-      return 'Pre-test selesai. Sekarang dengarkan materinya per sub bab, '
+      return 'Pre-test selesai. Sekarang baca materinya per sub bab, '
           'lalu kerjakan post-test.';
     }
     return 'Kita mulai dari pre-test dulu, ya. Tidak apa-apa kalau belum '
@@ -308,7 +304,7 @@ class _JourneyBody extends StatelessWidget {
     final postPct = post.total == 0 ? 0 : post.score / post.total;
     if (postPct > prePct) return '$before${after}Nilaimu naik!';
     if (postPct == prePct) return '$before${after}Nilaimu tetap.';
-    return '$before${after}Yuk dengarkan materinya sekali lagi.';
+    return '$before${after}Yuk baca materinya sekali lagi.';
   }
 }
 

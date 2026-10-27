@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
-import '../../services/speech.dart';
+import '../../services/announce.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -40,13 +40,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   /// Pesan sukses: TalkBack lewat announce, tanpa TalkBack lewat suara.
   void _say(String message) {
-    Speech.announce(message);
-    Speech.feedback(context, message);
+    announce(message);
   }
 
   void _open(Subject subject) {
@@ -79,7 +77,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       _joining = true;
       _error = null;
     });
-    Speech.announce('Sedang bergabung dengan kode ${spellCode(code)}.');
+    announce('Sedang bergabung dengan kode ${spellCode(code)}.');
     final JoinResult result;
     try {
       result = await store.joinSubject(code);

@@ -4,7 +4,7 @@ import 'package:flutter/semantics.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
-import '../../services/speech.dart';
+import '../../services/announce.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -20,8 +20,8 @@ import 'result_screen.dart';
 /// setelah tenggat kuis lewat.
 ///
 /// Urutan fokus TalkBack (lihat angka OrdinalSortKey):
-/// 1 info soal, 2 tombol dengarkan, 4 pertanyaan, 5 jawaban, 6 umpan balik
-/// atau error, 7 tombol periksa/lanjut.
+/// 1 info soal, 4 pertanyaan, 5 jawaban, 6 umpan balik atau error, 7 tombol
+/// periksa/lanjut.
 class PlayGameScreen extends StatelessWidget {
   const PlayGameScreen({
     super.key,
@@ -120,13 +120,12 @@ class _QuizRunnerState extends State<_QuizRunner> {
       final resumed = widget.session.resumed
           ? 'Melanjutkan ${widget.quiz.kind.label} yang belum dikumpulkan. '
           : '';
-      Speech.announce('$resumed${_questionIntro()}');
+      announce('$resumed${_questionIntro()}');
     });
   }
 
   @override
   void dispose() {
-    Speech.stop();
     _answer.dispose();
     super.dispose();
   }
@@ -143,27 +142,6 @@ class _QuizRunnerState extends State<_QuizRunner> {
 
   String _questionIntro() =>
       'Soal ${_index + 1} dari $_total. ${_type.instruction}';
-
-  /// Teks lengkap soal untuk tombol "Dengarkan soal".
-  String _spokenQuestion() {
-    final b = StringBuffer('Soal ${_index + 1} dari $_total. ');
-    b.write('${_q.prompt} ');
-    switch (_type) {
-      case GameType.quiz:
-        for (var i = 0; i < _choices.length; i++) {
-          b.write('Pilihan ${_letter(i)}: ${_choices[i].text}. ');
-        }
-      case GameType.trueFalse:
-        b.write('Pilih benar atau salah.');
-      case GameType.shortAnswer:
-        b.write('Ketik jawabanmu.');
-      case GameType.ordering:
-        for (var i = 0; i < _order.length; i++) {
-          b.write('Urutan ${i + 1}: ${_order[i].text}. ');
-        }
-    }
-    return b.toString();
-  }
 
   String _letter(int i) => String.fromCharCode(65 + i);
 
@@ -199,7 +177,6 @@ class _QuizRunnerState extends State<_QuizRunner> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -209,7 +186,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
       _busy = true;
       _error = null;
     });
-    Speech.announce('Memeriksa jawaban.');
+    announce('Memeriksa jawaban.');
     try {
       final correct = await store.saveAnswer(
         widget.session.attemptId,
@@ -222,9 +199,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
         _answered = true;
         _correct = correct;
       });
-      // TalkBack membacakan kartu umpan balik lewat liveRegion. Kalau
-      // TalkBack mati, Odi yang membacakannya.
-      Speech.feedback(context, _feedbackSpoken());
+      // TalkBack membacakan kartu umpan balik lewat liveRegion.
     } on ApiException catch (e) {
       if (!mounted) return;
       _showError('Jawaban belum terkirim. ${e.message}');
@@ -252,7 +227,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
 
   /// Saat mengerjakan, siswa hanya diberi tahu benar atau salah. Jawaban
   /// benar dan pembahasan baru terbuka setelah tenggat.
-  String _feedbackSpoken() {
+  String _feedbackLabel() {
     final b = StringBuffer('$_headline Jawabanmu: ${_yourAnswer()}. ');
     if (!_correct) b.write('Tetap semangat, kamu pasti bisa!');
     return b.toString();
@@ -266,12 +241,11 @@ class _QuizRunnerState extends State<_QuizRunner> {
       await _finish();
       return;
     }
-    Speech.stop();
     setState(() {
       _index++;
       _prepare();
     });
-    Speech.announce(_questionIntro());
+    announce(_questionIntro());
   }
 
   Future<void> _finish() async {
@@ -279,7 +253,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
       _busy = true;
       _error = null;
     });
-    Speech.announce('Mengumpulkan jawaban.');
+    announce('Mengumpulkan jawaban.');
     try {
       final result = await store.submitAttempt(widget.session.attemptId);
       if (!mounted) return;
@@ -312,7 +286,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
       final item = _order.removeAt(from);
       _order.insert(to, item);
     });
-    Speech.announce('${_order[to].text} pindah ke urutan ${to + 1}.');
+    announce('${_order[to].text} pindah ke urutan ${to + 1}.');
   }
 
   // `container: true` supaya tiap bagian menjadi node sendiri; sortKey
@@ -375,15 +349,6 @@ class _QuizRunnerState extends State<_QuizRunner> {
         ),
         const SizedBox(height: 16),
         _ordered(
-          2,
-          OutlinedButton.icon(
-            icon: const Icon(Icons.volume_up),
-            label: const Text('Dengarkan soal'),
-            onPressed: () => Speech.speak(_spokenQuestion()),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _ordered(
           4,
           // Key per soal supaya animasi masuk terulang tiap ganti soal.
           FadeSlideIn(
@@ -430,7 +395,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
     return Semantics(
       liveRegion: true,
       container: true,
-      label: _feedbackSpoken(),
+      label: _feedbackLabel(),
       excludeSemantics: true,
       child: FadeSlideIn(
         key: ValueKey('feedback-$_index'),
@@ -634,8 +599,7 @@ class _OptionTile extends StatelessWidget {
 }
 
 /// Satu item puzzle urutan, mengikuti desain Figma. Tanpa drag and drop:
-/// dipindahkan dengan tombol "Naikkan" dan "Turunkan" yang berlabel teks,
-/// dan tiap item punya tombol dengarkan sendiri.
+/// dipindahkan dengan tombol "Naikkan" dan "Turunkan" yang berlabel teks.
 class _OrderRow extends StatelessWidget {
   const _OrderRow({
     required this.position,
@@ -668,59 +632,43 @@ class _OrderRow extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Semantics(
-                    label: 'Posisi $position dari $total: $label',
-                    excludeSemantics: true,
-                    child: Row(
+            Semantics(
+              label: 'Posisi $position dari $total: $label',
+              excludeSemantics: true,
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$position',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '$position',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.white,
-                            ),
-                          ),
+                        Text(
+                          'Posisi $position dari $total',
+                          style: AppType.bodySmall,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Posisi $position dari $total',
-                                style: AppType.bodySmall,
-                              ),
-                              Text(label, style: AppType.titleMedium),
-                            ],
-                          ),
-                        ),
+                        Text(label, style: AppType.titleMedium),
                       ],
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Dengarkan $label',
-                  constraints: const BoxConstraints(
-                    minWidth: kTouchTarget,
-                    minHeight: kTouchTarget,
-                  ),
-                  color: AppColors.primary,
-                  icon: const Icon(Icons.volume_up),
-                  onPressed: () => Speech.speak('Posisi $position: $label'),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 10),
             Row(

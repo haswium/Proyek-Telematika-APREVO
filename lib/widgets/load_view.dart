@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
-import '../services/speech.dart';
+import '../services/announce.dart';
 import '../theme/app_theme.dart';
 import 'common.dart';
 
@@ -62,7 +62,7 @@ class _LoadViewState<T> extends State<LoadView<T>> {
       _hasData = true;
     }
     if (widget.listenToStore) store.addListener(_onStoreChanged);
-    _load(announce: !_hasData);
+    _load(announceLoading: !_hasData);
   }
 
   @override
@@ -71,9 +71,9 @@ class _LoadViewState<T> extends State<LoadView<T>> {
     super.dispose();
   }
 
-  void _onStoreChanged() => _load(announce: false);
+  void _onStoreChanged() => _load(announceLoading: false);
 
-  Future<void> _load({bool announce = true}) async {
+  Future<void> _load({bool announceLoading = true}) async {
     if (_loading) {
       _again = true;
       return;
@@ -83,12 +83,12 @@ class _LoadViewState<T> extends State<LoadView<T>> {
       _loading = true;
       if (!_hasData) _error = null;
     });
-    if (announce && !_hasData) {
+    if (announceLoading && !_hasData) {
       // Diumumkan setelah frame ini supaya tidak tertimpa pembacaan judul
       // halaman oleh TalkBack.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _loading && serial == _serial) {
-          Speech.announce(widget.loadingMessage);
+          announce(widget.loadingMessage);
         }
       });
     }
@@ -108,11 +108,10 @@ class _LoadViewState<T> extends State<LoadView<T>> {
         _error = message;
         _loading = false;
       });
-      Speech.feedback(context, message);
     }
     if (_again && mounted) {
       _again = false;
-      _load(announce: false);
+      _load(announceLoading: false);
     }
   }
 
@@ -154,7 +153,11 @@ class _LoadViewState<T> extends State<LoadView<T>> {
     if (!_hasData) {
       return _wrap([LoadingMessage(message: widget.loadingMessage)]);
     }
-    return widget.builder(context, _data as T, () => _load(announce: false));
+    return widget.builder(
+      context,
+      _data as T,
+      () => _load(announceLoading: false),
+    );
   }
 }
 

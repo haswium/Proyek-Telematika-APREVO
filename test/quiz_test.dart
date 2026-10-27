@@ -167,6 +167,8 @@ void main() {
     expect(find.bySemanticsLabel('Menyiapkan soal Pre-test.'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('Soal 1 dari 2'), findsOneWidget);
+    // Hanya TalkBack: tidak ada tombol suara aplikasi.
+    expect(find.textContaining('Dengarkan'), findsNothing);
 
     await tapAndPump(tester, find.bySemanticsLabel('Pilihan B, Daun'));
     await tapAndPump(tester, find.text('Periksa Jawaban'));
@@ -197,6 +199,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Benar 1 dari 2'), findsOneWidget);
     expect(find.text('Lihat jawabanku'), findsOneWidget);
+    expect(find.textContaining('Dengarkan'), findsNothing);
     expect(find.text('Buka pembahasan'), findsNothing);
     expect(
       find.text(

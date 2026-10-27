@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playful.dart';
@@ -37,7 +36,6 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -73,7 +71,6 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.feedback(context, message);
   }
 
   @override

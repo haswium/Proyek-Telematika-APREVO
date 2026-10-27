@@ -59,7 +59,7 @@ class WelcomeScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(20),
                     child: Text(
                       'Media pembelajaran interaktif yang dirancang khusus '
-                      'untuk pengalaman belajar audio-first yang ramah bagi '
+                      'untuk belajar dengan TalkBack, ramah bagi '
                       'semua kalangan.',
                       textAlign: TextAlign.center,
                       style: AppType.bodyMedium,

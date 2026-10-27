@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
-import '../../services/speech.dart';
+import '../../services/announce.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -33,9 +33,8 @@ class TeacherHomeScreen extends StatelessWidget {
     final message =
         'Mata pelajaran ${subject.name} dibuat. Kode aksesnya '
         '${spellCode(subject.accessCode)}.';
-    Speech.announce(message);
+    announce(message);
     if (!context.mounted) return;
-    Speech.feedback(context, message);
     _open(context, subject);
   }
 
@@ -144,7 +143,6 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -158,7 +156,7 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
       _busy = true;
       _error = null;
     });
-    Speech.announce('Membuat mata pelajaran $name.');
+    announce('Membuat mata pelajaran $name.');
     try {
       // Kode akses dibuat otomatis oleh backend.
       final subject = await store.createSubject(name);

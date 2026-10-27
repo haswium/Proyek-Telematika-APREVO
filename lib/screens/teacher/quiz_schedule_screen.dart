@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
-import '../../services/speech.dart';
+import '../../services/announce.dart';
 import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -55,7 +55,6 @@ class _QuizScheduleScreenState extends State<QuizScheduleScreen> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<DateTime?> _pick(DateTime initial, String what) async {
@@ -95,7 +94,7 @@ class _QuizScheduleScreenState extends State<QuizScheduleScreen> {
       _from = value;
       _error = null;
     });
-    Speech.announce('Waktu buka: ${formatDateTime(value)}.');
+    announce('Waktu buka: ${formatDateTime(value)}.');
   }
 
   Future<void> _pickUntil() async {
@@ -105,7 +104,7 @@ class _QuizScheduleScreenState extends State<QuizScheduleScreen> {
       _until = value;
       _error = null;
     });
-    Speech.announce('Tenggat: ${formatDateTime(value)}.');
+    announce('Tenggat: ${formatDateTime(value)}.');
   }
 
   Future<void> _save() async {
@@ -118,7 +117,7 @@ class _QuizScheduleScreenState extends State<QuizScheduleScreen> {
       _busy = true;
       _error = null;
     });
-    Speech.announce('Menyimpan jadwal $_label.');
+    announce('Menyimpan jadwal $_label.');
     final from = isoWithOffset(_from);
     final until = isoWithOffset(_until);
     try {
@@ -141,8 +140,7 @@ class _QuizScheduleScreenState extends State<QuizScheduleScreen> {
       final message =
           'Jadwal $_label disimpan. Dibuka ${formatDateTime(_from)} sampai '
           '${formatDateTime(_until)}.';
-      Speech.announce(message);
-      Speech.feedback(context, message);
+      announce(message);
       Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
