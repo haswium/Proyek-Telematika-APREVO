@@ -17,6 +17,7 @@ from uuid import uuid4
 import pymupdf
 import logging
 from pdf_sections import split_pdf_bytes
+from ai_quiz import generate_quiz
 
 print("DEBUG: MAIN.PY TERLOAD", flush=True)
 
@@ -275,9 +276,7 @@ def check_post_test_unlocked(quiz, student_id):
     if quiz.get("kind") == "post" and not has_submitted_pre_test(
         quiz["material_id"], student_id
     ):
-        raise HTTPException(
-            status_code=403, detail="Kerjakan pre-test terlebih dahulu"
-        )
+        raise HTTPException(status_code=403, detail="Kerjakan pre-test terlebih dahulu")
 
 
 def get_owned_subject(subject_id, teacher_id):
@@ -1637,6 +1636,11 @@ class QuizCreateRequest(QuizScheduleRequest):
     attempt_limit: Optional[int] = Field(default=None, ge=1)
 
 
+class GenerateQuizRequest(BaseModel):
+    total_questions: int = Field(ge=1, le=30)
+    quiz_type: Literal["multiple_choice", "true_false", "text", "ordering"]
+
+
 def validate_schedule(data: QuizScheduleRequest):
     for value in (data.available_from, data.deadline_at):
         if value.tzinfo is None:
@@ -1702,7 +1706,10 @@ def create_subject(data: SubjectCreateRequest, auth=Depends(require_teacher)):
                 )
                 .execute()
             )
-            return {"message": "Mata pelajaran berhasil dibuat", "subject": response.data[0]}
+            return {
+                "message": "Mata pelajaran berhasil dibuat",
+                "subject": response.data[0],
+            }
         except APIError as error:
             # 23505: kode akses sudah dipakai, coba kode lain.
             if error.code != "23505":
@@ -1835,6 +1842,45 @@ def create_quiz(
     return {"message": "Kuis berhasil dibuat", "quiz": response.data[0]}
 
 
+@app.post("/teacher/materials/{material_id}/generate-quiz")
+def generate_material_quiz(
+    material_id: str, data: GenerateQuizRequest, auth=Depends(require_teacher)
+):
+    material = get_owned_material(material_id, auth["user_id"])
+    sections_result = (
+        supabase_admin.table("material_sections")
+        .select("position, content")
+        .eq("material_id", material_id)
+        .order("position")
+        .execute()
+    )
+    sections = sections_result.data or []
+    materi = "\n\n".join(section.get("content") or "" for section in sections).strip()
+    if not materi:
+        raise HTTPException(
+            status_code=422, detail="Materi belum memiliki teks yang dapat digunakan."
+        )
+    try:
+        result = generate_quiz(
+            materi=materi,
+            total_questions=data.total_questions,
+            quiz_type=data.quiz_type,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Gagal menghasilkan kuis dengan Gemini")
+        raise HTTPException(
+            status_code=502, detail="Gagal menghasilkan kuis. Silakan coba lagi."
+        ) from error
+    return {
+        "material_id": material_id,
+        "total_questions": len(result.questions),
+        "quiz_type": data.quiz_type,
+        "questions": [question.model_dump() for question in result.questions],
+    }
+
+
 @app.patch("/teacher/quizzes/{quiz_id}/schedule")
 def update_quiz_schedule(
     quiz_id: str, data: QuizScheduleRequest, auth=Depends(require_teacher)
@@ -1895,7 +1941,9 @@ def get_subject_results(subject_id: str, auth=Depends(require_teacher)):
     if quiz_ids and student_ids:
         attempts_response = (
             supabase_admin.table("quiz_attempts")
-            .select("id, quiz_id, student_id, correct_count, total_questions, submitted_at")
+            .select(
+                "id, quiz_id, student_id, correct_count, total_questions, submitted_at"
+            )
             .in_("quiz_id", quiz_ids)
             .in_("student_id", student_ids)
             .not_.is_("submitted_at", "null")
@@ -2021,7 +2069,9 @@ def list_student_subjects(auth=Depends(require_student)):
             .in_("id", teacher_ids)
             .execute()
         )
-        teacher_names = {row["id"]: row["name"] for row in (teachers_response.data or [])}
+        teacher_names = {
+            row["id"]: row["name"] for row in (teachers_response.data or [])
+        }
     material_counts = {subject["id"]: 0 for subject in subjects}
     if subjects:
         materials_response = (
