@@ -18,6 +18,9 @@ import pymupdf
 import logging
 from pdf_sections import split_pdf_bytes
 from ai_quiz import generate_quiz
+from PIL import UnidentifiedImageError
+from ai_image import describe_image
+import mimetypes
 
 print("DEBUG: MAIN.PY TERLOAD", flush=True)
 
@@ -299,7 +302,7 @@ def get_owned_subject(subject_id, teacher_id):
 def get_owned_material(material_id, teacher_id):
     material_response = (
         supabase_admin.table("materials")
-        .select("id, title, subject_id, teacher_id, is_published, created_at")
+        .select("id, title, subject_id, teacher_id, is_published, created_at, file_url")
         .eq("id", material_id)
         .eq("teacher_id", teacher_id)
         .maybe_single()
@@ -1878,6 +1881,108 @@ def generate_material_quiz(
         "total_questions": len(result.questions),
         "quiz_type": data.quiz_type,
         "questions": [question.model_dump() for question in result.questions],
+    }
+
+
+@app.post("/teacher/materials/{material_id}/generate-image-description")
+def generate_material_image_description(
+    material_id: str,
+    auth=Depends(require_teacher),
+):
+    material = get_owned_material(material_id, auth["user_id"])
+    file_path = material.get("file_url")
+    if not file_path:
+        raise HTTPException(
+            status_code=422,
+            detail="Path PDF materi tidak ditemukan.",
+        )
+    try:
+        pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(file_path)
+        saved_images = []
+        skipped_images = 0
+        seen_xrefs = set()
+        existing_result = (
+            supabase_admin.table("material_images")
+            .select("image_url")
+            .eq("material_id", material_id)
+            .execute()
+        )
+        existing_paths = {
+            row["image_url"]
+            for row in (existing_result.data or [])
+            if row.get("image_url")
+        }
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            for page_number, page in enumerate(pdf, start=1):
+                for image_info in page.get_images(full=True):
+                    xref = image_info[0]
+                    if not xref or xref in seen_xrefs:
+                        continue
+                    seen_xrefs.add(xref)
+                    extracted = pdf.extract_image(xref)
+                    image_bytes = extracted["image"]
+                    extension = extracted.get("ext", "png")
+                    image_path = (
+                        f"{auth['user_id']}/{material_id}/"
+                        f"images/page-{page_number}-xref-{xref}.{extension}"
+                    )
+                    if image_path in existing_paths:
+                        skipped_images += 1
+                        continue
+                    description = describe_image(image_bytes)
+                    mime_types = {
+                        "png": "image/png",
+                        "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg",
+                        "jpe": "image/jpeg",
+                        "jfif": "image/jpeg",
+                        "webp": "image/webp",
+                        "gif": "image/gif",
+                        "bmp": "image/bmp",
+                        "tif": "image/tiff",
+                        "tiff": "image/tiff",
+                        "jp2": "image/jp2",
+                        "jpx": "image/jpx",
+                        "j2k": "image/jp2",
+                    }
+                    extension = extension.lower().lstrip(".")
+                    content_type = mime_types.get(extension)
+                    if content_type is None:
+                        raise ValueError(
+                            f"Format gambar hasil ekstraksi belum didukung: {extension}"
+                        )
+                    supabase_admin.storage.from_("material-images").upload(
+                        path=image_path,
+                        file=image_bytes,
+                        file_options={"content-type": content_type, "upsert": "true"},
+                    )
+                    result = (
+                        supabase_admin.table("material_images")
+                        .insert(
+                            {
+                                "material_id": material_id,
+                                "image_url": image_path,
+                                "description": description,
+                                "audio_url": None,
+                            }
+                        )
+                        .execute()
+                    )
+                    saved_images.extend(result.data or [])
+                    existing_paths.add(image_path)
+    except HTTPException:
+        raise
+    except Exception as error:
+        print(f"Error deskripsi gambar materi {material_id}:", repr(error))
+        raise HTTPException(
+            status_code=502,
+            detail="Gagal memproses gambar atau menyimpan deskripsi. Periksa log backend",
+        ) from error
+    return {
+        "material_id": material_id,
+        "total_images_saved": len(saved_images),
+        "total_images_skipped": skipped_images,
+        "images": saved_images,
     }
 
 
