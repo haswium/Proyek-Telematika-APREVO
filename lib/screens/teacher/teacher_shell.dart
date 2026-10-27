@@ -11,7 +11,7 @@ import '../profile_tab.dart';
 import 'results_screen.dart';
 import 'teacher_home_screen.dart';
 
-/// Kerangka guru dengan menu bawah: Pelajaran, Siswa, Hasil, Profil.
+/// Kerangka guru dengan menu bawah: Kelas, Siswa, Hasil, Profil.
 ///
 /// Di Figma ada tab "Games". Tab itu tidak ada di sini karena soal sekarang
 /// dikelola di dalam tiap materi (satu materi, satu jenis soal).
@@ -43,7 +43,7 @@ class _TeacherShellState extends State<TeacherShell> {
         onChanged: (i) => setState(() => _index = i),
         items: const [
           NavItem(
-            label: 'Pelajaran',
+            label: 'Kelas',
             icon: Icons.menu_book_outlined,
             selectedIcon: Icons.menu_book,
           ),
@@ -68,7 +68,7 @@ class _TeacherShellState extends State<TeacherShell> {
   }
 }
 
-/// Satu siswa di semua mata pelajaran guru, disusun dari data hasil.
+/// Satu siswa di semua kelas guru, disusun dari data hasil.
 class _StudentSummary {
   _StudentSummary(this.name);
 
@@ -101,11 +101,10 @@ List<_StudentSummary> _students(List<SubjectResults> overview) {
   return byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
 }
 
-/// Tab Siswa: semua siswa dari seluruh mata pelajaran guru.
+/// Tab Siswa: semua siswa dari seluruh kelas guru.
 ///
-/// Backend belum punya daftar anggota mata pelajaran, jadi siswa diambil
-/// dari data hasil: siswa muncul setelah ada pre-test atau post-test di
-/// mata pelajarannya.
+/// Backend belum punya daftar anggota kelas, jadi siswa diambil dari data
+/// hasil: siswa muncul setelah ada pre-test atau post-test di kelasnya.
 class TeacherStudentsTab extends StatelessWidget {
   const TeacherStudentsTab({super.key});
 
@@ -128,23 +127,22 @@ class TeacherStudentsTab extends StatelessWidget {
               children: [
                 SectionTitle('${students.length} siswa'),
                 Text(
-                  'Total keanggotaan di semua mata pelajaran: $joined.',
+                  'Total keanggotaan di semua kelas: $joined.',
                   style: AppType.bodyMedium,
                 ),
                 const SizedBox(height: 12),
                 if (students.isEmpty)
                   const EmptyState(
                     message:
-                        'Belum ada siswa. Bagikan kode akses mata '
-                        'pelajaran ke siswamu, lalu buat pre-test atau '
-                        'post-test.',
+                        'Belum ada siswa. Bagikan kode akses kelas ke '
+                        'siswamu, lalu buat pre-test atau post-test.',
                   ),
                 for (final s in students)
                   ListRow(
                     icon: Icons.person_outline,
                     title: s.name,
                     subtitle:
-                        'Ikut ${s.subjects.length} mata pelajaran, '
+                        'Ikut ${s.subjects.length} kelas, '
                         'selesai ${s.finished} materi, ${s.stars} bintang',
                   ),
               ],
@@ -157,7 +155,7 @@ class TeacherStudentsTab extends StatelessWidget {
 }
 
 /// Tab Hasil: ringkasan pre-test dan post-test tiap materi, dikelompokkan
-/// per mata pelajaran.
+/// per kelas.
 class TeacherResultsTab extends StatelessWidget {
   const TeacherResultsTab({super.key});
 
@@ -179,7 +177,7 @@ class TeacherResultsTab extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               if (overview.isEmpty)
-                const EmptyState(message: 'Belum ada mata pelajaran.'),
+                const EmptyState(message: 'Belum ada kelas.'),
               for (final r in overview) ...[
                 SectionTitle(r.subject.name),
                 if (r.materials.isEmpty)

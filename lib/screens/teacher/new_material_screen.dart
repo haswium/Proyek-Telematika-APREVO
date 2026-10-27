@@ -70,7 +70,7 @@ Future<PickedPdf?> pickPdfFile() async {
 
 enum _StatusKind { info, uploading, success, error }
 
-/// Guru mengunggah PDF sebagai materi baru di satu mata pelajaran. Backend
+/// Guru mengunggah PDF sebagai materi baru di satu kelas. Backend
 /// menyimpan PDF-nya lalu memecahnya per sub-bab. Materi baru selalu draf.
 class NewMaterialScreen extends StatefulWidget {
   const NewMaterialScreen({

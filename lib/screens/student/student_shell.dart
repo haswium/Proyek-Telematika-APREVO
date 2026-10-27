@@ -65,7 +65,7 @@ class _StudentShellState extends State<StudentShell> {
 }
 
 /// Tab Progres: bintang yang sudah dikumpulkan siswa di tiap materi,
-/// dikelompokkan per mata pelajaran.
+/// dikelompokkan per kelas.
 class StudentProgressTab extends StatelessWidget {
   const StudentProgressTab({super.key, required this.studentName});
 
@@ -99,7 +99,7 @@ class StudentProgressTab extends StatelessWidget {
                 MascotBubble(
                   mood: stars > 0 ? MascotMood.cheer : MascotMood.happy,
                   text: groups.isEmpty
-                      ? 'Belum ada mata pelajaran. Buka tab Belajar dan '
+                      ? 'Belum ada kelas. Buka tab Belajar dan '
                             'masukkan kode dari gurumu.'
                       : 'Kamu sudah mengumpulkan $stars bintang dan '
                             'menyelesaikan $finished dari $count materi.',

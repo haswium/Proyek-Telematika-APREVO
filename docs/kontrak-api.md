@@ -77,7 +77,7 @@ kalau `ENABLE_DEBUG_ENDPOINTS=1`. Selain itu `404`.
 
 ### POST `/teacher/subjects`
 
-Body `{"name": "IPA Kelas 5"}`. Kode akses 6 huruf kapital dibuat otomatis.
+Body `{"name": "7A Geografi"}`. Kode akses 6 huruf kapital dibuat otomatis.
 Respons: `{"message", "subject": {id, name, access_code, teacher_id, created_at}}`.
 
 ### GET `/teacher/subjects`
@@ -119,7 +119,7 @@ File dianggap PDF kalau namanya berakhiran `.pdf` dan isinya diawali `%PDF-`.
 
 Error: `400` bukan PDF (`"File harus berformat PDF."` atau `"Isi file bukan
 PDF yang valid."`) atau tidak bisa diproses, `403` bukan guru, `404`
-mata pelajaran tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
+kelas tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 
 ### PATCH `/teacher/materials/{material_id}`
 
@@ -232,8 +232,8 @@ gambar diisi.
 
 ### GET `/student/materials`
 
-Materi yang dipublikasikan dari `material_access` (cara lama) dan dari mata
-pelajaran yang diikuti. Respons: `{"materials": [{id, title, is_published}]}`.
+Materi yang dipublikasikan dari `material_access` (cara lama) dan dari kelas
+yang diikuti. Respons: `{"materials": [{id, title, is_published}]}`.
 
 ### GET `/student/quizzes/{quiz_id}`
 

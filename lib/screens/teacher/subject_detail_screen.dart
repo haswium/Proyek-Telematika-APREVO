@@ -16,7 +16,7 @@ String quizSummary(LessonMaterial m, TestKind kind) {
   return '${kind.label}: ${q.scheduleText.toLowerCase()}';
 }
 
-/// Isi satu mata pelajaran untuk guru: kode akses untuk dibagikan, tombol
+/// Isi satu kelas untuk guru: kode akses untuk dibagikan, tombol
 /// buat materi, lalu kartu tiap materi (publik maupun draf).
 class SubjectDetailScreen extends StatelessWidget {
   const SubjectDetailScreen({super.key, required this.subject});
@@ -94,9 +94,7 @@ class SubjectDetailScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 SectionTitle('Daftar materi (${materials.length})'),
                 if (materials.isEmpty)
-                  const EmptyState(
-                    message: 'Belum ada materi di mata pelajaran ini.',
-                  ),
+                  const EmptyState(message: 'Belum ada materi di kelas ini.'),
                 for (var i = 0; i < materials.length; i++)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 14),

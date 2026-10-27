@@ -11,9 +11,8 @@ import '../../widgets/playful.dart';
 import '../../widgets/mascot.dart';
 import 'subject_screen.dart';
 
-/// Beranda siswa: memasukkan kode akses mata pelajaran, dan daftar mata
-/// pelajaran yang sudah diikuti. Satu kode membuka satu mata pelajaran
-/// beserta semua materi publiknya.
+/// Beranda siswa: memasukkan kode akses kelas, dan daftar kelas yang sudah
+/// diikuti. Satu kode membuka satu kelas beserta semua materi publiknya.
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key, required this.studentName});
 
@@ -116,7 +115,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return PurpleScaffold(
-      appBar: aprevoAppBar('Mata Pelajaran'),
+      appBar: aprevoAppBar('Kelas'),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
@@ -125,7 +124,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               text:
                   'Halo, ${widget.studentName}! Aku Odi. Masukkan '
                   'kode $kAccessCodeLength huruf dari gurumu untuk '
-                  'bergabung ke mata pelajaran.',
+                  'bergabung ke kelas.',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -137,10 +136,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               enableSuggestions: false,
               inputFormatters: [AccessCodeFormatter()],
               style: AppType.bodyLarge,
-              decoration: fieldDecoration(
-                'Kode mata pelajaran',
-                hint: 'Contoh: KXPRTA',
-              ),
+              decoration: fieldDecoration('Kode kelas', hint: 'Contoh: KXPRTA'),
               onSubmitted: (_) => _join(),
             ),
             _TypedCode(controller: _code),
@@ -158,18 +154,16 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             LoadView<List<Subject>>(
               scrollable: false,
               padding: EdgeInsets.zero,
-              loadingMessage: 'Memuat mata pelajaranmu.',
+              loadingMessage: 'Memuat kelasmu.',
               load: store.studentSubjects,
               builder: (context, subjects, _) => Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SectionTitle(
-                    'Mata pelajaran yang kamu ikuti (${subjects.length})',
-                  ),
+                  SectionTitle('Kelas yang kamu ikuti (${subjects.length})'),
                   if (subjects.isEmpty)
                     const EmptyState(
                       message:
-                          'Belum ada mata pelajaran. Masukkan kode dari '
+                          'Belum ada kelas. Masukkan kode dari '
                           'gurumu di atas.',
                     ),
                   for (final s in subjects)
@@ -177,8 +171,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       icon: Icons.folder_outlined,
                       title: s.name,
                       subtitle: _summary(s),
-                      semanticLabel:
-                          'Mata pelajaran ${s.name}. ${_summary(s)}.',
+                      semanticLabel: 'Kelas ${s.name}. ${_summary(s)}.',
                       onTap: () => _open(s),
                     ),
                 ],

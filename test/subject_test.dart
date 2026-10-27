@@ -25,7 +25,7 @@ Map<String, dynamic> _joined(bool already) => {
   'subject': {'id': 'bumi', 'name': 'Bumi dan Antariksa'},
 };
 
-/// Server siswa: belum ikut mata pelajaran apa pun, kode BMRANT ada.
+/// Server siswa: belum ikut kelas apa pun, kode BMRANT ada.
 FakeServer _studentServer() => FakeServer({
   'GET /student/subjects': (_) => {'subjects': []},
   'POST /student/subjects/join': (r) {
@@ -55,7 +55,7 @@ void main() {
     });
   });
 
-  group('AppStore gabung mata pelajaran', () {
+  group('AppStore gabung kelas', () {
     test('kode dirapikan sebelum dikirim', () async {
       final server = _studentServer()..install();
       final result = await store.joinSubject(' bm-rant ');
@@ -133,9 +133,7 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('kode benar membuka mata pelajaran dan materinya', (
-      tester,
-    ) async {
+    testWidgets('kode benar membuka kelas dan materinya', (tester) async {
       _studentServer().install();
       await tester.pumpWidget(
         testApp(const StudentHomeScreen(studentName: 'Tes Gabung')),
@@ -155,7 +153,7 @@ void main() {
       await tester.pumpWidget(
         testApp(const StudentHomeScreen(studentName: 'Tes Mati')),
       );
-      expect(find.bySemanticsLabel('Memuat mata pelajaranmu.'), findsOneWidget);
+      expect(find.bySemanticsLabel('Memuat kelasmu.'), findsOneWidget);
       await tester.pumpAndSettle();
       expectLive(
         tester,
@@ -167,12 +165,12 @@ void main() {
       _studentServer().install();
       await tapAndPump(tester, find.text('Coba lagi'));
       await tester.pumpAndSettle();
-      expect(find.text('Mata pelajaran yang kamu ikuti (0)'), findsOneWidget);
+      expect(find.text('Kelas yang kamu ikuti (0)'), findsOneWidget);
       handle.dispose();
     });
   });
 
-  testWidgets('guru: nama mata pelajaran kosong ditolak dengan liveRegion', (
+  testWidgets('guru: nama kelas kosong ditolak dengan liveRegion', (
     tester,
   ) async {
     FakeServer({
@@ -181,17 +179,15 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(testApp(const TeacherHomeScreen()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Buat Mata Pelajaran'));
+    await tester.tap(find.text('Buat Kelas'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Buat'));
     await tester.pump();
-    expectLive(tester, 'Nama mata pelajaran belum diisi.');
+    expectLive(tester, 'Nama kelas belum diisi.');
     handle.dispose();
   });
 
-  testWidgets('guru: mata pelajaran baru dibuat di server, kode dieja', (
-    tester,
-  ) async {
+  testWidgets('guru: kelas baru dibuat di server, kode dieja', (tester) async {
     final server = FakeServer({
       'GET /teacher/subjects': (_) => {'subjects': []},
       'POST /teacher/subjects': (_) => {
@@ -203,7 +199,7 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(testApp(const TeacherHomeScreen()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Buat Mata Pelajaran'));
+    await tester.tap(find.text('Buat Kelas'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '  IPA Kelas 5 ');
     await tester.tap(find.text('Buat'));

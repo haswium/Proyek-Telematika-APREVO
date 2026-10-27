@@ -10,9 +10,8 @@ import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import 'subject_detail_screen.dart';
 
-/// Beranda guru: kartu sambutan, tombol buat mata pelajaran, lalu kartu
-/// tiap mata pelajaran dengan kode aksesnya. Materi dikelola di dalam
-/// mata pelajarannya.
+/// Beranda guru: kartu sambutan, tombol buat kelas, lalu kartu tiap kelas
+/// dengan kode aksesnya. Materi dikelola di dalam kelasnya.
 class TeacherHomeScreen extends StatelessWidget {
   const TeacherHomeScreen({super.key});
 
@@ -31,7 +30,7 @@ class TeacherHomeScreen extends StatelessWidget {
     );
     if (subject == null) return;
     final message =
-        'Mata pelajaran ${subject.name} dibuat. Kode aksesnya '
+        'Kelas ${subject.name} dibuat. Kode aksesnya '
         '${spellCode(subject.accessCode)}.';
     announce(message);
     if (!context.mounted) return;
@@ -42,10 +41,10 @@ class TeacherHomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final teacher = store.currentUser?.name ?? 'Guru';
     return PurpleScaffold(
-      appBar: aprevoAppBar('Mata Pelajaran Saya'),
+      appBar: aprevoAppBar('Kelas Saya'),
       body: SafeArea(
         child: LoadView<List<Subject>>(
-          loadingMessage: 'Memuat mata pelajaranmu.',
+          loadingMessage: 'Memuat kelasmu.',
           load: store.teacherSubjects,
           builder: (context, subjects, _) {
             return ListView(
@@ -56,7 +55,7 @@ class TeacherHomeScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Pill(
-                        '${subjects.length} mata pelajaran',
+                        '${subjects.length} kelas',
                         color: const Color(0x33FFFFFF),
                         textColor: AppColors.white,
                       ),
@@ -78,7 +77,7 @@ class TeacherHomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'Satu mata pelajaran, satu kode akses. Siswa '
+                        'Satu kelas, satu kode akses. Siswa '
                         'bergabung lewat kode itu dan melihat semua materi '
                         'yang sudah dipublikasikan.',
                         style: TextStyle(color: AppColors.white, fontSize: 15),
@@ -88,14 +87,14 @@ class TeacherHomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 PrimaryButton(
-                  label: 'Buat Mata Pelajaran',
+                  label: 'Buat Kelas',
                   icon: Icons.add_circle_outline,
                   onPressed: () => _createSubject(context),
                 ),
                 const SizedBox(height: 8),
-                SectionTitle('Daftar mata pelajaran (${subjects.length})'),
+                SectionTitle('Daftar kelas (${subjects.length})'),
                 if (subjects.isEmpty)
-                  const EmptyState(message: 'Belum ada mata pelajaran.'),
+                  const EmptyState(message: 'Belum ada kelas.'),
                 for (var i = 0; i < subjects.length; i++)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 14),
@@ -116,7 +115,7 @@ class TeacherHomeScreen extends StatelessWidget {
   }
 }
 
-/// Dialog nama mata pelajaran baru. Membuat mata pelajaran di backend lalu
+/// Dialog nama kelas baru. Membuat kelas di backend lalu
 /// mengembalikannya, atau `null` kalau dibatalkan.
 class _NewSubjectDialog extends StatefulWidget {
   const _NewSubjectDialog();
@@ -149,14 +148,14 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
     if (_busy) return;
     final name = _name.text.trim();
     if (name.isEmpty) {
-      _showError('Nama mata pelajaran belum diisi.');
+      _showError('Nama kelas belum diisi.');
       return;
     }
     setState(() {
       _busy = true;
       _error = null;
     });
-    announce('Membuat mata pelajaran $name.');
+    announce('Membuat kelas $name.');
     try {
       // Kode akses dibuat otomatis oleh backend.
       final subject = await store.createSubject(name);
@@ -164,14 +163,14 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
       Navigator.pop(context, subject);
     } on ApiException catch (e) {
       if (!mounted) return;
-      _showError('Gagal membuat mata pelajaran. ${e.message}');
+      _showError('Gagal membuat kelas. ${e.message}');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Mata pelajaran baru'),
+      title: const Text('Kelas baru'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -183,8 +182,8 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.done,
               decoration: fieldDecoration(
-                'Nama mata pelajaran',
-                hint: 'Contoh: IPA Kelas 5',
+                'Nama kelas',
+                hint: 'Contoh: 7A Geografi',
               ),
               onSubmitted: (_) => _submit(),
             ),
@@ -243,15 +242,15 @@ class _SubjectCard extends StatelessWidget {
           const SizedBox(height: 12),
           Bouncy(
             // Tiap kartu punya tombol ini; sebut namanya supaya TalkBack
-            // tidak membaca "Buka mata pelajaran" berulang tanpa konteks.
+            // tidak membaca "Buka kelas" berulang tanpa konteks.
             child: Semantics(
-              label: 'Buka mata pelajaran ${s.name}',
+              label: 'Buka kelas ${s.name}',
               button: true,
               onTap: onOpen,
               excludeSemantics: true,
               child: FilledButton.icon(
                 icon: const Icon(Icons.folder_open),
-                label: const Text('Buka mata pelajaran'),
+                label: const Text('Buka kelas'),
                 onPressed: onOpen,
               ),
             ),

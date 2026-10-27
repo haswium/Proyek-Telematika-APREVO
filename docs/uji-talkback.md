@@ -16,8 +16,9 @@ di kolom **Catatan** kalau berbeda dari yang seharusnya.
    - Kalau ingin daftar materi siswa diambil dari backend, jalankan backend
      dengan `--host 0.0.0.0`, lalu jalankan aplikasi dengan
      `flutter run --dart-define=API_BASE_URL=http://<IP-laptop>:8000`.
-     HP dan laptop harus satu Wi-Fi. Kalau backend tidak dijalankan, layar
-     Materi Saya akan menampilkan pesan gagal; itu juga perlu diuji.
+     HP dan laptop harus satu Wi-Fi. Alamat server juga bisa diubah di
+     layar "Alamat server". Kalau backend tidak dijalankan, layar Kelas
+     akan menampilkan pesan gagal; itu juga perlu diuji.
 2. Siapkan dua akun: satu **siswa** dan satu **guru**. Kalau belum ada,
    buat lewat layar Daftar saat pengujian.
 3. Nyalakan TalkBack: Setelan > Aksesibilitas > TalkBack.
@@ -33,14 +34,15 @@ Gestur yang dipakai:
 | Geser bawah lalu kanan | Kembali (sama dengan tombol kembali) |
 | Geser atas lalu bawah, pilih "Judul" | Lompat antarjudul |
 
-Kode akses contoh yang selalu tersedia di aplikasi (data contoh di memori):
+Data uji yang perlu disiapkan dengan akun guru sebelum menguji sisi siswa:
 
-| Kode | Materi | Jenis soal |
-|---|---|---|
-| `APV-7K29` | Fotosintesis | Quiz (pilihan ganda) |
-| `APV-3NPS` | Sistem Pernapasan | Benar atau Salah |
-| `APV-D4AR` | Daur Air | Puzzle Urutan |
-| `APV-TS8X` | Tata Surya | Isian Singkat |
+1. Buat satu kelas, misalnya "7A Geografi". Catat kode aksesnya (6 huruf
+   kapital, contoh `KXPRTA`).
+2. Unggah satu materi PDF di kelas itu, buat pre-test dan post-test, lalu
+   publikasikan.
+3. Supaya semua jenis soal teruji (bagian 8 sampai 11), siapkan empat
+   materi dengan jenis soal berbeda: pilihan ganda, benar/salah, isian
+   singkat, dan puzzle urutan.
 
 ## Pemeriksaan umum (berlaku di semua layar)
 
@@ -95,7 +97,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 4.3 | Ketuk dua kali "Masuk" dengan kolom kosong | "Email belum benar..." dibacakan satu kali | | |
 | 4.4 | Isi email benar dan password salah, ketuk "Masuk" | "Email atau password salah." | | |
 | 4.5 | Ketuk dua kali "Lupa password?" | Pesan "Lupa password akan aktif..." dibacakan satu kali | | |
-| 4.6 | Masuk dengan akun **siswa** | Pindah ke layar sambutan siswa (pertama kali) atau Materi Saya | | |
+| 4.6 | Masuk dengan akun **siswa** | Pindah ke layar sambutan siswa (pertama kali) atau layar Kelas | | |
 
 ## 5. Sambutan siswa (hanya muncul pertama kali)
 
@@ -103,37 +105,43 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 |---|---|---|---|---|
 | 5.1 | Geser kanan dari awal | "Siap untuk belajar?, judul", kalimat penjelasan, lalu tiga poin. Ikon centang dan ikon headphone tidak difokus | | |
 | 5.2 | Geser kanan sampai habis | Tidak ada tombol "Dengarkan". Aplikasi tidak bersuara sendiri | | |
-| 5.3 | Ketuk dua kali "Mulai Belajar" | Pindah ke Materi Saya | | |
+| 5.3 | Ketuk dua kali "Mulai Belajar" | Pindah ke layar Kelas (tab Belajar) | | |
 
-## 6. Materi Saya (tab Belajar siswa)
+## 6. Layar Kelas (tab Belajar siswa)
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 6.1 | Buka layar ini | "Sedang memuat materimu. Tunggu sebentar." dibacakan sendiri | | |
-| 6.2 | Kalau backend **tidak** jalan | "Gagal memuat materi. Tidak bisa terhubung ke server..." dibacakan sendiri, lalu ada tombol "Coba lagi" | | |
+| 6.1 | Buka layar ini | "Memuat kelasmu." dibacakan sendiri | | |
+| 6.2 | Kalau backend **tidak** jalan | Pesan gagal dibacakan sendiri, lalu ada tombol "Coba lagi" | | |
 | 6.3 | Ketuk dua kali "Coba lagi" | Pesan memuat dibacakan lagi | | |
-| 6.4 | Kalau backend jalan | Judul "Materi yang kamu ikuti (jumlah)", lalu tiap materi terbaca dalam satu kalimat: "Materi [judul]. [status]" | | |
-| 6.5 | Fokus ke balon Odi | Hanya teks balon yang terbaca. Gambar Odi di sebelahnya tidak difokus | | |
-| 6.6 | Fokus ke kolom kode | "Kode akses materi, kotak edit" | | |
-| 6.7 | Kosongkan kolom, ketuk dua kali "Buka materi" | "Kode akses belum diisi." dibacakan satu kali | | |
-| 6.8 | Isi `XXX`, ketuk "Buka materi" | "Kode akses tidak ditemukan..." | | |
-| 6.9 | Isi `APV-7K29`, ketuk "Buka materi" | Layar materi Fotosintesis terbuka | | |
-| 6.10 | Menu bawah | "Belajar, tab 1 dari 3, dipilih", "Progres, tab 2 dari 3", "Profil, tab 3 dari 3" | | |
+| 6.4 | Fokus ke balon Odi | Hanya teks balon yang terbaca. Gambar Odi di sebelahnya tidak difokus | | |
+| 6.5 | Fokus ke kolom kode | "Kode kelas, kotak edit" dengan petunjuk "Contoh: KXPRTA" | | |
+| 6.6 | Ketik beberapa huruf kecil | Huruf tampil kapital. Di bawah kolom: "Kode yang diketik: K X P ..." dieja per huruf, tidak dibacakan tiap ketukan | | |
+| 6.7 | Kosongkan kolom, ketuk dua kali "Gabung" | "Kode belum diisi." dibacakan satu kali | | |
+| 6.8 | Isi kurang dari 6 huruf, ketuk "Gabung" | "Kode harus 6 huruf. Baru ... huruf: ..." dengan kode dieja | | |
+| 6.9 | Isi 6 huruf yang tidak ada, ketuk "Gabung" | "Kode ... tidak ditemukan..." dengan kode dieja | | |
+| 6.10 | Isi kode kelas dari guru, ketuk "Gabung" | "Bergabung ke [nama kelas]." lalu kelas muncul di daftar | | |
+| 6.11 | Gabung lagi dengan kode yang sama | "Kamu sudah ikut [nama kelas]." | | |
+| 6.12 | Daftar kelas | Judul "Kelas yang kamu ikuti (jumlah)", lalu tiap kelas terbaca dalam satu fokus: "Kelas [nama]. [ringkasan]" | | |
+| 6.13 | Menu bawah | "Belajar, tab 1 dari 3, dipilih", "Progres, tab 2 dari 3", "Profil, tab 3 dari 3" | | |
 
-## 7. Layar Materi (satu materi)
+## 7. Isi kelas dan layar materi
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 7.1 | Geser kanan dari awal | "Kode akses: A P V 7 K 2 9" (dieja per huruf), lalu judul materi sebagai judul, lalu "Jenis soal: Quiz" | | |
-| 7.2 | Kartu materi | "Materi, Fotosintesis" dalam satu fokus | | |
-| 7.3 | Ketuk dua kali "Baca materi" | Daftar sub bab terbuka. Tidak ada tombol "Dengarkan" atau "Hentikan suara" | | |
-| 7.4 | Ketuk dua kali "Baca teks" | Layar teks materi terbuka. Isinya terbaca. Untuk materi dari backend: "Isi materi belum tersedia." | | |
-| 7.5 | Kartu Pre-test | "Pre-test. 2 soal. Belum dikerjakan" dalam satu fokus, lalu tombol "Mulai Pre-test" | | |
-| 7.6 | Kartu Post-test sebelum pre-test | "Post-test. 3 soal. Terkunci. Kerjakan pre-test dulu" | | |
-| 7.7 | Ketuk dua kali "Mulai Post-test" | "Kerjakan pre-test dulu, ya." dibacakan satu kali | | |
-| 7.8 | Ketuk dua kali "Mulai Pre-test" | Layar soal terbuka | | |
+| 7.1 | Buka satu kelas | "Memuat materi [nama kelas]." lalu judul "Daftar materi (jumlah)" | | |
+| 7.2 | Tiap materi | "Materi [judul]. [status]" dalam satu fokus. Hanya materi publik yang muncul | | |
+| 7.3 | Buka satu materi | Judul materi sebagai judul, balon Odi berisi langkah berikutnya | | |
+| 7.4 | Kartu materi | "Materi, [judul], [jumlah sub bab]". Tidak ada tombol "Dengarkan" | | |
+| 7.5 | Ketuk dua kali "Baca materi" | Daftar sub bab terbuka. Tiap sub bab terbaca dalam satu fokus | | |
+| 7.6 | Buka satu sub bab | Terdengar "Sub bab 1 dari ...: [judul]". Judul sub bab bisa dilompati dengan gestur judul | | |
+| 7.7 | Tombol "Sub bab berikutnya: [judul]" | Ketuk dua kali: "Sub bab 2 dari ...: [judul]" diumumkan | | |
+| 7.8 | Kartu Pre-test | "Pre-test. [status]." dalam satu fokus, lalu tombol "Mulai Pre-test" | | |
+| 7.9 | Kartu Post-test sebelum pre-test | "Post-test. Terkunci. Kerjakan pre-test dulu" | | |
+| 7.10 | Ketuk dua kali "Mulai Post-test" | "Kerjakan pre-test dulu, ya." dibacakan satu kali | | |
+| 7.11 | Ketuk dua kali "Mulai Pre-test" | Layar soal terbuka | | |
 
-## 8. Layar soal: pilihan ganda (APV-7K29)
+## 8. Layar soal: pilihan ganda
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
@@ -148,14 +156,14 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 8.9 | Ketuk dua kali "Soal berikutnya" | Terdengar "Soal 2 dari 2..." | | |
 | 8.10 | Jawab **benar** | Umpan balik "Benar! Hebat!" dengan jawaban dan penjelasan | | |
 
-## 9. Layar soal: benar atau salah (APV-3NPS)
+## 9. Layar soal: benar atau salah
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | 9.1 | Fokus ke pilihan | "Benar, tombol" dan "Salah, tombol" | | |
 | 9.2 | Pilih lalu periksa | Umpan balik dibacakan satu kali, berisi jawabanmu dan jawaban yang benar | | |
 
-## 10. Layar soal: isian singkat (APV-TS8X)
+## 10. Layar soal: isian singkat
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
@@ -163,7 +171,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 10.2 | Ketik jawaban, tekan selesai di keyboard | Jawaban diperiksa dan umpan balik dibacakan | | |
 | 10.3 | Fokus ke kolom setelah menjawab | Terbaca dinonaktifkan | | |
 
-## 11. Layar soal: puzzle urutan (APV-D4AR)
+## 11. Layar soal: puzzle urutan
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
@@ -189,13 +197,14 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | 13.1 | Buka tab Progres | Balon Odi berisi jumlah bintang dan materi selesai | | |
-| 13.2 | Kartu tiap materi | Judul materi sebagai judul, lalu status pre-test, status post-test, "... dari 3 bintang" | | |
+| 13.2 | Nama kelas | Terbaca sebagai judul, materi dikelompokkan per kelas | | |
+| 13.3 | Kartu tiap materi | Judul materi sebagai judul, lalu status pre-test, status post-test, "... dari 3 bintang" | | |
 
 ## 14. Tab Profil (siswa dan guru)
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 14.1 | Fokus ke Odi | Deskripsi Odi dibacakan. Ketuk dua kali: deskripsi dibacakan suara aplikasi | | |
+| 14.1 | Fokus ke Odi | Deskripsi Odi dibacakan sebagai gambar. Ketuk dua kali tidak melakukan apa pun | | |
 | 14.2 | Geser kanan | Nama sebagai judul, lalu peran | | |
 | 14.3 | Kartu info | "Email, [alamat email]" dalam satu fokus, lalu "Penyimpanan akun, ..." dalam satu fokus | | |
 | 14.4 | Ketuk dua kali "Keluar dari akun" | Kembali ke layar sambutan | | |
@@ -204,43 +213,45 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 15.1 | Geser kanan dari awal | Jumlah materi publik, "Selamat datang kembali", nama guru sebagai judul, penjelasan | | |
-| 15.2 | Kartu materi | Jenis soal, status (Publik/Draf), judul materi sebagai judul | | |
-| 15.3 | Kode akses di kartu | "Kode akses: A P V ..." dieja per huruf | | |
-| 15.4 | Tombol salin | "Salin kode akses, tombol". Setelah diketuk dua kali: "Kode akses disalin." dibacakan satu kali | | |
-| 15.5 | Kotak angka | "Siswa: 2", "Soal pre-test: 2", "Soal post-test: 3" | | |
-| 15.6 | Tombol kelola | "Kelola materi [judul], tombol" (judul ikut disebut) | | |
-| 15.7 | Ketuk dua kali "Buat Materi Baru" | Dialog terbuka. "Judul materi, kotak edit", "Isi materi, kotak edit", tombol "Batal" dan "Lanjut buat soal" | | |
-| 15.8 | Menu bawah guru | "Materi", "Siswa", "Hasil", "Profil", masing-masing "tab ... dari 4" | | |
+| 15.1 | Geser kanan dari awal | "Kelas Saya", jumlah kelas, "Selamat datang kembali", nama guru sebagai judul, penjelasan | | |
+| 15.2 | Ketuk dua kali "Buat Kelas" | Dialog "Kelas baru" terbuka. "Nama kelas, kotak edit" dengan petunjuk "Contoh: 7A Geografi" | | |
+| 15.3 | Ketuk dua kali "Buat" dengan nama kosong | "Nama kelas belum diisi." dibacakan satu kali | | |
+| 15.4 | Isi nama, ketuk "Buat" | "Kelas [nama] dibuat. Kode aksesnya ..." dengan kode dieja per huruf | | |
+| 15.5 | Kartu kelas | Nama kelas sebagai judul, "Siswa: ...", "Materi: ..." | | |
+| 15.6 | Kode akses di kartu | "Kode akses: K X P R T A" dieja per huruf | | |
+| 15.7 | Tombol salin | "Salin kode akses, tombol". Setelah diketuk dua kali: "Kode akses disalin." dibacakan satu kali | | |
+| 15.8 | Tombol buka | "Buka kelas [nama], tombol" (nama kelas ikut disebut) | | |
+| 15.9 | Menu bawah guru | "Kelas", "Siswa", "Hasil", "Profil", masing-masing "tab ... dari 4" | | |
 
-## 16. Kelola materi (guru)
+## 16. Isi kelas dan kelola materi (guru)
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 16.1 | Buka materi baru tanpa soal | Pilihan jenis soal: "Quiz, dipilih", "Benar atau Salah", dan lain-lain | | |
-| 16.2 | Ketuk dua kali jenis soal lain | Jenis itu terbaca "dipilih" | | |
-| 16.3 | Ketuk dua kali "Buat soal Pre-test dengan AI" | "AI sedang membuat soal Pre-test. Tunggu sebentar." lalu "... soal Pre-test dibuat. Periksa sebelum dipublikasikan." | | |
-| 16.4 | Baris soal | "Pre-test soal 1. [pertanyaan]. Ketuk untuk ubah" | | |
-| 16.5 | Tombol hapus di baris soal | "Hapus Pre-test soal 1, tombol" | | |
-| 16.6 | Ketuk dua kali tombol hapus | "Pre-test soal 1 dihapus." | | |
-| 16.7 | Setelah ada soal, pilihan jenis soal | Terbaca dinonaktifkan, dan kalimat di bawahnya menjelaskan alasannya | | |
-| 16.8 | Sakelar "Publikasikan ke siswa" sebelum soal lengkap | "Isi dulu pre-test dan post-test..." dibacakan satu kali | | |
+| 16.1 | Buka satu kelas | Nama kelas sebagai judul, kode akses dieja, tombol "Unggah Materi PDF", lalu "Daftar materi (jumlah)" | | |
+| 16.2 | Kelas tanpa materi | "Belum ada materi di kelas ini." | | |
+| 16.3 | Kartu materi | Status (Publik/Draf), judul sebagai judul, tombol "Kelola materi [judul]" | | |
+| 16.4 | Buka "Kelola materi" | Pilihan jenis soal terbaca, yang aktif terbaca "dipilih" | | |
+| 16.5 | Setelah ada soal, pilihan jenis soal | Terbaca dinonaktifkan, dan kalimat di bawahnya menjelaskan alasannya | | |
+| 16.6 | Ketuk dua kali "Buat Pre-test" | Layar jadwal terbuka: waktu buka dan tenggat | | |
+| 16.7 | Hapus satu draf soal | "Draf Pre-test soal 1 dihapus." | | |
+| 16.8 | Sakelar "Publikasikan ke siswa" sebelum soal lengkap | "Simpan dulu minimal satu soal untuk ..." dibacakan satu kali | | |
 | 16.9 | Setelah soal lengkap, nyalakan sakelar | Status sakelar berubah, dan terdengar "Materi dipublikasikan." | | |
 
 ## 17. Form soal (guru)
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 17.1 | Buka "Tambah soal" untuk Quiz | "Pertanyaan, kotak edit", "Pilihan A" sampai "Pilihan D", judul "Jawaban benar", pilihan "Pilihan A, dipilih" dan seterusnya | | |
+| 17.1 | Buka "Tambah soal" untuk pilihan ganda | "Pertanyaan, kotak edit", kolom pilihan, judul "Jawaban benar", lalu pilihan dengan satu yang "dipilih" | | |
 | 17.2 | Ketuk dua kali "Simpan soal" dengan pertanyaan kosong | "Pertanyaan belum diisi." dibacakan satu kali | | |
-| 17.3 | Kolom opsional | "Deskripsi gambar (opsional), kotak edit" dan "Penjelasan jawaban, kotak edit", termasuk petunjuknya | | |
+| 17.3 | Kolom penjelasan | "Penjelasan jawaban, kotak edit", termasuk petunjuknya | | |
 
 ## 18. Tab Siswa dan Hasil (guru)
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 18.1 | Tab Siswa, fokus ke satu siswa | "[nama]. Mengikuti ... materi, selesai ..., ... bintang" dalam satu fokus | | |
-| 18.2 | Tab Hasil, kartu materi | Judul sebagai judul, "Nilai pre-test: ...", "Nilai post-test: ...", lalu kalimat perbandingan | | |
+| 18.1 | Tab Siswa, fokus ke satu siswa | "[nama]. Ikut ... kelas, ..." dalam satu fokus | | |
+| 18.2 | Tab Hasil | Nama kelas sebagai judul, lalu kartu tiap materi | | |
+| 18.3 | Kartu materi | Judul sebagai judul, nilai pre-test dan post-test, lalu kalimat perbandingan | | |
 
 ## Tanpa TalkBack
 

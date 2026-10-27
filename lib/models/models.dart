@@ -204,7 +204,7 @@ extension TestKindInfo on TestKind {
   String get api => this == TestKind.pre ? 'pre' : 'post';
 }
 
-/// Panjang kode akses mata pelajaran: 6 huruf kapital A-Z, tanpa strip.
+/// Panjang kode akses kelas: 6 huruf kapital A-Z, tanpa strip.
 const int kAccessCodeLength = 6;
 
 /// Merapikan ketikan kode akses: huruf kecil jadi kapital, karakter selain
@@ -212,7 +212,7 @@ const int kAccessCodeLength = 6;
 String cleanAccessCode(String raw) =>
     raw.toUpperCase().replaceAll(RegExp('[^A-Z]'), '');
 
-/// Mata pelajaran, misalnya "IPA Kelas 5". Guru melihat kode akses dan
+/// Kelas, misalnya "7A Geografi". Guru melihat kode akses dan
 /// jumlah siswa; siswa melihat nama gurunya.
 class Subject {
   Subject({
@@ -375,7 +375,7 @@ class QuizInfo {
   }
 }
 
-/// Satu materi di mata pelajaran. Isinya per sub-bab, diambil terpisah
+/// Satu materi di kelas. Isinya per sub-bab, diambil terpisah
 /// lewat `GET /materials/{id}/sections`.
 class LessonMaterial {
   LessonMaterial({

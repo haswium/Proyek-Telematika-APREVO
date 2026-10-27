@@ -181,7 +181,7 @@ class AppStore extends ChangeNotifier {
     return Subject.fromJson(data['subject'] as Map<String, dynamic>);
   }
 
-  /// Semua materi satu mata pelajaran, termasuk draf.
+  /// Semua materi satu kelas, termasuk draf.
   Future<List<LessonMaterial>> teacherMaterials(String subjectId) async {
     final data = await api.get('/teacher/subjects/$subjectId/materials');
     return [
@@ -294,7 +294,7 @@ class AppStore extends ChangeNotifier {
     return SubjectResults.fromJson(data);
   }
 
-  /// Hasil semua mata pelajaran guru, untuk tab Siswa dan Hasil.
+  /// Hasil semua kelas guru, untuk tab Siswa dan Hasil.
   Future<List<SubjectResults>> teacherOverview() async {
     final subjects = await teacherSubjects();
     return Future.wait([for (final s in subjects) subjectResults(s.id)]);
@@ -411,7 +411,7 @@ class AppStore extends ChangeNotifier {
     );
   }
 
-  /// Semua mata pelajaran siswa beserta materinya, untuk tab Progres.
+  /// Semua kelas siswa beserta materinya, untuk tab Progres.
   Future<List<(Subject, List<LessonMaterial>)>> studentProgress() async {
     final subjects = await studentSubjects();
     final materials = await Future.wait([

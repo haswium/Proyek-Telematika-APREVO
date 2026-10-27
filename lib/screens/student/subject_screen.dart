@@ -19,7 +19,7 @@ String materialProgress(LessonMaterial m) {
   return '${m.sectionCount} sub bab, belum dimulai';
 }
 
-/// Isi satu mata pelajaran untuk siswa: hanya materi yang sudah
+/// Isi satu kelas untuk siswa: hanya materi yang sudah
 /// dipublikasikan guru, masing-masing dengan progresnya.
 class StudentSubjectScreen extends StatelessWidget {
   const StudentSubjectScreen({

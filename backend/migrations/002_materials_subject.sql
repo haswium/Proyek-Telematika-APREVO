@@ -1,4 +1,4 @@
--- Materi menjadi bagian dari mata pelajaran. Boleh null untuk materi lama
+-- Materi menjadi bagian dari kelas. Boleh null untuk materi lama
 -- yang masih memakai materials.access_code dan material_access.
 
 alter table public.materials

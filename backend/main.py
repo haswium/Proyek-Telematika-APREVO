@@ -229,7 +229,7 @@ def is_subject_member(subject_id, student_id):
 
 
 def student_can_access_material(material, student_id):
-    """Akses lewat keanggotaan mata pelajaran, atau material_access lama."""
+    """Akses lewat keanggotaan kelas, atau material_access lama."""
     if is_subject_member(material.get("subject_id"), student_id):
         return True
     access_response = (
@@ -293,7 +293,7 @@ def get_owned_subject(subject_id, teacher_id):
     )
     subject = subject_response.data
     if subject is None:
-        raise HTTPException(status_code=404, detail="Mata pelajaran tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     return subject
 
 
@@ -1690,7 +1690,7 @@ def section_counts(material_ids):
 def create_subject(data: SubjectCreateRequest, auth=Depends(require_teacher)):
     name = data.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Nama mata pelajaran wajib diisi")
+        raise HTTPException(status_code=400, detail="Nama kelas wajib diisi")
     for _ in range(5):
         try:
             response = (
@@ -1704,7 +1704,7 @@ def create_subject(data: SubjectCreateRequest, auth=Depends(require_teacher)):
                 )
                 .execute()
             )
-            return {"message": "Mata pelajaran berhasil dibuat", "subject": response.data[0]}
+            return {"message": "Kelas berhasil dibuat", "subject": response.data[0]}
         except APIError as error:
             # 23505: kode akses sudah dipakai, coba kode lain.
             if error.code != "23505":
@@ -1984,9 +1984,9 @@ def join_subject(data: JoinSubjectRequest, auth=Depends(require_student)):
         ).execute()
     return {
         "message": (
-            "Kamu sudah bergabung di mata pelajaran ini"
+            "Kamu sudah bergabung di kelas ini"
             if already_joined
-            else "Berhasil bergabung ke mata pelajaran"
+            else "Berhasil bergabung ke kelas"
         ),
         "already_joined": already_joined,
         "subject": {"id": subject["id"], "name": subject["name"]},
@@ -2057,7 +2057,7 @@ def list_student_subject_materials(subject_id: str, auth=Depends(require_student
     student_id = auth["user_id"]
     if not is_subject_member(subject_id, student_id):
         raise HTTPException(
-            status_code=403, detail="Kamu belum bergabung di mata pelajaran ini"
+            status_code=403, detail="Kamu belum bergabung di kelas ini"
         )
     subject_response = (
         supabase_admin.table("subjects")
@@ -2070,7 +2070,7 @@ def list_student_subject_materials(subject_id: str, auth=Depends(require_student
     )
     subject = subject_response.data
     if subject is None:
-        raise HTTPException(status_code=404, detail="Mata pelajaran tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     materials_response = (
         supabase_admin.table("materials")
         .select("id, title, created_at")

@@ -179,7 +179,7 @@ def test_sub_bab_hanya_untuk_yang_berhak(client, login, fake_db):
     assert client.get("/materials/m1/sections").status_code == 403
 
 
-def test_hasil_per_mata_pelajaran(client, login, fake_db):
+def test_hasil_per_kelas(client, login, fake_db):
     teacher_id, subject, _ = setup_subject(client, login, fake_db)
     add_quiz(fake_db, "pre", "pre", -2, -1, teacher_id)
     andi = login("student", "Andi")
