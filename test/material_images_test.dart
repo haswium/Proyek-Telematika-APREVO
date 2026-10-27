@@ -219,4 +219,96 @@ void main() {
     expect(find.text('Belum dideskripsikan (1)'), findsOneWidget);
     expect(find.text('• Gambar 1, halaman 2'), findsOneWidget);
   });
+
+  testWidgets('polling gagal sesekali dicoba lagi diam-diam, error tampil '
+      'setelah 3 kali gagal berturut-turut', (tester) async {
+    tallScreen(tester);
+    // null = server menjawab 500.
+    final statuses = <Map<String, dynamic>?>[
+      _status(running: true, total: 4, done: 1),
+      null,
+      null,
+      _status(running: true, total: 4, done: 2),
+      null,
+      null,
+      null,
+    ];
+    FakeServer({
+      'GET /teacher/materials/m1/images': (_) => {
+        'images': [_image('1')],
+      },
+      'GET /teacher/materials/m1/image-description': (_) {
+        final next = statuses.removeAt(0);
+        return next ?? jsonResponse({'detail': _serverError}, 500);
+      },
+    }).install();
+    final handle = tester.ensureSemantics();
+    await _open(tester);
+    tester.takeAnnouncements();
+
+    // Dua kali gagal: diam, progres lama tetap tampil.
+    await _poll(tester);
+    await _poll(tester);
+    expect(_said(tester), isEmpty);
+    expect(find.textContaining('tidak bisa dibaca'), findsNothing);
+    expect(find.text('Sedang berjalan: 1 dari 4 gambar selesai'), findsOne);
+
+    // Berhasil lagi: hitungan gagal mulai dari nol.
+    await _poll(tester);
+    expect(find.text('Sedang berjalan: 2 dari 4 gambar selesai'), findsOne);
+    await _poll(tester);
+    await _poll(tester);
+    expect(_said(tester), isEmpty);
+
+    // Gagal ketiga berturut-turut: baru diumumkan, pemeriksaan berhenti.
+    await _poll(tester);
+    expect(_said(tester), [
+      'Progres deskripsi tidak bisa dibaca setelah 3 kali mencoba. '
+          '$_serverError Buka ulang layar ini untuk memeriksa lagi.',
+    ]);
+    expect(statuses, isEmpty);
+    await tester.pump(kDescribePollInterval * 3);
+    handle.dispose();
+  });
+
+  testWidgets('muat ulang daftar yang gagal tidak mengganti layar dengan '
+      'error', (tester) async {
+    tallScreen(tester);
+    final statuses = [
+      _status(running: true, total: 1),
+      _status(total: 1, done: 1),
+    ];
+    // null = server menjawab 500.
+    final lists = <List<Map<String, dynamic>>?>[
+      [_image('1')],
+      null,
+      [_image('1', description: 'Budi menabung.')],
+    ];
+    FakeServer({
+      'GET /teacher/materials/m1/image-description': (_) =>
+          statuses.length > 1 ? statuses.removeAt(0) : statuses.first,
+      'GET /teacher/materials/m1/images': (_) {
+        final next = lists.length > 1 ? lists.removeAt(0) : lists.first;
+        return next == null
+            ? jsonResponse({'detail': _serverError}, 500)
+            : {'images': next};
+      },
+    }).install();
+    await _open(tester);
+
+    // Progres selesai memicu muat ulang daftar, yang gagal sekali.
+    await _poll(tester);
+    expect(find.text('Coba lagi'), findsNothing);
+    expect(find.textContaining(_serverError), findsNothing);
+    expect(find.text('Gambar 1 dari 1, halaman 2'), findsOneWidget);
+
+    // Dicoba lagi diam-diam, lalu deskripsi baru tampil.
+    await _poll(tester);
+    expect(find.text('Budi menabung.'), findsOneWidget);
+    expect(lists, hasLength(1));
+  });
 }
+
+const _serverError =
+    'Server mengalami kesalahan saat memproses permintaan. Coba lagi nanti, '
+    'atau hubungi pengelola server kalau terus terjadi.';

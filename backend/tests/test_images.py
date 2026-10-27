@@ -356,3 +356,53 @@ def test_ai_soal_tidak_menerima_penanda_gambar(client, login, fake_db, monkeypat
     )
     assert response.status_code == 200, response.text
     assert seen["materi"] == "Menabung\nBudi menabung."
+
+
+def upload_photos(client, login, fake_db, count):
+    _, subject, _ = setup_subject(client, login, fake_db)
+    response = client.post(
+        "/teacher/materials/upload",
+        data={"title": "Foto", "subject_id": subject["id"]},
+        files={"file": ("foto.pdf", make_photos_pdf(count), "application/pdf")},
+    )
+    return response.json()["material"]["id"]
+
+
+def test_tulisan_guru_selama_proses_tidak_ditimpa_ai(
+    client, login, fake_db, storage, monkeypatch
+):
+    material_id = upload_photos(client, login, fake_db, 1)
+    row = fake_db["material_images"][0]
+
+    def describe(_bytes):
+        # Guru menyimpan deskripsinya sendiri saat Gemini masih bekerja.
+        row["description"] = "Tulisan guru."
+        return "Tulisan AI."
+
+    monkeypatch.setattr(main, "describe_image", describe)
+    start(client, material_id)
+    assert images(client, material_id)[0]["description"] == "Tulisan guru."
+    assert status(client, material_id)["pending"] == 0
+
+
+def test_gambar_yang_diselesaikan_guru_selama_proses_dilewati(
+    client, login, fake_db, storage, monkeypatch
+):
+    material_id = upload_photos(client, login, fake_db, 3)
+    rows = fake_db["material_images"]
+    calls = []
+
+    def describe(_bytes):
+        calls.append(1)
+        # Selagi gambar pertama diproses, guru menandai gambar kedua
+        # dekoratif dan menulis deskripsi gambar ketiga.
+        rows[1]["is_decorative"] = True
+        rows[2]["description"] = "Tulisan guru."
+        return "Foto."
+
+    monkeypatch.setattr(main, "describe_image", describe)
+    start(client, material_id)
+    body = status(client, material_id)
+    assert len(calls) == 1
+    assert (body["total"], body["done"], body["pending"]) == (3, 3, 0)
+    assert rows[2]["description"] == "Tulisan guru."

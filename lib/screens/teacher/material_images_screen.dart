@@ -14,6 +14,10 @@ import '../../widgets/playful.dart';
 /// Seberapa sering progres deskripsi diperiksa selama proses berjalan.
 const Duration kDescribePollInterval = Duration(seconds: 3);
 
+/// Pemeriksaan progres yang gagal dicoba lagi diam-diam; error baru tampil
+/// kalau gagal sebanyak ini berturut-turut.
+const int kPollFailuresBeforeError = 3;
+
 /// Gambar di PDF materi: guru meminta deskripsi AI, lalu memeriksa,
 /// memperbaiki, atau menandai gambar dekoratif sebelum materi terbit.
 /// Siswa mendengar "Gambar: deskripsi" di posisi gambar dalam halaman.
@@ -42,6 +46,8 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
   String? _status;
   Set<String> _knownFailures = {};
   VoidCallback? _reloadImages;
+  bool _checking = false;
+  int _checkFailures = 0;
 
   bool get _running => _starting || (_job?.running ?? false);
 
@@ -102,15 +108,33 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
   }
 
   Future<void> _check({bool initial = false}) async {
+    // Server lambat: jangan menumpuk pemeriksaan.
+    if (_checking) return;
+    _checking = true;
     final DescribeStatus job;
     try {
       job = await store.describeStatus(widget.materialId);
     } on ApiException catch (e) {
-      if (!mounted || initial) return;
+      _checking = false;
+      if (!mounted) return;
+      _checkFailures++;
+      if (_checkFailures < kPollFailuresBeforeError) {
+        // Gangguan sesaat: coba lagi diam-diam pada pemeriksaan berikutnya.
+        // Kalau pemeriksaan pertama gagal, tetap pantau karena prosesnya
+        // mungkin sedang berjalan.
+        if (_poll == null) _startPolling();
+        return;
+      }
       _stopPolling();
-      _say('Progres deskripsi tidak bisa dibaca. ${e.message}');
+      _say(
+        'Progres deskripsi tidak bisa dibaca setelah '
+        '$kPollFailuresBeforeError kali mencoba. ${e.message} Buka ulang '
+        'layar ini untuk memeriksa lagi.',
+      );
       return;
     }
+    _checking = false;
+    _checkFailures = 0;
     if (!mounted) return;
     final previous = _job;
     final fresh = [
@@ -128,9 +152,9 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
     if (previous == null || previous.done != job.done || fresh.isNotEmpty) {
       _reloadImages?.call();
     }
+    if (!job.running) _stopPolling();
     final finished = !job.running && (previous?.running ?? false);
     if (finished) {
-      _stopPolling();
       _say(_finishedMessage(job));
     } else if (fresh.isNotEmpty) {
       _say(_failureMessage(fresh));
@@ -257,6 +281,10 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
       appBar: aprevoAppBar('Gambar materi'),
       body: SafeArea(
         child: LoadView<List<PageImage>>(
+          // Daftar dimuat ulang tiap progres berubah; gangguan sesaat tidak
+          // boleh mengganti seluruh layar dengan pesan error.
+          failuresBeforeError: kPollFailuresBeforeError,
+          retryDelay: kDescribePollInterval,
           loadingMessage: 'Memuat gambar ${widget.materialTitle}.',
           load: () => store.teacherImages(widget.materialId),
           builder: (context, images, reload) {

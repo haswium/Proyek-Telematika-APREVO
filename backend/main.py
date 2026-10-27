@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from supabase import create_client, ClientOptions
@@ -43,8 +44,34 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin = create_client(SUPABASE_URL, os.getenv("SUPABASE_SERVICE_KEY"))
+class ThreadLocalSupabase:
+    """Klien Supabase tersendiri untuk setiap thread.
+
+    Klien Supabase memakai satu koneksi HTTP/2 (httpx) yang tidak aman dipakai
+    bersamaan oleh beberapa thread. Endpoint sinkron FastAPI berjalan di
+    thread pool, dan deskripsi gambar berjalan di latar belakang, jadi satu
+    klien bersama sesekali gagal dengan RemoteProtocolError ("Server
+    disconnected") saat polling bertabrakan dengan penulisan. Dengan klien per
+    thread, setiap thread memakai koneksinya sendiri.
+    """
+
+    def __init__(self, key):
+        self._key = key
+        self._local = threading.local()
+
+    def _client(self):
+        client = getattr(self._local, "client", None)
+        if client is None:
+            client = create_client(SUPABASE_URL, self._key)
+            self._local.client = client
+        return client
+
+    def __getattr__(self, name):
+        return getattr(self._client(), name)
+
+
+supabase = ThreadLocalSupabase(SUPABASE_KEY)
+supabase_admin = ThreadLocalSupabase(os.getenv("SUPABASE_SERVICE_KEY"))
 TEST_LOGIN_EMAIL = os.getenv("TEST_LOGIN_EMAIL")
 TEST_LOGIN_PASSWORD = os.getenv("TEST_LOGIN_PASSWORD")
 ENABLE_DEBUG_ENDPOINTS = os.getenv("ENABLE_DEBUG_ENDPOINTS") == "1"
@@ -77,9 +104,24 @@ SERVER_ERROR_DETAIL = (
 async def server_error_json(request, call_next):
     try:
         return await call_next(request)
-    except Exception:
-        logger.exception("Error tak tertangkap: %s %s", request.method, request.url.path)
+    except Exception as error:
+        logger.exception(server_error_log(request, error))
         return JSONResponse(status_code=500, content={"detail": SERVER_ERROR_DETAIL})
+
+
+def server_error_log(request, error):
+    """Satu baris yang mudah dicari di log: cari "SERVER_ERROR". Endpoint
+    ditulis sebagai pola rute supaya error di materi berbeda terkumpul."""
+    route = request.scope.get("route")
+    endpoint = getattr(route, "path", None) or request.url.path
+    kind = type(error)
+    message = " ".join(str(error).split())[:500] or "-"
+    return (
+        f"SERVER_ERROR endpoint={request.method} {endpoint} "
+        f"path={request.url.path} "
+        f"error={kind.__module__}.{kind.__qualname__} "
+        f"pesan={message}"
+    )
 
 
 app.add_middleware(
@@ -2110,6 +2152,7 @@ class DescribeJob:
 
 
 DESCRIBE_JOBS: dict[str, DescribeJob] = {}
+DESCRIBE_JOBS_LOCK = threading.Lock()
 
 
 def is_rate_limited(error: Exception) -> bool:
@@ -2134,13 +2177,30 @@ def describe_one(row):
     description = describe_image(image_bytes).strip()
     if not description:
         raise ValueError("Deskripsi kosong")
+    # Hanya mengisi yang masih kosong: kalau guru menulis deskripsi selama
+    # Gemini bekerja, tulisan guru yang dipertahankan.
     response = (
         supabase_admin.table("material_images")
         .update({"description": description})
         .eq("id", row["id"])
+        .is_("description", "null")
         .execute()
     )
-    return response.data[0] if response.data else {**row, "description": description}
+    if response.data:
+        return response.data[0]
+    return fresh_image_row(row["id"]) or {**row, "description": description}
+
+
+def fresh_image_row(image_id):
+    """Keadaan terbaru satu gambar, karena guru bisa mengubahnya selama
+    proses deskripsi berjalan."""
+    response = (
+        supabase_admin.table("material_images")
+        .select("id, image_key, page_number, image_url, description, is_decorative")
+        .eq("id", image_id)
+        .execute()
+    )
+    return (response.data or [None])[0]
 
 
 def prepare_image_rows(material, teacher_id):
@@ -2164,11 +2224,19 @@ def run_describe_job(job: DescribeJob, material, teacher_id):
             row for row in ordered_image_rows(material["id"]) if needs_description(row)
         ]
         job.total = len(rows)
-        for index, row in enumerate(rows):
-            if index:
+        called = False
+        for row in rows:
+            # Guru mungkin sudah menulis deskripsi atau menandai dekoratif
+            # sejak proses dimulai; gambar itu tidak perlu Gemini lagi.
+            current = fresh_image_row(row["id"])
+            if current is None or not needs_description(current):
+                job.done += 1
+                continue
+            if called:
                 time.sleep(GEMINI_DELAY_SECONDS)
+            called = True
             try:
-                describe_one(row)
+                describe_one(current)
                 job.done += 1
             except Exception as error:
                 logger.exception("Gagal mendeskripsikan %s", row["image_key"])
@@ -2228,11 +2296,17 @@ def generate_material_image_description(
     """
     material = get_owned_material(material_id, auth["user_id"])
     require_gemini()
-    job = DESCRIBE_JOBS.get(material_id)
-    if job is None or not job.running:
+    # Diperiksa dan dibuat di bawah kunci: dua klik yang hampir bersamaan
+    # tidak boleh memulai dua proses untuk materi yang sama.
+    with DESCRIBE_JOBS_LOCK:
+        job = DESCRIBE_JOBS.get(material_id)
+        start_new = job is None or not job.running
+        if start_new:
+            job = DescribeJob()
+            DESCRIBE_JOBS[material_id] = job
+    if start_new:
         pending = [row for row in material_image_rows(material_id) if needs_description(row)]
-        job = DescribeJob(total=len(pending))
-        DESCRIBE_JOBS[material_id] = job
+        job.total = len(pending)
         background_tasks.add_task(run_describe_job, job, material, auth["user_id"])
     return describe_status(material_id)
 

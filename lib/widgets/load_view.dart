@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
@@ -23,6 +25,8 @@ class LoadView<T> extends StatefulWidget {
     this.listenToStore = true,
     this.scrollable = true,
     this.padding = const EdgeInsets.all(20),
+    this.failuresBeforeError = 1,
+    this.retryDelay = const Duration(seconds: 3),
   });
 
   final Future<T> Function() load;
@@ -40,6 +44,13 @@ class LoadView<T> extends StatefulWidget {
   final bool scrollable;
   final EdgeInsetsGeometry padding;
 
+  /// Muat ulang di latar belakang (data sudah tampil) yang gagal dicoba lagi
+  /// diam-diam setelah [retryDelay], sambil tetap menampilkan data lama.
+  /// Error baru tampil kalau gagal sebanyak ini berturut-turut. Bawaan 1:
+  /// error langsung tampil. Muat pertama selalu langsung menampilkan error.
+  final int failuresBeforeError;
+  final Duration retryDelay;
+
   @override
   State<LoadView<T>> createState() => _LoadViewState<T>();
 }
@@ -53,6 +64,8 @@ class _LoadViewState<T> extends State<LoadView<T>> {
   bool _again = false;
   String? _error;
   int _serial = 0;
+  int _failures = 0;
+  Timer? _retryTimer;
 
   @override
   void initState() {
@@ -67,6 +80,7 @@ class _LoadViewState<T> extends State<LoadView<T>> {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
     if (widget.listenToStore) store.removeListener(_onStoreChanged);
     super.dispose();
   }
@@ -95,6 +109,7 @@ class _LoadViewState<T> extends State<LoadView<T>> {
     try {
       final data = await widget.load();
       if (!mounted || serial != _serial) return;
+      _failures = 0;
       setState(() {
         _data = data;
         _hasData = true;
@@ -103,11 +118,21 @@ class _LoadViewState<T> extends State<LoadView<T>> {
       });
     } catch (e) {
       if (!mounted || serial != _serial) return;
-      final message = e.toString();
-      setState(() {
-        _error = message;
-        _loading = false;
-      });
+      _failures++;
+      if (_hasData && _failures < widget.failuresBeforeError) {
+        // Gangguan sesaat: data lama tetap tampil, coba lagi diam-diam.
+        setState(() => _loading = false);
+        _retryTimer?.cancel();
+        _retryTimer = Timer(widget.retryDelay, () {
+          if (mounted) _load(announceLoading: false);
+        });
+      } else {
+        final message = e.toString();
+        setState(() {
+          _error = message;
+          _loading = false;
+        });
+      }
     }
     if (_again && mounted) {
       _again = false;
@@ -116,6 +141,7 @@ class _LoadViewState<T> extends State<LoadView<T>> {
   }
 
   void _retry() {
+    _failures = 0;
     setState(() {
       // Data lama dibuang supaya pesan memuat tampil lagi dan dibacakan.
       _hasData = false;
