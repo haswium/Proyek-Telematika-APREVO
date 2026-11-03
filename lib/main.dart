@@ -7,6 +7,7 @@ import 'data/app_store.dart';
 import 'screens/splash_screen.dart';
 import 'services/settings.dart';
 import 'theme/app_theme.dart';
+import 'widgets/connecting_banner.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,7 @@ Future<void> main() async {
     store.online = true;
   }
   runApp(const AprevoApp());
+  store.api.wakeUp();
 }
 
 class AprevoApp extends StatelessWidget {
@@ -36,6 +38,7 @@ class AprevoApp extends StatelessWidget {
       locale: const Locale('id', 'ID'),
       supportedLocales: const [Locale('id', 'ID')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      builder: (context, child) => ConnectingBanner(child: child!),
       home: const SplashScreen(),
     );
   }

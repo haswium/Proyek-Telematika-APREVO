@@ -42,10 +42,38 @@ class ApiClient {
   final Future<String?> Function() _token;
   final Future<bool> Function() _refresh;
 
-  static const Duration timeout = Duration(seconds: 20);
+  /// Server gratis di Render tidur kalau lama tidak dipakai dan butuh sekitar
+  /// satu menit untuk bangun. Selama itu permintaannya ditahan, jadi batasnya
+  /// harus lebih panjang.
+  static const Duration timeout = Duration(seconds: 90);
+
+  /// Belum ada jawaban selama ini: pengguna diberi tahu server sedang bangun.
+  static const Duration slowAfter = Duration(seconds: 5);
+
+  /// Server yang menjawab selama ini tidak mungkin tidur, jadi permintaan yang
+  /// lambat berarti prosesnya memang lama, misalnya AI. Render menidurkan layanan
+  /// setelah 15 menit.
+  static const Duration awakeFor = Duration(minutes: 10);
+
+  /// Jeda sebelum mengulang permintaan yang dijawab Render, bukan backend.
+  static const Duration wakeRetryDelay = Duration(seconds: 5);
 
   /// PDF besar butuh waktu untuk diunggah dan dipecah per sub-bab.
   static const Duration uploadTimeout = Duration(minutes: 3);
+
+  /// `true` selama pengguna menunggu server bangun.
+  final ValueNotifier<bool> connecting = ValueNotifier(false);
+
+  /// Apakah permintaan terakhir mendapat jawaban.
+  bool get reachable => _reachable;
+  bool _reachable = true;
+  DateTime? _answeredAt;
+  int _waiting = 0;
+
+  bool get _recentlyAnswered {
+    final at = _answeredAt;
+    return at != null && DateTime.now().difference(at) < awakeFor;
+  }
 
   String get baseUrl => _baseUrl();
 
@@ -92,28 +120,46 @@ class ApiClient {
     }, timeout: uploadTimeout);
   }
 
-  /// Memeriksa apakah backend di [url] bisa dihubungi (`GET /`).
+  /// Memeriksa apakah backend di [url] bisa dihubungi, untuk menu pengembang.
   /// Mengembalikan pesan error, atau `null` kalau tersambung.
   Future<String?> ping(String url) async {
     try {
-      final response = await _http
-          .get(Uri.parse('$url/'))
-          .timeout(const Duration(seconds: 8));
+      final response = await _guard(
+        () => _http.get(Uri.parse('$url/health')),
+        timeout,
+        quiet: true,
+      );
       if (response.statusCode == 200) return null;
       return 'Server di $url menjawab dengan kode ${response.statusCode}. '
           'Pastikan alamatnya mengarah ke backend APREVO.';
-    } catch (_) {
-      return unreachableMessage(url);
+    } on ApiException {
+      return 'Tidak bisa terhubung ke $url. Pastikan alamatnya benar dan '
+          'backend menyala.';
     }
   }
 
-  static String unreachableMessage(String url) =>
-      'Tidak bisa terhubung ke server di $url. Pastikan backend menyala, '
-      'lalu HP dan laptop memakai Wi-Fi yang sama.';
+  /// Membangunkan server saat aplikasi dibuka, supaya siap selagi siswa masuk.
+  /// Tanpa pesan apa pun, karena siswa belum menunggu apa-apa.
+  Future<void> wakeUp() async {
+    try {
+      await _guard(
+        () => _http.get(_uri('/health')),
+        timeout,
+        retryDrop: true,
+        quiet: true,
+      );
+    } on ApiException {
+      // Permintaan berikutnya yang akan memberi tahu pengguna.
+    }
+  }
+
+  static const String unreachableMessage =
+      'Tidak bisa terhubung ke server. Periksa internet HP, lalu coba lagi.';
 
   Future<Map<String, String>> _headers({bool json = true}) async {
     final token = await _token();
     return {
+      'Accept': 'application/json',
       if (json) 'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
@@ -129,38 +175,112 @@ class ApiClient {
         ..headers.addAll(await _headers());
       if (body != null) request.body = jsonEncode(body);
       return http.Response.fromStream(await _http.send(request));
-    });
+    }, retryDrop: method == 'GET');
   }
 
   Future<Map<String, dynamic>> _run(
     Future<http.Response> Function() send, {
     Duration timeout = timeout,
+    bool retryDrop = false,
   }) async {
-    var response = await _guard(send, timeout);
+    var response = await _guard(send, timeout, retryDrop: retryDrop);
     if (response.statusCode == 401 && await _refresh()) {
-      response = await _guard(send, timeout);
+      response = await _guard(send, timeout, retryDrop: retryDrop);
     }
     return _decode(response);
   }
 
+  /// Mengirim permintaan dan menunggu server, termasuk selama server bangun.
+  ///
+  /// Permintaan yang lambat tidak pernah dikirim ulang, karena mungkin sudah
+  /// diproses backend, misalnya jawaban kuis. Yang diulang hanya jawaban dari
+  /// Render, dan sambungan putus kalau [retryDrop].
   Future<http.Response> _guard(
     Future<http.Response> Function() send,
-    Duration timeout,
-  ) async {
+    Duration timeout, {
+    bool retryDrop = false,
+    bool quiet = false,
+  }) async {
+    var stopped = false;
+    var counted = false;
+    void markWaiting() {
+      if (counted || quiet) return;
+      counted = true;
+      _waiting++;
+      connecting.value = true;
+    }
+
+    final slow = _recentlyAnswered ? null : Timer(slowAfter, markWaiting);
     try {
-      return await send().timeout(timeout);
+      final response = await _untilBackendAnswers(
+        send,
+        () => stopped,
+        markWaiting,
+        retryDrop,
+      ).timeout(timeout);
+      _answeredAt = DateTime.now();
+      _reachable = true;
+      return response;
     } on TimeoutException {
-      throw ApiException(
-        'Server di $baseUrl terlalu lama menjawab. Periksa sambungan, lalu '
-        'coba lagi.',
+      stopped = true;
+      _reachable = false;
+      throw const ApiException(
+        'Server terlalu lama menjawab. Periksa internet HP, lalu coba lagi.',
       );
     } on ApiException {
+      _reachable = false;
       rethrow;
     } catch (_) {
       // http.ClientException, termasuk SocketException di Android, dan
       // XMLHttpRequest gagal di web (biasanya CORS atau server mati).
-      throw ApiException(unreachableMessage(baseUrl));
+      _reachable = false;
+      throw const ApiException(unreachableMessage);
+    } finally {
+      slow?.cancel();
+      if (counted) {
+        _waiting--;
+        if (_waiting == 0) connecting.value = false;
+      }
     }
+  }
+
+  Future<http.Response> _untilBackendAnswers(
+    Future<http.Response> Function() send,
+    bool Function() stopped,
+    VoidCallback markWaiting,
+    bool retryDrop,
+  ) async {
+    var dropped = false;
+    while (true) {
+      final http.Response response;
+      try {
+        response = await send();
+      } on ApiException {
+        rethrow;
+      } catch (_) {
+        // Sambungan lama bisa sudah mati setelah server tidur.
+        if (!retryDrop || dropped || stopped()) rethrow;
+        dropped = true;
+        continue;
+      }
+      if (!_isFromRender(response)) return response;
+      markWaiting();
+      await Future<void>.delayed(wakeRetryDelay);
+      if (stopped()) return response;
+    }
+  }
+
+  /// Jawaban Render saat layanan bangun atau deploy, bukan dari backend, jadi
+  /// permintaannya belum diproses. Error backend selalu JSON, termasuk 502 saat
+  /// Gemini gagal. Halaman tunggu bisa berstatus 200, dan tidak boleh dianggap
+  /// data kosong.
+  static bool _isFromRender(http.Response response) {
+    final type = response.headers['content-type'] ?? '';
+    final code = response.statusCode;
+    if (code == 502 || code == 503 || code == 504) {
+      return !type.contains('application/json');
+    }
+    return code >= 200 && code < 300 && type.contains('text/html');
   }
 
   Map<String, dynamic> _decode(http.Response response) {

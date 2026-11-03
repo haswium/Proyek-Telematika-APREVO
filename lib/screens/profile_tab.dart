@@ -68,7 +68,7 @@ class ProfileTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const ServerAddressRow(),
+            const AboutAprevoRow(),
             const SizedBox(height: 8),
             Bouncy(
               child: OutlinedButton.icon(
