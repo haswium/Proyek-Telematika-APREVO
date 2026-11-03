@@ -17,6 +17,15 @@ Perbarui dokumen ini setiap kali endpoint berubah.
 - CORS mengizinkan `localhost`, `127.0.0.1`, dan IP jaringan lokal (`10.x`,
   `172.16-31.x`, `192.168.x`) di port mana pun, ditambah `CORS_ORIGINS` di `.env`.
 
+### Kelas yang dihapus
+
+Begitu `subjects.deleted_at` terisi, semua endpoint kelas, materi, kuis, percobaan,
+dan anggota menolak, walau baris anggota dan isi kelas belum terhapus. Siswa
+mendapat `410 "Kelas ini sudah dihapus guru"`, guru mendapat `404`. Daftar
+`GET /student/subjects`, `GET /student/materials`, dan `GET /teacher/subjects`
+tidak lagi memuat isi kelas itu. Yang tetap terbuka hanya
+`DELETE /teacher/subjects/{subject_id}`, untuk melanjutkan penghapusan.
+
 ### Jadwal kuis
 
 Tiap kuis punya `available_from` (waktu buka) dan `deadline_at` (waktu tutup).

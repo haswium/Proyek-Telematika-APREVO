@@ -316,6 +316,55 @@ def is_subject_member(subject_id, student_id):
 SUBJECT_DELETED_DETAIL = "Kelas ini sudah dihapus guru"
 
 
+def deleted_subject_ids(subject_ids):
+    """Yang `deleted_at`-nya terisi. Ini yang menentukan, bukan baris anggota:
+    baris itu baru terhapus beberapa saat setelah `deleted_at` diisi."""
+    ids = list({subject_id for subject_id in subject_ids if subject_id})
+    if not ids:
+        return set()
+    response = (
+        supabase_admin.table("subjects")
+        .select("id")
+        .in_("id", ids)
+        .not_.is_("deleted_at", "null")
+        .execute()
+    )
+    return {row["id"] for row in (response.data or [])}
+
+
+def subject_is_deleted(subject_id):
+    return bool(deleted_subject_ids([subject_id]))
+
+
+def quiz_subject_is_deleted(quiz_id):
+    quiz = (
+        supabase_admin.table("quizzes")
+        .select("material_id")
+        .eq("id", quiz_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if quiz is None:
+        return False
+    material = (
+        supabase_admin.table("materials")
+        .select("subject_id")
+        .eq("id", quiz["material_id"])
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    return material is not None and subject_is_deleted(material.get("subject_id"))
+
+
+def reject_deleted_quiz_subject(quiz_id):
+    """Untuk siswa: 410 supaya layar kuis tahu alasannya. Guru mendapat 404,
+    sama seperti `get_owned_subject`."""
+    if quiz_subject_is_deleted(quiz_id):
+        raise HTTPException(status_code=410, detail=SUBJECT_DELETED_DETAIL)
+
+
 def get_member_subject(subject_id, student_id):
     """Kelas yang boleh dibuka siswa. Kelas yang dihapus guru dijawab 410, bukan
     403: keanggotaannya ikut terhapus, tetapi siswa perlu tahu alasannya."""
@@ -416,7 +465,7 @@ def get_owned_material(material_id, teacher_id):
         or EMPTY_RESPONSE
     )
     material = material_response.data
-    if material is None:
+    if material is None or subject_is_deleted(material.get("subject_id")):
         raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
     return material
 
@@ -527,7 +576,7 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
         or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
-    if quiz is None:
+    if quiz is None or quiz_subject_is_deleted(quiz_id):
         raise HTTPException(status_code=404, detail="Quiz tidak ditemukan")
     if quiz["teacher_id"] != user.id:
         raise HTTPException(status_code=403, detail="Anda bukan pemilik quiz ini")
@@ -617,7 +666,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
         or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
-    if quiz is None:
+    if quiz is None or quiz_subject_is_deleted(quiz_id):
         raise HTTPException(status_code=404, detail="Quiz tidak ditemukan")
     questions_response = (
         supabase_admin.table("questions")
@@ -692,7 +741,7 @@ def get_student_materials(auth=Depends(get_current_user)):
     if material_ids:
         materials_response = (
             supabase_admin.table("materials")
-            .select("id, title, is_published")
+            .select("id, title, is_published, subject_id")
             .in_("id", material_ids)
             .eq("is_published", True)
             .execute()
@@ -701,7 +750,7 @@ def get_student_materials(auth=Depends(get_current_user)):
     if subject_ids:
         subject_materials_response = (
             supabase_admin.table("materials")
-            .select("id, title, is_published")
+            .select("id, title, is_published, subject_id")
             .in_("subject_id", subject_ids)
             .eq("is_published", True)
             .execute()
@@ -712,7 +761,14 @@ def get_student_materials(auth=Depends(get_current_user)):
             for material in (subject_materials_response.data or [])
             if material["id"] not in known_ids
         )
-    return {"materials": materials}
+    deleted = deleted_subject_ids(material.get("subject_id") for material in materials)
+    return {
+        "materials": [
+            {key: material[key] for key in ("id", "title", "is_published")}
+            for material in materials
+            if material.get("subject_id") not in deleted
+        ]
+    }
 
 
 @app.get("/student/quizzes/{quiz_id}")
@@ -748,6 +804,7 @@ def get_student_quiz(quiz_id: str, auth=Depends(get_current_user)):
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
         raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    reject_deleted_quiz_subject(quiz_id)
     material_id = quiz["material_id"]
 
     material_response = (
@@ -847,6 +904,7 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
         raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    reject_deleted_quiz_subject(quiz_id)
     check_quiz_schedule(quiz)
     material_id = quiz["material_id"]
     material_response = (
@@ -942,6 +1000,7 @@ def autosave_quiz_answer(
     attempt = attempt_response.data
     if attempt is None:
         raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan")
+    reject_deleted_quiz_subject(attempt["quiz_id"])
     if attempt["submitted_at"] is not None:
         raise HTTPException(status_code=409, detail="Percobaan kuis sudah selesai")
     quiz_response = (
@@ -1174,6 +1233,7 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
             raise HTTPException(
                 status_code=404, detail="Percobaan kuis tidak ditemukan"
             )
+        reject_deleted_quiz_subject(attempt["quiz_id"])
         if attempt["submitted_at"] is not None:
             raise HTTPException(
                 status_code=409, detail="Percobaan kuis sudah dikumpulkan"
@@ -1511,6 +1571,7 @@ def get_student_attempt(attempt_id, student_id):
     attempt = attempt_response.data
     if attempt is None:
         raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan.")
+    reject_deleted_quiz_subject(attempt["quiz_id"])
     return attempt
 
 
@@ -2571,6 +2632,8 @@ def update_quiz_schedule(
     quiz_id: str, data: QuizScheduleRequest, auth=Depends(require_teacher)
 ):
     validate_schedule(data)
+    if quiz_subject_is_deleted(quiz_id):
+        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
     response = (
         supabase_admin.table("quizzes")
         .update(
@@ -3173,9 +3236,13 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
     if material is None:
         raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
     if auth["profile"]["role"] == "teacher":
-        if material["teacher_id"] != auth["user_id"]:
+        if material["teacher_id"] != auth["user_id"] or subject_is_deleted(
+            material.get("subject_id")
+        ):
             raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
     else:
+        if subject_is_deleted(material.get("subject_id")):
+            raise HTTPException(status_code=410, detail=SUBJECT_DELETED_DETAIL)
         if not material["is_published"]:
             raise HTTPException(status_code=403, detail="Materi belum dipublikasikan")
         if not student_can_access_material(material, auth["user_id"]):
