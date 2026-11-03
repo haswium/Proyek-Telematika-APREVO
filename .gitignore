@@ -50,3 +50,8 @@ app.*.map.json
 
 .venv/
 .claude/
+
+# Kunci APK release. Lihat docs/deploy.md.
+key.properties
+*.jks
+*.keystore

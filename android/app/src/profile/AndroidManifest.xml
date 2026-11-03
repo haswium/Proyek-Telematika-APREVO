@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Backend lokal diakses lewat http biasa ke IP laptop, misalnya
+         http://192.168.1.7:8000. Release hanya memakai https. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

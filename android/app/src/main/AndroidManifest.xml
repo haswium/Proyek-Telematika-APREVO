@@ -1,13 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Supabase dan backend APREVO. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- usesCleartextTraffic: backend lokal diakses lewat http biasa ke IP
-         laptop (misalnya http://192.168.1.7:8000), bukan https. -->
+    <!-- Release hanya memakai https. Http untuk backend di laptop ada di
+         manifest debug dan profile. -->
     <application
         android:label="aprevo"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"
