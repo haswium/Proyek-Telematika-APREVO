@@ -184,11 +184,7 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
 
   /// Ringkasan gambar yang menghalangi materi terbit.
   List<Widget> _pending(List<PageImage> images) {
-    final pending = [
-      for (var i = 0; i < images.length; i++)
-        if (images[i].needsDescription) (number: i + 1, image: images[i]),
-    ];
-    if (pending.isEmpty) {
+    if (!images.any((image) => image.needsDescription)) {
       if (images.isEmpty) return const [];
       return [
         Text(
@@ -198,37 +194,7 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
         const SizedBox(height: 16),
       ];
     }
-    return [
-      AppCard(
-        color: AppColors.highlight,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              header: true,
-              child: Text(
-                'Belum dideskripsikan (${pending.length})',
-                style: AppType.titleMedium,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Materi baru bisa terbit setelah gambar ini diberi deskripsi '
-              'atau ditandai dekoratif.',
-              style: AppType.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            for (final p in pending)
-              Text(
-                '• Gambar ${p.number}'
-                '${p.image.pageNumber == null ? '' : ', halaman ${p.image.pageNumber}'}',
-                style: AppType.bodyMedium,
-              ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-    ];
+    return [PendingImagesCard(images: images), const SizedBox(height: 16)];
   }
 
   /// Progres proses latar belakang. Teks biasa, bukan liveRegion, supaya
@@ -555,6 +521,108 @@ class _ImageCardState extends State<_ImageCard> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Daftar gambar yang menghalangi materi terbit. Nomornya sama dengan urutan
+/// di layar Gambar materi. Tiap butir satu fokus TalkBack.
+class PendingImagesCard extends StatelessWidget {
+  const PendingImagesCard({super.key, required this.images});
+
+  /// Semua gambar materi, urut seperti di layar Gambar materi.
+  final List<PageImage> images;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = [
+      for (var i = 0; i < images.length; i++)
+        if (images[i].needsDescription)
+          'Gambar ${i + 1}'
+              '${images[i].pageNumber == null ? '' : ', halaman ${images[i].pageNumber}'}',
+    ];
+    return AppCard(
+      color: AppColors.highlight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              'Belum dideskripsikan (${pending.length})',
+              style: AppType.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Materi baru bisa terbit, dan gambar baru sampai ke siswa, setelah '
+            'gambar ini diberi deskripsi atau ditandai dekoratif.',
+            style: AppType.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < pending.length; i++)
+            Semantics(
+              container: true,
+              label: 'Butir ${i + 1} dari ${pending.length}: ${pending[i]}',
+              excludeSemantics: true,
+              child: Text(pending[i], style: AppType.bodyMedium),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Peringatan untuk guru: materi sudah terbit, tetapi ada gambar yang
+/// disembunyikan dari siswa karena belum punya deskripsi.
+class HiddenImagesWarning extends StatelessWidget {
+  const HiddenImagesWarning({super.key, required this.material});
+
+  final LessonMaterial material;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: AppColors.highlight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            container: true,
+            child: Text(
+              '${material.hiddenImages} gambar di materi ini belum '
+              'dideskripsikan dan disembunyikan dari siswa',
+              style: AppType.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Bisa ada beberapa kartu di satu layar; sebut judulnya supaya
+          // TalkBack tidak membaca tombol yang sama berulang.
+          Semantics(
+            label: 'Lengkapi gambar materi ${material.title}',
+            button: true,
+            excludeSemantics: true,
+            onTap: () => _open(context),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.image_outlined),
+              label: const Text('Lengkapi gambar'),
+              onPressed: () => _open(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _open(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MaterialImagesScreen(
+          materialId: material.id,
+          materialTitle: material.title,
+        ),
       ),
     );
   }

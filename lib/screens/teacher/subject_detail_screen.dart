@@ -7,6 +7,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import 'material_editor_screen.dart';
+import 'material_images_screen.dart';
 import 'new_material_screen.dart';
 
 /// Status satu kuis untuk guru, misalnya "Pre-test: dibuka sampai ...".
@@ -155,6 +156,10 @@ class _MaterialCard extends StatelessWidget {
           Text(quizSummary(m, TestKind.pre), style: AppType.bodyMedium),
           Text(quizSummary(m, TestKind.post), style: AppType.bodyMedium),
           const SizedBox(height: 12),
+          if (m.hiddenImages > 0) ...[
+            HiddenImagesWarning(material: m),
+            const SizedBox(height: 12),
+          ],
           Bouncy(
             // Tiap kartu punya tombol ini; sebut judulnya supaya TalkBack
             // tidak membaca "Kelola materi" berulang tanpa konteks.

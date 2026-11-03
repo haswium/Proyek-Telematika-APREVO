@@ -2,6 +2,8 @@
 /// (lihat `docs/kontrak-api.md`).
 library;
 
+import 'dart:convert';
+
 import '../services/time_format.dart';
 
 enum GameType { quiz, trueFalse, shortAnswer, ordering }
@@ -383,6 +385,7 @@ class LessonMaterial {
     required this.title,
     this.published = true,
     this.sectionCount = 0,
+    this.hiddenImages = 0,
     this.quizzes = const [],
   });
 
@@ -392,6 +395,7 @@ class LessonMaterial {
     // Daftar materi siswa hanya berisi materi yang dipublikasikan.
     published: json['is_published'] != false,
     sectionCount: _int(json['section_count']),
+    hiddenImages: _int(json['hidden_image_count']),
     quizzes: [for (final q in _list(json['quizzes'])) QuizInfo.fromJson(q)],
   );
 
@@ -399,6 +403,10 @@ class LessonMaterial {
   final String title;
   final bool published;
   final int sectionCount;
+
+  /// Gambar yang disembunyikan dari siswa karena belum punya deskripsi.
+  /// Hanya dikirim untuk guru, dan hanya untuk materi yang sudah terbit.
+  final int hiddenImages;
   final List<QuizInfo> quizzes;
 
   QuizInfo? quiz(TestKind kind) {
@@ -410,6 +418,66 @@ class LessonMaterial {
 }
 
 /// Satu sub-bab materi hasil pemecahan PDF.
+/// Tabel di isi halaman, disimpan sebagai baris `[[tabel:{json}]]`.
+class ContentTable {
+  const ContentTable({
+    required this.title,
+    required this.columns,
+    required this.rows,
+  });
+
+  static final RegExp _marker = RegExp(r'^\[\[tabel:(\{.*\})\]\]$');
+
+  static bool isMarker(String line) => _marker.hasMatch(line);
+
+  /// Tabel dari satu baris isi halaman, atau null kalau bukan tabel yang utuh.
+  static ContentTable? tryParseLine(String line) {
+    final match = _marker.firstMatch(line);
+    if (match == null) return null;
+    try {
+      final data = jsonDecode(match.group(1)!) as Map<String, dynamic>;
+      final columns = [for (final c in data['columns'] as List) c as String];
+      return ContentTable(
+        title: _str(data['title']),
+        columns: columns,
+        rows: [
+          for (final row in data['rows'] as List)
+            [for (final cell in row as List) cell as String],
+        ],
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  final String title;
+  final List<String> columns;
+  final List<List<String>> rows;
+
+  /// Dibacakan TalkBack sebelum baris pertama.
+  String get summary =>
+      'Tabel${title.isEmpty ? '' : ': $title'}, ${columns.length} kolom, '
+      '${rows.length} baris';
+
+  /// "Baris 1. Langkah: Ambil. Keterangan: ...". Sel kosong dilewati.
+  String rowLabel(int index) {
+    final parts = ['Baris ${index + 1}.'];
+    for (var i = 0; i < columns.length && i < rows[index].length; i++) {
+      final sentences = [
+        for (final piece in rows[index][i].split('\n'))
+          if (piece.trim().isNotEmpty)
+            RegExp(r'[.!?]$').hasMatch(piece.trim())
+                ? piece.trim()
+                : '${piece.trim()}.',
+      ];
+      if (sentences.isNotEmpty) {
+        parts.add('${columns[i]}: ${sentences.join(' ')}');
+      }
+    }
+    return parts.join(' ');
+  }
+}
+
 class MaterialSection {
   MaterialSection({
     required this.id,
@@ -442,6 +510,12 @@ class MaterialSection {
   final String title;
   final String content;
   final String? imageDescription;
+
+  /// Tabel di halaman ini, urut dari atas.
+  List<ContentTable> get tables => [
+    for (final line in content.split('\n'))
+      ?ContentTable.tryParseLine(line.trim()),
+  ];
   final int imageCount;
   final int? pageStart;
   final int? pageEnd;

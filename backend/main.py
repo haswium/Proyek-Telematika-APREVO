@@ -28,7 +28,14 @@ from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
 import logging
-from pdf_sections import image_keys, page_images, plain_text, split_pdf_bytes
+from pdf_sections import (
+    image_keys,
+    normalize_content,
+    page_images,
+    plain_text,
+    replace_table,
+    split_pdf_bytes,
+)
 from ai_client import GeminiKeyMissing, gemini_client
 from ai_quiz import generate_quiz
 from PIL import UnidentifiedImageError
@@ -1868,6 +1875,9 @@ def list_teacher_subject_materials(subject_id: str, auth=Depends(require_teacher
             {
                 **material,
                 "section_count": counts.get(material["id"], 0),
+                "hidden_image_count": (
+                    hidden_image_count(material["id"]) if material["is_published"] else 0
+                ),
                 "quizzes": [
                     {**quiz, "status": quiz_status(quiz)}
                     for quiz in quizzes.get(material["id"], [])
@@ -2115,14 +2125,24 @@ def ordered_image_rows(material_id):
 
 def undescribed_image_pages(material_id):
     """Halaman yang masih punya gambar tanpa deskripsi dan bukan dekoratif.
-    Gambar yang belum punya baris sama sekali juga dihitung."""
-    rows = {row["image_key"]: row for row in material_image_rows(material_id)}
-    pages = []
-    for key in material_content_image_keys(material_id):
-        row = rows.get(key)
-        if row is None or needs_description(row):
-            pages.append((row or {}).get("page_number"))
+    Semua baris gambar dihitung, sama dengan daftar yang dilihat guru. Gambar
+    di isi halaman yang belum punya baris sama sekali juga dihitung."""
+    rows = material_image_rows(material_id)
+    pages = [row.get("page_number") for row in rows if needs_description(row)]
+    known = {row["image_key"] for row in rows}
+    pages += [None for key in material_content_image_keys(material_id) if key not in known]
     return pages
+
+
+def hidden_image_count(material_id):
+    """Gambar di isi halaman yang disembunyikan dari siswa karena belum punya
+    deskripsi. Terjadi di materi yang terbit sebelum syarat terbit berlaku."""
+    rows = {row["image_key"]: row for row in material_image_rows(material_id)}
+    return sum(
+        1
+        for key in material_content_image_keys(material_id)
+        if key not in rows or needs_description(rows[key])
+    )
 
 
 # Jeda antar panggilan Gemini. Versi gratis membatasi jumlah permintaan per
@@ -2414,6 +2434,100 @@ def update_material_image(
     if not response.data:
         raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
     return {"message": "Gambar disimpan", "image": public_image(response.data[0])}
+
+
+class MaterialTableUpdateRequest(BaseModel):
+    title: str = Field(default="", max_length=200)
+    columns: list[str]
+    rows: list[list[str]]
+
+
+@app.patch("/teacher/materials/{material_id}/sections/{section_id}/tables/{table_index}")
+def update_material_table(
+    material_id: str,
+    section_id: str,
+    table_index: int,
+    data: MaterialTableUpdateRequest,
+    auth=Depends(require_teacher),
+):
+    """Guru memperbaiki isi tabel hasil PDF."""
+    get_owned_material(material_id, auth["user_id"])
+    columns = [name.strip() for name in data.columns]
+    rows = [[cell.strip() for cell in row] for row in data.rows]
+    if len(columns) < 2 or not all(columns):
+        raise HTTPException(status_code=400, detail="Semua kolom tabel harus punya nama.")
+    if any(len(row) != len(columns) for row in rows):
+        raise HTTPException(
+            status_code=400, detail="Jumlah sel tiap baris harus sama dengan jumlah kolom."
+        )
+    if not any(any(row) for row in rows):
+        raise HTTPException(status_code=400, detail="Tabel harus punya isi.")
+    if any(len(cell) > 2000 for cell in [*columns, *(c for row in rows for c in row)]):
+        raise HTTPException(status_code=400, detail="Isi sel tabel terlalu panjang.")
+    sections = (
+        supabase_admin.table("material_sections")
+        .select("id, content")
+        .eq("material_id", material_id)
+        .execute()
+    ).data or []
+    section = next((row for row in sections if str(row["id"]) == section_id), None)
+    if section is None:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    table = {"title": data.title.strip(), "columns": columns, "rows": rows}
+    content = replace_table(section.get("content") or "", table_index, table)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Tabel tidak ditemukan")
+    supabase_admin.table("material_sections").update({"content": content}).eq(
+        "id", section["id"]
+    ).execute()
+    return {"message": "Tabel disimpan", "table": table}
+
+
+class MaterialTableUpdateRequest(BaseModel):
+    title: str = Field(default="", max_length=200)
+    columns: list[str]
+    rows: list[list[str]]
+
+
+@app.patch("/teacher/materials/{material_id}/sections/{section_id}/tables/{table_index}")
+def update_material_table(
+    material_id: str,
+    section_id: str,
+    table_index: int,
+    data: MaterialTableUpdateRequest,
+    auth=Depends(require_teacher),
+):
+    """Guru memperbaiki isi tabel hasil PDF."""
+    get_owned_material(material_id, auth["user_id"])
+    columns = [name.strip() for name in data.columns]
+    rows = [[cell.strip() for cell in row] for row in data.rows]
+    if len(columns) < 2 or not all(columns):
+        raise HTTPException(status_code=400, detail="Semua kolom tabel harus punya nama.")
+    if any(len(row) != len(columns) for row in rows):
+        raise HTTPException(
+            status_code=400, detail="Jumlah sel tiap baris harus sama dengan jumlah kolom."
+        )
+    if not any(any(row) for row in rows):
+        raise HTTPException(status_code=400, detail="Tabel harus punya isi.")
+    if any(len(cell) > 2000 for cell in [*columns, *(c for row in rows for c in row)]):
+        raise HTTPException(status_code=400, detail="Isi sel tabel terlalu panjang.")
+    sections = (
+        supabase_admin.table("material_sections")
+        .select("id, content")
+        .eq("material_id", material_id)
+        .execute()
+    ).data or []
+    section = next((row for row in sections if str(row["id"]) == section_id), None)
+    if section is None:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    table = {"title": data.title.strip(), "columns": columns, "rows": rows}
+    content = replace_table(section.get("content") or "", table_index, table)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Tabel tidak ditemukan")
+    supabase_admin.table("material_sections").update({"content": content}).eq(
+        "id", section["id"]
+    ).execute()
+    return {"message": "Tabel disimpan", "table": table}
 
 
 @app.patch("/teacher/quizzes/{quiz_id}/schedule")
@@ -2766,9 +2880,13 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
         .order("position")
         .execute()
     )
+    sections = sections_response.data or []
+    # Materi lama dan teks ketikan guru bisa masih memuat tanda butir.
+    for section in sections:
+        section["content"] = normalize_content(section.get("content") or "")
     return {
         "material": {"id": material["id"], "title": material["title"]},
-        "sections": sections_response.data or [],
+        "sections": sections,
         # Deskripsi untuk penanda [[gambar:...]] di isi halaman.
         "images": [public_image(row) for row in material_image_rows(material_id)],
     }

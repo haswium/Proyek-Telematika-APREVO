@@ -13,15 +13,19 @@ Isi halaman disimpan sebagai baris-baris di `content`:
   "●" atau "•", dibuang); butir berurutan membentuk satu daftar,
 - baris "[[gambar:xref-12]]" adalah gambar di posisi itu dalam urutan baca.
   Deskripsinya ada di tabel material_images dengan image_key yang sama, jadi
-  gambar yang dipakai di beberapa halaman cukup dideskripsikan sekali.
+  gambar yang dipakai di beberapa halaman cukup dideskripsikan sekali,
+- baris "[[tabel:{json}]]" adalah tabel di posisi itu, dengan kunci title,
+  columns, dan rows. Guru bisa mengedit isinya sebelum terbit.
 Judul halaman (huruf terbesar di halaman) disimpan di `title`, atau kosong
 kalau halaman tidak punya judul.
 """
 
+import json
+import logging
 import re
 import statistics
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pymupdf
 
@@ -29,13 +33,23 @@ SUBHEADING_PREFIX = "## "
 LIST_ITEM_PREFIX = "- "
 # Tanda butir simbol boleh langsung menempel ke teks ("●Mengenal").
 # , , , , : butir dari huruf Symbol/Wingdings
-# (PDF hasil Word).
-SYMBOL_BULLETS = "●•▪◦‣∙○■□◆◇➢➤►▸✓✔"
+# (PDF hasil Word). "·" muncul dari "•" di beberapa huruf PDF.
+# "💡" dipakai sebagai butir di materi ScratchJR.
+SYMBOL_BULLETS = "●•·▪◦‣∙○■□◆◇➢➤►▸✓✔💡"
 # Tanda butir yang juga dipakai dalam kalimat ("-5 derajat") hanya dihitung
 # butir kalau diikuti spasi.
-DASH_BULLETS = "-–—*·"
+DASH_BULLETS = "-–—*"
 BULLET_RE = re.compile(rf"^(?:[{SYMBOL_BULLETS}]\s*|[{re.escape(DASH_BULLETS)}]\s+)")
 BULLET_ONLY_RE = re.compile(rf"^[{SYMBOL_BULLETS}{re.escape(DASH_BULLETS)}]$")
+# Tanda butir simbol di tengah baris ("belajar: ● Membuka modul") memecah
+# baris di situ.
+INLINE_BULLET_RE = re.compile(rf"\s+(?=[{SYMBOL_BULLETS}]\s*\S)")
+# Nomor daftar: "1.", "2)", "a.". Huruf besar tidak dihitung supaya inisial
+# nama ("M. Rizki") tidak menjadi butir.
+NUMBER_RE = re.compile(r"^(\d{1,2}|[a-z])([.)])\s+(?=\S)")
+NUMBER_ONLY_RE = re.compile(r"^(\d{1,2}|[a-z])[.)]$")
+# Butir bernomor di isi halaman, nomor aslinya disimpan: "3. Buka aplikasi".
+NUMBERED_ITEM_RE = re.compile(r"^(\d{1,3}|[a-z])[.)] (?=\S)")
 HEADING_SIZE_RATIO = 1.15
 MAX_HEADING_LENGTH = 80
 MAX_BOLD_SUBHEADING_LENGTH = 60
@@ -50,6 +64,7 @@ PARAGRAPH_GAP_RATIO = 0.7
 # Karakter tak terlihat yang sering ada di PDF Canva.
 INVISIBLE = {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u00ad"}
 IMAGE_MARKER_RE = re.compile(r"^\[\[gambar:([\w-]+)\]\]$")
+TABLE_MARKER_RE = re.compile(r"^\[\[tabel:(\{.*\})\]\]$")
 # Gambar sekecil ini (dalam poin, 72 poin = 1 inci) dianggap ikon hiasan.
 DECORATIVE_MAX_SIDE = 40
 # Gambar yang menutupi hampir seluruh halaman dianggap latar.
@@ -70,16 +85,21 @@ class Line:
     y1: float
     baseline: float
     bullet: bool = False
+    # Nomor asli butir bernomor ("3."), kosong untuk butir bertanda simbol.
+    number: str = ""
     # Kunci urutan baca, diisi assign_reading_order.
     order: tuple = ()
 
 
 @dataclass
 class Block:
-    kind: str  # "heading", "subheading", "paragraph", "item", atau "image"
-    text: str  # untuk "image": image_key
+    # "heading", "subheading", "paragraph", "item", "image", atau "table"
+    kind: str
+    text: str  # untuk "image": image_key, untuk "table": penanda tabelnya
     size: float
     order: tuple = ()
+    # Nomor asli butir bernomor ("3."), kosong untuk butir bertanda simbol.
+    number: str = ""
 
 
 @dataclass
@@ -97,6 +117,17 @@ class PageImage:
     @property
     def y0(self) -> float:
         return self.y
+
+
+@dataclass
+class PageTable:
+    columns: list[str]
+    rows: list[list[str]]
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    order: tuple = ()
 
 
 @dataclass
@@ -156,9 +187,9 @@ def line_text(chars: list[dict]) -> str:
     return re.sub(r"([(\[])\s+", r"\1", text)
 
 
-def page_lines(page) -> list[Line]:
+def page_lines(page, clip=None) -> list[Line]:
     lines = []
-    data = page.get_text("rawdict", sort=True)
+    data = page.get_text("rawdict", sort=True, clip=clip)
     for block in data["blocks"]:
         if block.get("type") != 0:
             continue
@@ -216,16 +247,28 @@ def merge_rows(lines: list[Line]) -> list[Line]:
     return merged
 
 
+def split_inline_bullets(text: str) -> list[str]:
+    """Memecah teks di tanda butir simbol yang ada di tengahnya. Bagian
+    sebelum butir pertama tetap kalimat biasa (kalimat pengantar)."""
+    return [part.strip() for part in INLINE_BULLET_RE.split(text) if part.strip()]
+
+
 def mark_bullets(lines: list[Line]) -> list[Line]:
     """Menandai baris butir dan membuang tanda butirnya.
 
-    Tanda butir bisa menempel di awal baris, atau menjadi baris sendiri
-    (ukuran atau huruf berbeda) yang sejajar dengan teks butirnya.
+    Tanda butir bisa menempel di awal baris, ada di tengah baris, atau
+    menjadi baris sendiri (ukuran atau huruf berbeda) yang sejajar dengan
+    teks butirnya. Nomor daftar ("1.", "a.") disimpan di `number`.
     """
     result: list[Line] = []
     pending: Line | None = None
-    for line in lines:
-        if BULLET_ONLY_RE.match(line.text):
+    parts = [
+        replace(line, text=text)
+        for line in lines
+        for text in split_inline_bullets(line.text)
+    ]
+    for line in parts:
+        if BULLET_ONLY_RE.match(line.text) or NUMBER_ONLY_RE.match(line.text):
             pending = line
             continue
         if (
@@ -234,14 +277,32 @@ def mark_bullets(lines: list[Line]) -> list[Line]:
             and line.x0 >= pending.x0
         ):
             line.bullet = True
+            if NUMBER_ONLY_RE.match(pending.text):
+                line.number = pending.text
             line.x0 = pending.x0
         pending = None
         match = BULLET_RE.match(line.text)
+        number = None if line.bullet else NUMBER_RE.match(line.text)
         if match and line.text[match.end() :].strip():
             line.text = line.text[match.end() :].strip()
             line.bullet = True
+        elif number:
+            line.number = number.group(1) + number.group(2)
+            line.text = line.text[number.end() :].strip()
+            line.bullet = True
         result.append(line)
     return result
+
+
+def unmark_numbered_headings(lines: list[Line], body_size: float) -> None:
+    """Judul bernomor ("2. Send Message") tetap judul, bukan butir."""
+    for line in lines:
+        if line.number and (
+            line.bold or line.size >= body_size * HEADING_SIZE_RATIO
+        ):
+            line.text = f"{line.number} {line.text}"
+            line.number = ""
+            line.bullet = False
 
 
 def body_font_size(lines: list[Line]) -> float:
@@ -265,9 +326,14 @@ def continues_paragraph(previous: Line, line: Line) -> bool:
 
 
 def continues_item(first: Line, line: Line) -> bool:
-    """Lanjutan butir menjorok ke kanan dari tanda butirnya. Baris yang
-    sejajar tanda butir sudah paragraf baru setelah daftar."""
-    return not first.bullet or line.x0 > first.x0 + 0.3 * line.size
+    """Lanjutan butir menjorok ke kanan dari tanda butirnya, atau sejajar
+    tetapi mulai dengan huruf kecil karena kalimatnya belum selesai. Baris
+    sejajar lainnya sudah paragraf baru setelah daftar."""
+    return (
+        not first.bullet
+        or line.x0 > first.x0 + 0.3 * line.size
+        or line.text[:1].islower()
+    )
 
 
 def join_lines(texts: list[str]) -> str:
@@ -294,6 +360,7 @@ def classify(text: str, line: Line, body_size: float) -> str:
 
 
 def group_blocks(lines: list[Line], body_size: float) -> list[Block]:
+    unmark_numbered_headings(lines, body_size)
     groups: list[list[Line]] = []
     for line in lines:
         if is_noise(line):
@@ -318,7 +385,9 @@ def group_blocks(lines: list[Line], body_size: float) -> list[Block]:
             continue
         text = join_lines([line.text for line in group])
         kind = "item" if group[0].bullet else classify(text, group[0], body_size)
-        blocks.append(Block(kind, text, group[0].size, group[0].order))
+        blocks.append(
+            Block(kind, text, group[0].size, group[0].order, group[0].number)
+        )
     return blocks
 
 
@@ -463,14 +532,138 @@ def page_images(page, number: int) -> list[PageImage]:
     return images
 
 
+def cell_text(page, cell) -> str:
+    """Teks satu sel, disusun dengan cara yang sama seperti teks halaman
+    karena teks bawaan find_tables kehilangan spasi di PDF Canva. Butir di
+    dalam sel menjadi baris sendiri."""
+    if cell is None:
+        return ""
+    entries: list[list[str]] = []
+    for line in page_lines(page, clip=pymupdf.Rect(cell)):
+        text = f"{line.number} {line.text}" if line.number else line.text
+        if line.bullet or not entries:
+            entries.append([text])
+        else:
+            entries[-1].append(text)
+    return "\n".join(join_lines(entry) for entry in entries)
+
+
+def inside(item, table) -> bool:
+    """Titik tengah benda ada di dalam kotak tabel."""
+    x = (item.x0 + item.x1) / 2
+    y = (item.y0 + item.y1) / 2
+    return table.x0 <= x <= table.x1 and table.y0 <= y <= table.y1
+
+
+def overlaps(item, table) -> bool:
+    return (
+        item.x0 < table.x1
+        and table.x0 < item.x1
+        and item.y0 < table.y1
+        and table.y0 < item.y1
+    )
+
+
+def page_tables(page, images: list[PageImage]) -> list[PageTable]:
+    """Tabel bergaris di halaman. Baris pertama dianggap nama kolom. Tabel
+    berisi gambar dilewati dan tetap dibaca per baris, karena sel tabel tidak
+    punya tempat untuk deskripsi gambar."""
+    try:
+        found = page.find_tables(strategy="lines").tables
+    except Exception as error:
+        logging.warning("Gagal mencari tabel di halaman: %r", error)
+        return []
+    tables = []
+    for table in found:
+        if table.row_count < 2 or table.col_count < 2:
+            continue
+        x0, y0, x1, y1 = table.bbox
+        grid = [[cell_text(page, cell) for cell in row.cells] for row in table.rows]
+        columns = [name.replace("\n", " ") or f"Kolom {i}" for i, name in enumerate(grid[0], 1)]
+        rows = [row for row in grid[1:] if any(row)]
+        result = PageTable(columns, rows, x0, y0, x1, y1)
+        # Kotak tabel bisa menyusut mengikuti teks, jadi gambar di sel kosong
+        # kadang hanya bersinggungan dengan kotaknya.
+        if rows and not any(overlaps(i, result) for i in images if not i.decorative):
+            tables.append(result)
+    return tables
+
+
+def table_marker(table: dict) -> str:
+    return f"[[tabel:{json.dumps(table, ensure_ascii=False)}]]"
+
+
+def table_row_label(columns: list[str], row: list[str], number: int) -> str:
+    """Satu baris tabel sebagai kalimat: "Baris 1. Masalah: x. Cara: y."
+    Sel kosong dilewati, dan tiap baris di dalam sel diakhiri tanda baca."""
+    parts = [f"Baris {number}."]
+    for name, value in zip(columns, row):
+        pieces = [" ".join(piece.split()) for piece in value.split("\n")]
+        sentences = [p if p[-1] in ".!?" else f"{p}." for p in pieces if p]
+        if sentences:
+            parts.append(f"{name}: {' '.join(sentences)}")
+    return " ".join(parts)
+
+
+def tables_in(content: str) -> list[dict]:
+    """Tabel di isi halaman, urut dari atas."""
+    tables = []
+    for line in content.split("\n"):
+        match = TABLE_MARKER_RE.match(line.strip())
+        if match:
+            tables.append(json.loads(match.group(1)))
+    return tables
+
+
+def replace_table(content: str, index: int, table: dict) -> str | None:
+    """Isi halaman dengan tabel ke-`index` diganti, atau None kalau tidak ada."""
+    lines = content.split("\n")
+    count = 0
+    for i, line in enumerate(lines):
+        if TABLE_MARKER_RE.match(line.strip()):
+            if count == index:
+                lines[i] = table_marker(table)
+                return "\n".join(lines)
+            count += 1
+    return None
+
+
 def content_line(block: Block) -> str:
     if block.kind == "image":
         return image_marker(block.text)
+    if block.kind == "table":
+        return block.text
     if block.kind == "paragraph":
         return block.text
     if block.kind == "item":
+        if block.number:
+            return f"{block.number} {block.text}"
         return LIST_ITEM_PREFIX + block.text
     return SUBHEADING_PREFIX + block.text
+
+
+def normalize_content(content: str) -> str:
+    """Merapikan butir di isi halaman yang tersimpan: tanda butir di tengah
+    baris dipecah dan tanda simbol diganti awalan daftar. Dipakai untuk
+    materi lama yang diekstrak sebelum butir dikenali, dan teks ketikan guru.
+    """
+    lines = []
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if (
+            not stripped
+            or IMAGE_MARKER_RE.match(stripped)
+            or TABLE_MARKER_RE.match(stripped)
+            or stripped.startswith(SUBHEADING_PREFIX)
+        ):
+            lines.append(line)
+            continue
+        for part in split_inline_bullets(stripped):
+            match = BULLET_RE.match(part)
+            if match and part[match.end() :].strip():
+                part = LIST_ITEM_PREFIX + part[match.end() :].strip()
+            lines.append(part)
+    return "\n".join(lines)
 
 
 def image_keys(content: str) -> list[str]:
@@ -484,16 +677,34 @@ def image_keys(content: str) -> list[str]:
 
 
 def plain_text(content: str) -> str:
-    """Isi halaman tanpa penanda gambar dan awalan subjudul, untuk AI soal."""
+    """Isi halaman tanpa penanda gambar dan awalan subjudul, untuk AI soal.
+    Tabel ditulis per baris sebagai kalimat."""
     lines = []
     for line in content.split("\n"):
         if IMAGE_MARKER_RE.match(line.strip()):
+            continue
+        table = TABLE_MARKER_RE.match(line.strip())
+        if table:
+            data = json.loads(table.group(1))
+            lines.append(data["title"])
+            for number, row in enumerate(data["rows"], start=1):
+                lines.append(table_row_label(data["columns"], row, number))
             continue
         lines.append(line.removeprefix(SUBHEADING_PREFIX))
     return "\n".join(line for line in lines if line.strip())
 
 
-def build_page(number: int, blocks: list[Block], images: list[PageImage]) -> Section:
+def table_block(table: PageTable, title: str) -> Block:
+    data = {"title": title.rstrip(" :"), "columns": table.columns, "rows": table.rows}
+    return Block("table", table_marker(data), 0.0, table.order)
+
+
+def build_page(
+    number: int,
+    blocks: list[Block],
+    images: list[PageImage],
+    tables: list[PageTable] = (),
+) -> Section:
     headings = [b for b in blocks if b.kind == "heading"]
     title = ""
     if headings:
@@ -509,6 +720,15 @@ def build_page(number: int, blocks: list[Block], images: list[PageImage]) -> Sec
             continue
         seen.add(image.key)
         blocks.append(Block("image", image.key, 0.0, image.order))
+    blocks.sort(key=lambda block: block.order)
+    # Judul tabel: subjudul terdekat di atasnya, atau judul halaman.
+    for table in tables:
+        above = [
+            b.text
+            for b in blocks
+            if b.kind in ("heading", "subheading") and b.order < table.order
+        ]
+        blocks.append(table_block(table, above[-1] if above else title))
     blocks.sort(key=lambda block: block.order)
     content = "\n".join(content_line(b) for b in blocks)
     return Section(
@@ -527,9 +747,13 @@ def split_sections(doc) -> list[Section]:
     sections = []
     for number, (page, lines) in enumerate(zip(doc, pages), start=1):
         images = page_images(page, number)
-        assign_reading_order(lines, images)
+        tables = page_tables(page, images)
+        # Teks di dalam tabel sudah masuk sel, jadi tidak dibaca dua kali.
+        lines = [l for l in lines if not any(inside(l, t) for t in tables)]
+        assign_reading_order(lines, [*images, *tables])
         lines.sort(key=lambda line: line.order)
-        sections.append(build_page(number, group_blocks(lines, body_size), images))
+        blocks = group_blocks(lines, body_size)
+        sections.append(build_page(number, blocks, images, tables))
     return sections
 
 

@@ -217,7 +217,12 @@ void main() {
     }).install();
     await _open(tester);
     expect(find.text('Belum dideskripsikan (1)'), findsOneWidget);
-    expect(find.text('• Gambar 1, halaman 2'), findsOneWidget);
+    expect(find.text('Gambar 1, halaman 2'), findsOneWidget);
+    expect(find.textContaining('•'), findsNothing);
+    expect(
+      find.bySemanticsLabel('Butir 1 dari 1: Gambar 1, halaman 2'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('polling gagal sesekali dicoba lagi diam-diam, error tampil '

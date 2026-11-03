@@ -121,10 +121,15 @@ Error: `400` bukan PDF (`"File harus berformat PDF."` atau `"Isi file bukan
 PDF yang valid."`) atau tidak bisa diproses, `403` bukan guru, `404`
 kelas tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 
+Daftar materi guru (`GET /teacher/subjects/{subject_id}/materials`) juga
+berisi `hidden_image_count`: jumlah gambar yang disembunyikan dari siswa di
+materi yang sudah terbit karena belum punya deskripsi. Draf selalu `0`.
+
 ### PATCH `/teacher/materials/{material_id}`
 
 Body (isi salah satu atau keduanya): `{"title": "...", "is_published": true}`.
-Respons: `{"message", "material"}`.
+Respons: `{"message", "material"}`. Error: `409` saat menerbitkan kalau masih
+ada gambar yang belum punya deskripsi atau tanda dekoratif.
 
 ### POST `/teacher/materials/{material_id}/quizzes`
 
@@ -229,6 +234,17 @@ dipublikasikan. Respons: `{"material": {id, title}, "sections": [{id, position,
 title, content, image_description, image_count, page_start, page_end}]}`,
 diurutkan dari `position`. `image_description` masih `null` sampai deskripsi
 gambar diisi.
+
+Baris `[[tabel:{json}]]` di `content` adalah tabel, dengan kunci `title`,
+`columns`, dan `rows`. Baris pertama tabel di PDF menjadi `columns`.
+
+### PATCH `/teacher/materials/{material_id}/sections/{section_id}/tables/{table_index}`
+
+Guru mengedit tabel ke-`table_index` (mulai 0) di halaman itu. Body:
+`{"title": "...", "columns": ["..."], "rows": [["..."]]}`. Respons:
+`{"message", "table"}`. Error: `400` kolom tanpa nama, jumlah sel tidak sama
+dengan jumlah kolom, tabel kosong, atau sel lebih dari 2000 huruf; `404`
+materi, halaman, atau tabel tidak ditemukan.
 
 ### GET `/student/materials`
 

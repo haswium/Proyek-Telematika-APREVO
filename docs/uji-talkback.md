@@ -253,6 +253,24 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 18.2 | Tab Hasil | Nama kelas sebagai judul, lalu kartu tiap materi | | |
 | 18.3 | Kartu materi | Judul sebagai judul, nilai pre-test dan post-test, lalu kalimat perbandingan | | |
 
+## 19. Tabel di materi
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 19.1 | Siswa, geser ke tabel | "Tabel: [judul], 3 kolom, 2 baris" dibacakan sebagai judul, sebelum isi tabel | | |
+| 19.2 | Geser ke baris berikutnya | "Baris 1. [kolom]: [isi]. [kolom]: [isi]." dalam satu fokus | | |
+| 19.3 | Gestur lompat antar judul | Fokus bisa berhenti di judul tabel | | |
+| 19.4 | Guru, buka "Tabel" di Kelola materi | Tiap kolom isian menyebut baris dan nama kolomnya | | |
+| 19.5 | Guru, ubah sel lalu "Simpan tabel" | "Tabel disimpan." dibacakan, dan isinya berubah di layar baca | | |
+
+## 20. Peringatan gambar di materi terbit (guru)
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 20.1 | Daftar materi, kartu materi terbit dengan gambar kosong | "[n] gambar di materi ini belum dideskripsikan dan disembunyikan dari siswa", lalu tombol "Lengkapi gambar materi [judul]" | | |
+| 20.2 | Buka "Kelola materi" di materi yang sama | Peringatan yang sama dibacakan sebelum isi lain | | |
+| 20.3 | Lengkapi semua gambar, lalu kembali | Peringatan hilang dari kedua layar | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

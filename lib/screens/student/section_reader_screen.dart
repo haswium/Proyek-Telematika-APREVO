@@ -18,6 +18,53 @@ const String _subheadingPrefix = '## ';
 /// Awalan butir daftar di isi halaman. Butir berurutan menjadi satu daftar.
 const String _listItemPrefix = '- ';
 
+/// Butir bernomor dengan nomor aslinya: "3. Buka aplikasi" atau "b) ...".
+final RegExp _numberedItem = RegExp(r'^(\d{1,3}|[a-z])[.)] (?=\S)');
+
+/// Satu butir daftar. [marker] berisi nomor aslinya ("3."), atau null untuk
+/// butir bertitik.
+class _ListItem {
+  const _ListItem(this.marker, this.text);
+
+  final String? marker;
+  final String text;
+}
+
+/// Jenis penanda butir. Daftar dipisah kalau jenisnya berganti, misalnya
+/// "10. 11." lalu "a) b)".
+enum _Marker { dot, number, letter }
+
+_Marker _markerOf(_ListItem item) {
+  final marker = item.marker;
+  if (marker == null) return _Marker.dot;
+  return int.tryParse(marker.substring(0, marker.length - 1)) == null
+      ? _Marker.letter
+      : _Marker.number;
+}
+
+/// Butir berurutan yang sejenis.
+class _ItemList {
+  _ItemList(this.kind);
+
+  final _Marker kind;
+  bool get numbered => kind != _Marker.dot;
+  final items = <_ListItem>[];
+}
+
+/// Label TalkBack satu butir: "Butir 1 dari 4: isi". Nomor asli ikut
+/// dibacakan kalau berbeda dari urutannya, misalnya daftar yang berlanjut
+/// dari halaman sebelumnya ("Butir 1 dari 3, nomor 10: isi").
+String listItemLabel(int index, int total, String? marker, String text) {
+  final position = 'Butir ${index + 1} dari $total';
+  if (marker == null) return '$position: $text';
+  final value = marker.substring(0, marker.length - 1);
+  final number = int.tryParse(value);
+  final expected = number == null
+      ? value.codeUnitAt(0) - 'a'.codeUnitAt(0) == index
+      : number == index + 1;
+  return expected ? '$position: $text' : '$position, nomor $value: $text';
+}
+
 /// Baris gambar di isi halaman: `[[gambar:xref-12]]`.
 final RegExp _imageMarker = RegExp(r'^\[\[gambar:([\w-]+)\]\]$');
 
@@ -211,7 +258,7 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
                   for (var i = 0; i < blocks.length; i++) ...[
                     if (i > 0) const SizedBox(height: 18),
                     switch (blocks[i]) {
-                      final List<String> items => _list(items),
+                      final _ItemList list => _list(list),
                       final String line => _block(line),
                       _ => const SizedBox.shrink(),
                     },
@@ -260,33 +307,47 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
   /// deskripsi juga disembunyikan: materi hanya bisa terbit kalau semua
   /// gambarnya berdeskripsi, jadi ini hanya terjadi di pratinjau guru.
   bool _isHidden(String line) {
+    if (ContentTable.isMarker(line)) {
+      return ContentTable.tryParseLine(line) == null;
+    }
     if (!_imageMarker.hasMatch(line)) return false;
     final image = _image(line);
     return image == null || image.isDecorative || image.description == null;
   }
 
-  /// Butir berurutan dikumpulkan menjadi satu daftar (`List<String>`).
+  /// Butir berurutan yang sejenis dikumpulkan menjadi satu [_ItemList].
   static List<Object> _group(List<String> lines) {
     final blocks = <Object>[];
     for (final line in lines) {
+      final numbered = _numberedItem.firstMatch(line);
+      final _ListItem item;
       if (line.startsWith(_listItemPrefix)) {
-        final item = line.substring(_listItemPrefix.length).trim();
-        final last = blocks.isEmpty ? null : blocks.last;
-        if (last is List<String>) {
-          last.add(item);
-        } else {
-          blocks.add(<String>[item]);
-        }
+        item = _ListItem(null, line.substring(_listItemPrefix.length).trim());
+      } else if (numbered != null) {
+        item = _ListItem(
+          numbered.group(0)!.trim(),
+          line.substring(numbered.end).trim(),
+        );
       } else {
         blocks.add(line);
+        continue;
+      }
+      final kind = _markerOf(item);
+      final last = blocks.isEmpty ? null : blocks.last;
+      if (last is _ItemList && last.kind == kind) {
+        last.items.add(item);
+      } else {
+        blocks.add(_ItemList(kind)..items.add(item));
       }
     }
     return blocks;
   }
 
-  /// Daftar berbutir: tiap butir satu fokus TalkBack, dibacakan
-  /// "Butir 1 dari 3: ..." supaya siswa tahu panjang daftarnya.
-  Widget _list(List<String> items) {
+  /// Daftar: titik atau nomor digambar aplikasi, bukan bagian dari teks.
+  /// Tiap butir satu fokus TalkBack, dibacakan "Butir 1 dari 3: ..."
+  /// supaya siswa tahu panjang daftarnya.
+  Widget _list(_ItemList list) {
+    final items = list.items;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -295,14 +356,30 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
             padding: EdgeInsets.only(top: i == 0 ? 0 : 10),
             child: Semantics(
               container: true,
-              label: 'Butir ${i + 1} dari ${items.length}: ${items[i]}',
+              label: listItemLabel(
+                i,
+                items.length,
+                items[i].marker,
+                items[i].text,
+              ),
               excludeSemantics: true,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('•', style: AppType.bodyLarge),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(items[i], style: AppType.bodyLarge)),
+                  SizedBox(
+                    width: list.numbered ? 36 : 22,
+                    child: items[i].marker == null
+                        ? const _BulletDot()
+                        : Text(
+                            items[i].marker!,
+                            style: AppType.bodyLarge.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                  Expanded(
+                    child: Text(items[i].text, style: AppType.bodyLarge),
+                  ),
                 ],
               ),
             ),
@@ -311,8 +388,62 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
     );
   }
 
+  /// Tabel: ringkasannya dibacakan sebagai judul saat fokus sampai ke tabel,
+  /// lalu tiap baris satu fokus yang menyebut nama kolomnya. Baris nama kolom
+  /// tidak difokus karena namanya sudah ada di tiap baris.
+  Widget _table(ContentTable table) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          container: true,
+          child: Text(table.summary, style: AppType.titleMedium),
+        ),
+        const SizedBox(height: 10),
+        ExcludeSemantics(
+          child: _tableRow(table.columns, AppColors.lilac, AppType.titleMedium),
+        ),
+        for (var i = 0; i < table.rows.length; i++)
+          Semantics(
+            container: true,
+            label: table.rowLabel(i),
+            excludeSemantics: true,
+            child: _tableRow(
+              table.rows[i],
+              AppColors.white,
+              AppType.bodyMedium,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _tableRow(List<String> cells, Color color, TextStyle style) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final cell in cells)
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color,
+                  border: Border.all(color: AppColors.ink),
+                ),
+                child: Text(cell, style: style),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Satu paragraf, subjudul, atau gambar, masing-masing satu fokus TalkBack.
   Widget _block(String line) {
+    final table = ContentTable.tryParseLine(line);
+    if (table != null) return _table(table);
     if (_imageMarker.hasMatch(line)) {
       final text = 'Gambar: ${_image(line)?.description ?? ''}';
       return Semantics(
@@ -349,6 +480,27 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
     return Semantics(
       container: true,
       child: Text(line, style: AppType.bodyLarge),
+    );
+  }
+}
+
+/// Titik butir yang digambar, sejajar dengan baris pertama teksnya.
+class _BulletDot extends StatelessWidget {
+  const _BulletDot();
+
+  @override
+  Widget build(BuildContext context) {
+    final size = AppType.bodyLarge.fontSize ?? 16;
+    return Padding(
+      padding: EdgeInsets.only(top: size * 0.55),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: AppColors.ink,
+          shape: BoxShape.circle,
+        ),
+      ),
     );
   }
 }
