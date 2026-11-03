@@ -2159,7 +2159,9 @@ def image_file(pdf, xref):
     return pixmap.tobytes("png"), "png", "image/png"
 
 
-def store_page_images(pdf, material_id, teacher_id, known_keys, uploaded_paths):
+def store_page_images(
+    pdf, material_id, teacher_id, known_keys, uploaded_paths, stopped=None
+):
     """Menyimpan gambar PDF yang belum punya baris di material_images.
 
     Gambar baru belum punya deskripsi. Ikon kecil dan latar penuh langsung
@@ -2169,6 +2171,8 @@ def store_page_images(pdf, material_id, teacher_id, known_keys, uploaded_paths):
         for image in page_images(page, page_number):
             if image.key in known_keys:
                 continue
+            if stopped is not None and stopped():
+                raise AiJobCancelled
             known_keys.add(image.key)
             data, extension, content_type = image_file(pdf, image.xref)
             image_path = (
@@ -2292,10 +2296,24 @@ class DescribeJob:
     error: Optional[str] = None
     # image_id -> pesan kegagalan, untuk dicoba ulang satu per satu.
     failed: dict = field(default_factory=dict)
+    subject_id: Optional[str] = None
+    cancelled: bool = False
 
 
 DESCRIBE_JOBS: dict[str, DescribeJob] = {}
 DESCRIBE_JOBS_LOCK = threading.Lock()
+
+
+class AiJobCancelled(Exception):
+    """Kelasnya dihapus selama proses AI berjalan. Hasilnya dibuang."""
+
+
+def job_stopped(job) -> bool:
+    """`deleted_at` ikut diperiksa untuk proses yang terdaftar tepat setelah
+    `cancel_ai_jobs` berjalan, atau yang berjalan di proses backend lain."""
+    return job.cancelled or (
+        job.subject_id is not None and subject_is_deleted(job.subject_id)
+    )
 
 
 def is_rate_limited(error: Exception) -> bool:
@@ -2311,15 +2329,20 @@ def describe_failure_message(error: Exception) -> str:
     return "AI gagal mendeskripsikan gambar ini. Coba lagi"
 
 
-def describe_one(row):
+def describe_one(row, stopped=None):
     """Mendeskripsikan satu gambar dan menyimpannya. Melempar error asli
-    kalau gagal, supaya pemanggil bisa menilai jenis kegagalannya."""
+    kalau gagal, supaya pemanggil bisa menilai jenis kegagalannya.
+
+    Panggilan Gemini yang sudah berjalan tidak bisa diputus, jadi `stopped`
+    diperiksa setelahnya, dan hasilnya dibuang kalau kelasnya sudah dihapus."""
     image_bytes = supabase_admin.storage.from_("material-images").download(
         row["image_url"]
     )
     description = describe_image(image_bytes).strip()
     if not description:
         raise ValueError("Deskripsi kosong")
+    if stopped is not None and stopped():
+        raise AiJobCancelled
     # Hanya mengisi yang masih kosong: kalau guru menulis deskripsi selama
     # Gemini bekerja, tulisan guru yang dipertahankan.
     response = (
@@ -2346,8 +2369,10 @@ def fresh_image_row(image_id):
     return (response.data or [None])[0]
 
 
-def prepare_image_rows(material, teacher_id):
-    """Materi lama yang gambarnya belum tersimpan diproses dari PDF-nya."""
+def prepare_image_rows(material, teacher_id, stopped=None):
+    """Materi lama yang gambarnya belum tersimpan diproses dari PDF-nya. Kalau
+    kelasnya dihapus di tengah proses, berkas yang baru disimpan ikut dihapus,
+    karena penghapusan kelas tidak tahu soal berkas itu."""
     material_id = material["id"]
     known_keys = {row["image_key"] for row in material_image_rows(material_id)}
     missing = set(material_content_image_keys(material_id)) - known_keys
@@ -2355,14 +2380,29 @@ def prepare_image_rows(material, teacher_id):
         pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(
             material["file_url"]
         )
-        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
-            store_page_images(pdf, material_id, teacher_id, known_keys, [])
+        uploaded = []
+        try:
+            with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                store_page_images(
+                    pdf, material_id, teacher_id, known_keys, uploaded, stopped
+                )
+            if stopped is not None and stopped():
+                raise AiJobCancelled
+        except Exception:
+            if stopped is None or not stopped():
+                raise
+            remove_from_storage("material-images", uploaded)
+            delete_rows("material_images", "image_url", uploaded, ())
+            raise AiJobCancelled from None
 
 
 def run_describe_job(job: DescribeJob, material, teacher_id):
     """Dijalankan di latar belakang setelah endpoint menjawab."""
+    stopped = lambda: job_stopped(job)
     try:
-        prepare_image_rows(material, teacher_id)
+        if stopped():
+            return
+        prepare_image_rows(material, teacher_id, stopped)
         rows = [
             row for row in ordered_image_rows(material["id"]) if needs_description(row)
         ]
@@ -2378,9 +2418,13 @@ def run_describe_job(job: DescribeJob, material, teacher_id):
             if called:
                 time.sleep(GEMINI_DELAY_SECONDS)
             called = True
+            if stopped():
+                return
             try:
-                describe_one(current)
+                describe_one(current, stopped)
                 job.done += 1
+            except AiJobCancelled:
+                return
             except Exception as error:
                 logger.exception("Gagal mendeskripsikan %s", row["image_key"])
                 job.failed[str(row["id"])] = describe_failure_message(error)
@@ -2388,6 +2432,8 @@ def run_describe_job(job: DescribeJob, material, teacher_id):
                 # tunggu lebih lama sebelum lanjut.
                 if is_rate_limited(error):
                     time.sleep(GEMINI_RATE_LIMIT_PAUSE_SECONDS)
+    except AiJobCancelled:
+        logger.info("Deskripsi gambar materi %s dihentikan", material["id"])
     except Exception:
         logger.exception("Proses deskripsi gambar materi %s berhenti", material["id"])
         job.error = "Proses deskripsi berhenti karena kesalahan server. Coba lagi"
@@ -2445,7 +2491,7 @@ def generate_material_image_description(
         job = DESCRIBE_JOBS.get(material_id)
         start_new = job is None or not job.running
         if start_new:
-            job = DescribeJob()
+            job = DescribeJob(subject_id=material.get("subject_id"))
             DESCRIBE_JOBS[material_id] = job
     if start_new:
         pending = [row for row in material_image_rows(material_id) if needs_description(row)]
@@ -2482,10 +2528,26 @@ class QuestionDraftJob:
     questions: list = field(default_factory=list)
     running: bool = True
     error: Optional[str] = None
+    subject_id: Optional[str] = None
+    cancelled: bool = False
 
 
 QUESTION_JOBS: dict[tuple[str, str], QuestionDraftJob] = {}
 QUESTION_JOBS_LOCK = threading.Lock()
+
+
+def cancel_ai_jobs(material_ids):
+    """Menghentikan proses AI materi ini dan membuang hasilnya. Prosesnya berhenti
+    sendiri sebelum panggilan Gemini berikutnya."""
+    wanted = set(material_ids)
+    with DESCRIBE_JOBS_LOCK:
+        for material_id in wanted:
+            job = DESCRIBE_JOBS.pop(material_id, None)
+            if job is not None:
+                job.cancelled = True
+    with QUESTION_JOBS_LOCK:
+        for key in [key for key in QUESTION_JOBS if key[0] in wanted]:
+            QUESTION_JOBS.pop(key).cancelled = True
 
 
 def question_failure_message(error: Exception) -> str:
@@ -2507,6 +2569,8 @@ def run_question_job(job: QuestionDraftJob, materi: str):
             if called:
                 time.sleep(GEMINI_DELAY_SECONDS)
             called = True
+            if job_stopped(job):
+                return
             try:
                 result = generate_quiz(
                     materi=materi,
@@ -2605,7 +2669,7 @@ def start_generate_questions(
 ):
     """Memulai pembuatan draf soal di latar belakang. Status dan hasilnya dibaca
     lewat GET di alamat yang sama. Hasil lama kuis ini yang belum diambil diganti."""
-    get_owned_material(material_id, auth["user_id"])
+    material = get_owned_material(material_id, auth["user_id"])
     require_gemini()
     check_question_request(material_id, data)
     materi = material_plain_text(material_id)
@@ -2622,6 +2686,7 @@ def start_generate_questions(
                 job_id=str(uuid4()),
                 quiz_type=data.quiz_type,
                 total=data.total_questions,
+                subject_id=material.get("subject_id"),
             )
             QUESTION_JOBS[key] = job
     if started:
@@ -2661,7 +2726,7 @@ def clear_generated_questions(
 def describe_single_image(material_id: str, image_id: str, auth=Depends(require_teacher)):
     """Mencoba ulang deskripsi satu gambar. Cukup satu panggilan Gemini,
     jadi dijawab langsung tanpa proses latar belakang."""
-    get_owned_material(material_id, auth["user_id"])
+    material = get_owned_material(material_id, auth["user_id"])
     require_gemini()
     job = DESCRIBE_JOBS.get(material_id)
     if job is not None and job.running:
@@ -2676,7 +2741,11 @@ def describe_single_image(material_id: str, image_id: str, auth=Depends(require_
     if row is None:
         raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
     try:
-        saved = describe_one(row)
+        saved = describe_one(
+            row, lambda: subject_is_deleted(material.get("subject_id"))
+        )
+    except AiJobCancelled as error:
+        raise HTTPException(status_code=404, detail="Materi tidak ditemukan") from error
     except Exception as error:
         logger.exception("Gagal mendeskripsikan ulang %s", row["image_key"])
         message = describe_failure_message(error)
@@ -3061,6 +3130,7 @@ def delete_subject(subject_id: str, auth=Depends(require_teacher)):
         ).execute()
         materials = subject_material_rows(subject_id)
         material_ids = [row["id"] for row in materials]
+        cancel_ai_jobs(material_ids)
         for table, column, children in MATERIAL_CHILD_TABLES:
             delete_rows(table, column, material_ids, children)
         remove_from_storage(
@@ -3083,8 +3153,8 @@ def delete_subject(subject_id: str, auth=Depends(require_teacher)):
         raise HTTPException(
             status_code=500, detail="Kelas belum terhapus sepenuhnya. Coba lagi"
         ) from error
-    for material_id in material_ids:
-        DESCRIBE_JOBS.pop(material_id, None)
+    # Sekali lagi untuk proses yang terdaftar selagi kelas dihapus.
+    cancel_ai_jobs(material_ids)
     return {
         "message": "Kelas dihapus",
         "subject": {"id": subject["id"], "name": subject["name"]},

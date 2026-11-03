@@ -59,6 +59,7 @@ FakeServer _server({
   bool scheduled = true,
   List<Map<String, dynamic>> saved = const [],
   Object Function()? onStart,
+  bool Function()? materialGone,
 }) {
   final queue = [...?statuses];
   return FakeServer({
@@ -78,6 +79,9 @@ FakeServer _server({
     'GET /teacher/materials/m1/images': (_) => {'images': []},
     _post: (_) => onStart?.call() ?? _job(running: true),
     _get: (r) {
+      if (materialGone?.call() ?? false) {
+        return jsonResponse({'detail': 'Materi tidak ditemukan'}, 404);
+      }
       if (r.url.queryParameters['test_kind'] != 'pre' || queue.isEmpty) {
         return _job(id: null, total: 0);
       }
@@ -363,6 +367,30 @@ void main() {
     await _poll(tester);
     final message = _said(tester);
     expect(message.single, startsWith('Status soal Pre-test tidak bisa'));
+    final before = server.requests.length;
+    await tester.pump(kQuestionPollInterval * 3);
+    expect(server.requests.length, before);
+  });
+
+  testWidgets('kelas dihapus selama proses: berhenti tanpa pengumuman', (
+    tester,
+  ) async {
+    tallScreen(tester);
+    var deleted = false;
+    final server = _server(statuses: [_empty], materialGone: () => deleted)
+      ..install();
+    await _open(tester, material: _m1);
+    await tester.tap(find.text('Buat soal Pre-test'));
+    await tester.pumpAndSettle();
+    _said(tester);
+    expect(store.isGeneratingQuestions('m1'), isTrue);
+
+    deleted = true;
+    await _poll(tester);
+
+    expect(_said(tester), isEmpty);
+    expect(store.isGeneratingQuestions('m1'), isFalse);
+    expect(store.questionGeneration('m1', TestKind.pre), isNull);
     final before = server.requests.length;
     await tester.pump(kQuestionPollInterval * 3);
     expect(server.requests.length, before);

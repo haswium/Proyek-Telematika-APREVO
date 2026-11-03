@@ -272,6 +272,10 @@ terhapus habis; `500` berhenti di tengah. Setelah `500`, kelas masuk
 `unfinished_deletions` di `GET /teacher/subjects`, dan memanggil endpoint ini lagi
 melanjutkan sisanya.
 
+Proses AI kelas ini (pembuatan soal dan deskripsi gambar) ikut dihentikan. Panggilan
+Gemini yang sudah berjalan tidak bisa diputus, tetapi hasilnya dibuang dan tidak ada
+panggilan berikutnya. Setelah itu status prosesnya menjawab `404`.
+
 ### POST `/student/subjects/join`
 
 Body `{"code": "KXPRTA"}`. Huruf kecil, spasi, dan strip diabaikan. Bergabung

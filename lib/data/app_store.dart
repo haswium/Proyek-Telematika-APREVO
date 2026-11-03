@@ -577,7 +577,13 @@ class AppStore extends ChangeNotifier {
           continue;
         }
         await _takeQuestionJob(watched.materialId, watched.kind, job);
-      } on ApiException {
+      } on ApiException catch (e) {
+        // Materinya sudah tidak ada, misalnya kelasnya dihapus: backend sudah
+        // membuang prosesnya, dan tidak ada yang perlu diumumkan ke guru.
+        if (e.statusCode == 404) {
+          _forgetQuestionJob(entry.key, watched.materialId);
+          continue;
+        }
         watched.failures++;
         if (watched.failures < kQuestionPollFailures) continue;
         _watchedJobs.remove(entry.key);
@@ -624,6 +630,14 @@ class AppStore extends ChangeNotifier {
           ? '$made dari ${job.total} soal draf $label dibuat. ${job.error}'
           : '$made soal draf $label siap. Periksa, lalu simpan.',
     );
+  }
+
+  void _forgetQuestionJob(String key, String materialId) {
+    _watchedJobs.remove(key);
+    _generations.remove(key);
+    _questionDrafts.remove(key);
+    if (!hasQuestionDrafts(materialId)) _draftTypes.remove(materialId);
+    notifyListeners();
   }
 
   void _finishQuestionGeneration(String key, String message) {

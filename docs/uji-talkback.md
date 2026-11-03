@@ -191,7 +191,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 12.1 | Selesaikan satu tes | Ringkasan dibacakan sendiri: "[Pre-test] [judul] selesai. Kamu benar ... dari ... soal, ... dari 3 bintang..." | | |
 | 12.2 | Geser kanan dari awal | Gambar Odi tidak difokus. Fokus pertama langsung ke ringkasan hasil | | |
 | 12.3 | Bintang | Tidak dibaca per ikon, sudah masuk dalam ringkasan | | |
-| 12.5 | Ketuk dua kali "Kembali ke langkah belajar" | Kembali ke layar materi. Post-test sudah tidak terkunci | | |
+| 12.4 | Ketuk dua kali "Kembali ke langkah belajar" | Kembali ke layar materi. Post-test sudah tidak terkunci | | |
 
 ## 13. Tab Progres siswa
 
@@ -315,6 +315,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 23.9 | Siswa sedang mengerjakan kuis, guru menghapus kelasnya, siswa mengirim jawaban | Pesan yang sama, bukan "Jawaban belum terkirim" | | |
 | 23.10 | Penghapusan gagal di tengah (matikan server saat menghapus), lalu buka daftar kelas | Terdengar "Penghapusan kelas [nama] belum selesai", lalu tombol "Lanjutkan hapus kelas [nama]" | | |
 | 23.11 | Ketuk dua kali tombol itu | "Kelas [nama] dihapus" dibacakan, kartunya hilang | | |
+| 23.12 | Mulai "Buat soal dengan AI", lalu hapus kelas itu sebelum selesai, dan tunggu 1 menit | Setelah "Kelas [nama] dihapus", tidak terdengar "soal draf siap" atau "Status soal tidak bisa diperiksa" | | |
 
 ## 24. Pencarian
 
