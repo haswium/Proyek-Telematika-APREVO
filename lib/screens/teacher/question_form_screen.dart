@@ -27,6 +27,9 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
   );
   int _correct = 0;
 
+  /// Draf buatan AI: penjelasannya wajib.
+  bool get _ai => widget.initial?.aiGenerated ?? false;
+
   @override
   void initState() {
     super.initState();
@@ -82,16 +85,28 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
 
     switch (widget.type) {
       case GameType.quiz:
-        if (filled.length < 4) {
-          _error('Isi keempat pilihan jawaban.');
+        if (_ai ? filled.length < 2 : filled.length < 4) {
+          _error(
+            _ai
+                ? 'Isi minimal dua pilihan jawaban.'
+                : 'Isi keempat pilihan jawaban.',
+          );
           return;
         }
-        if (filled.map((t) => t.toLowerCase()).toSet().length < 4) {
+        if (filled.map((t) => t.toLowerCase()).toSet().length < filled.length) {
           _error('Pilihan jawaban tidak boleh sama.');
           return;
         }
+        if (_options[_correct].text.trim().isEmpty) {
+          _error('Pilihan yang ditandai benar belum diisi.');
+          return;
+        }
         options = filled;
-        correctIndex = _correct;
+        // Kolom kosong di antara pilihan tidak ikut terkirim.
+        correctIndex = _options
+            .take(_correct)
+            .where((c) => c.text.trim().isNotEmpty)
+            .length;
       case GameType.trueFalse:
         options = const ['Benar', 'Salah'];
         correctIndex = _correct > 1 ? 0 : _correct;
@@ -109,6 +124,11 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
         options = filled;
     }
 
+    if (_ai && _orNull(_explanation) == null) {
+      _error('Penjelasan jawaban belum diisi.');
+      return;
+    }
+
     Navigator.pop(
       context,
       Question(
@@ -117,6 +137,7 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
         correctIndex: correctIndex,
         answerText: answerText,
         explanation: _orNull(_explanation),
+        aiGenerated: _ai,
       ),
     );
   }
@@ -146,7 +167,7 @@ class _QuestionFormScreenState extends State<QuestionFormScreen> {
               controller: _explanation,
               maxLines: 3,
               decoration: fieldDecoration(
-                'Penjelasan jawaban',
+                _ai ? 'Penjelasan jawaban, wajib diisi' : 'Penjelasan jawaban',
                 hint: 'Dibuka ke siswa setelah tenggat kuis lewat',
               ),
             ),

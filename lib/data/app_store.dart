@@ -1,11 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
 import '../models/models.dart';
+import '../services/announce.dart';
 import '../services/api_client.dart';
 import '../services/settings.dart';
+
+/// Seberapa sering status pembuatan soal AI diperiksa.
+const Duration kQuestionPollInterval = Duration(seconds: 3);
+
+/// Pemeriksaan gagal sebanyak ini berturut-turut baru dilaporkan.
+const int kQuestionPollFailures = 3;
+
+class _WatchedJob {
+  _WatchedJob(this.materialId, this.kind);
+
+  final String materialId;
+  final TestKind kind;
+  int failures = 0;
+}
 
 /// Akun lewat Supabase Auth, semua data lain lewat backend FastAPI
 /// (`docs/kontrak-api.md`).
@@ -150,6 +167,7 @@ class AppStore extends ChangeNotifier {
 
   void signOut() {
     currentUser = null;
+    resetQuestionGeneration();
     if (online) Supabase.instance.client.auth.signOut();
   }
 
@@ -365,60 +383,199 @@ class AppStore extends ChangeNotifier {
     return Future.wait([for (final s in subjects) subjectResults(s.id)]);
   }
 
-  /// TIRUAN AI Game Generator. Hanya membuat soal contoh dari judul materi
-  /// supaya alur "generate lalu review" bisa didemokan. Ganti dengan
-  /// pemanggilan backend AI.
-  Future<List<Question>> generateQuestions(GameType type, String topic) async {
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
-    const note = 'Tulis penjelasan yang membantu siswa memahami jawabannya.';
-    switch (type) {
-      case GameType.quiz:
-        return [
-          Question(
-            prompt: 'Contoh soal AI 1 tentang $topic. Ubah soal ini.',
-            options: ['Pilihan A', 'Pilihan B', 'Pilihan C', 'Pilihan D'],
-            correctIndex: 0,
-            explanation: note,
-          ),
-          Question(
-            prompt: 'Contoh soal AI 2 tentang $topic. Ubah soal ini.',
-            options: ['Pilihan A', 'Pilihan B', 'Pilihan C', 'Pilihan D'],
-            correctIndex: 1,
-            explanation: note,
-          ),
-        ];
-      case GameType.trueFalse:
-        return [
-          Question(
-            prompt: 'Contoh pernyataan AI tentang $topic. Ubah pernyataan ini.',
-            options: const ['Benar', 'Salah'],
-            correctIndex: 0,
-            explanation: note,
-          ),
-          Question(
-            prompt: 'Contoh pernyataan AI kedua tentang $topic.',
-            options: const ['Benar', 'Salah'],
-            correctIndex: 1,
-            explanation: note,
-          ),
-        ];
-      case GameType.shortAnswer:
-        return [
-          Question(
-            prompt: 'Contoh isian AI tentang $topic. Ubah soal ini.',
-            answerText: 'jawaban',
-            explanation: note,
-          ),
-        ];
-      case GameType.ordering:
-        return [
-          Question(
-            prompt: 'Contoh urutan AI tentang $topic. Ubah langkahnya.',
-            options: ['Langkah pertama', 'Langkah kedua', 'Langkah ketiga'],
-            explanation: note,
-          ),
-        ];
+  // ---- Draf soal dan pembuatan soal oleh AI.
+
+  final Map<String, List<Question>> _questionDrafts = {};
+  final Map<String, GameType> _draftTypes = {};
+  final Map<String, QuestionGeneration> _generations = {};
+  final Map<String, _WatchedJob> _watchedJobs = {};
+  final Set<String> _takenJobs = {};
+  Timer? _questionPoll;
+  bool _checkingQuestions = false;
+
+  String _draftKey(String materialId, TestKind kind) =>
+      '$materialId:${kind.api}';
+
+  /// Draf soal satu kuis. Disimpan di sini, bukan di layar, supaya tidak
+  /// hilang saat guru keluar dari layar, dan hasil AI punya tempat masuk
+  /// walaupun layarnya sudah ditutup.
+  List<Question> questionDrafts(String materialId, TestKind kind) =>
+      _questionDrafts.putIfAbsent(_draftKey(materialId, kind), () => []);
+
+  bool hasQuestionDrafts(String materialId) => TestKind.values.any(
+    (kind) => questionDrafts(materialId, kind).isNotEmpty,
+  );
+
+  /// Jenis soal pilihan guru sebelum ada soal tersimpan.
+  GameType? draftType(String materialId) => _draftTypes[materialId];
+
+  void setDraftType(String materialId, GameType type) {
+    _draftTypes[materialId] = type;
+  }
+
+  QuestionGeneration? questionGeneration(String materialId, TestKind kind) =>
+      _generations[_draftKey(materialId, kind)];
+
+  bool isGeneratingQuestions(String materialId) => TestKind.values.any(
+    (kind) => questionGeneration(materialId, kind)?.running ?? false,
+  );
+
+  /// Pesan hasil tidak relevan lagi setelah drafnya disimpan.
+  void dismissQuestionMessage(String materialId, TestKind kind) {
+    final key = _draftKey(materialId, kind);
+    if (_generations[key]?.running == false) _generations.remove(key);
+  }
+
+  /// Memulai pembuatan soal di backend. Pemeriksaan statusnya berjalan di
+  /// sini, jadi tetap diumumkan walaupun guru sudah pindah layar.
+  Future<void> startQuestionGeneration({
+    required String materialId,
+    required TestKind kind,
+    required GameType type,
+    required int count,
+  }) async {
+    await api.post('/teacher/materials/$materialId/generate-questions', {
+      'test_kind': kind.api,
+      'quiz_type': type.api,
+      'total_questions': count,
+    });
+    _draftTypes[materialId] = type;
+    _generations[_draftKey(materialId, kind)] = const QuestionGeneration(
+      running: true,
+    );
+    _watchQuestionJob(materialId, kind);
+    announce(
+      'Sedang membuat soal ${kind.label}. Hasilnya diumumkan saat selesai '
+      'atau gagal.',
+    );
+    notifyListeners();
+  }
+
+  /// Melanjutkan proses yang dimulai sebelum aplikasi ditutup, dan mengambil
+  /// hasil yang belum diambil. Kalau server gagal, cukup dicoba lagi nanti.
+  Future<void> resumeQuestionGeneration(String materialId) async {
+    for (final kind in TestKind.values) {
+      final key = _draftKey(materialId, kind);
+      if (_watchedJobs.containsKey(key)) continue;
+      final QuestionJob job;
+      try {
+        job = await _questionJob(materialId, kind);
+      } on ApiException {
+        continue;
+      }
+      if (job.jobId == null || _takenJobs.contains(job.jobId)) continue;
+      if (job.running) {
+        _draftTypes[materialId] = job.type;
+        _generations[key] = const QuestionGeneration(running: true);
+        _watchQuestionJob(materialId, kind);
+        notifyListeners();
+      } else {
+        await _takeQuestionJob(materialId, kind, job);
+      }
     }
+  }
+
+  Future<QuestionJob> _questionJob(String materialId, TestKind kind) async =>
+      QuestionJob.fromJson(
+        await api.get(
+          '/teacher/materials/$materialId/generate-questions'
+          '?test_kind=${kind.api}',
+        ),
+      );
+
+  void _watchQuestionJob(String materialId, TestKind kind) {
+    _watchedJobs[_draftKey(materialId, kind)] = _WatchedJob(materialId, kind);
+    _questionPoll ??= Timer.periodic(
+      kQuestionPollInterval,
+      (_) => _checkQuestionJobs(),
+    );
+  }
+
+  Future<void> _checkQuestionJobs() async {
+    // Server lambat: jangan menumpuk pemeriksaan.
+    if (_checkingQuestions) return;
+    _checkingQuestions = true;
+    for (final entry in _watchedJobs.entries.toList()) {
+      final watched = entry.value;
+      try {
+        final job = await _questionJob(watched.materialId, watched.kind);
+        watched.failures = 0;
+        if (job.running) continue;
+        _watchedJobs.remove(entry.key);
+        if (job.jobId == null) {
+          _finishQuestionGeneration(
+            entry.key,
+            'Pembuatan soal ${watched.kind.label} terhenti karena server '
+            'dimulai ulang. Coba lagi.',
+          );
+          continue;
+        }
+        await _takeQuestionJob(watched.materialId, watched.kind, job);
+      } on ApiException {
+        watched.failures++;
+        if (watched.failures < kQuestionPollFailures) continue;
+        _watchedJobs.remove(entry.key);
+        _finishQuestionGeneration(
+          entry.key,
+          'Status soal ${watched.kind.label} tidak bisa diperiksa. Periksa '
+          'koneksi, lalu buka lagi layar Kelola materi.',
+        );
+      }
+    }
+    _checkingQuestions = false;
+    if (_watchedJobs.isEmpty) {
+      _questionPoll?.cancel();
+      _questionPoll = null;
+    }
+  }
+
+  /// Hasil masuk ke draf, lalu dihapus dari backend. Kalau penghapusan gagal,
+  /// [_takenJobs] mencegah hasil yang sama masuk dua kali.
+  Future<void> _takeQuestionJob(
+    String materialId,
+    TestKind kind,
+    QuestionJob job,
+  ) async {
+    final id = job.jobId;
+    if (id != null) _takenJobs.add(id);
+    if (job.questions.isNotEmpty) _draftTypes[materialId] = job.type;
+    questionDrafts(materialId, kind).addAll(job.questions);
+    try {
+      await api.delete(
+        '/teacher/materials/$materialId/generate-questions'
+        '?test_kind=${kind.api}',
+      );
+    } on ApiException {
+      // Tidak mengganggu: hasilnya sudah masuk draf.
+    }
+    final made = job.questions.length;
+    final label = kind.label;
+    _finishQuestionGeneration(
+      _draftKey(materialId, kind),
+      made == 0
+          ? 'Soal $label belum dibuat. ${job.error ?? ''}'
+          : job.error != null
+          ? '$made dari ${job.total} soal draf $label dibuat. ${job.error}'
+          : '$made soal draf $label siap. Periksa, lalu simpan.',
+    );
+  }
+
+  void _finishQuestionGeneration(String key, String message) {
+    _generations[key] = QuestionGeneration(running: false, message: message);
+    announce(message);
+    notifyListeners();
+  }
+
+  /// Dipanggil saat keluar akun, dan di akhir setiap tes.
+  void resetQuestionGeneration() {
+    _questionPoll?.cancel();
+    _questionPoll = null;
+    _checkingQuestions = false;
+    _questionDrafts.clear();
+    _draftTypes.clear();
+    _generations.clear();
+    _watchedJobs.clear();
+    _takenJobs.clear();
   }
 
   // ---- Siswa.

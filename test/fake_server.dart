@@ -62,7 +62,10 @@ class FakeServer {
       baseUrl: () => fakeBaseUrl,
       token: () async => 'token-tes',
     );
-    addTearDown(() => store.api = previous);
+    addTearDown(() {
+      store.api = previous;
+      store.resetQuestionGeneration();
+    });
   }
 }
 

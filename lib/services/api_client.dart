@@ -62,6 +62,8 @@ class ApiClient {
   Future<Map<String, dynamic>> patch(String path, Object body) =>
       _send('PATCH', path, body);
 
+  Future<Map<String, dynamic>> delete(String path) => _send('DELETE', path);
+
   /// Unggah satu file lewat multipart, bersama kolom teks [fields].
   ///
   /// [contentType] wajib diisi: tanpa itu `http` mengirim

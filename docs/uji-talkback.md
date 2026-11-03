@@ -271,6 +271,20 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 20.2 | Buka "Kelola materi" di materi yang sama | Peringatan yang sama dibacakan sebelum isi lain | | |
 | 20.3 | Lengkapi semua gambar, lalu kembali | Peringatan hilang dari kedua layar | | |
 
+## 21. Buat soal dengan AI (guru)
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 21.1 | Halaman kelas, "Buat soal dengan AI" | Daftar materi, tiap baris "Pilih materi [judul]". Setelah dipilih: "Materi [judul] dipilih." | | |
+| 21.2 | Pilih Pre-test, jenis soal, jumlah soal | Pilihan yang aktif terbaca "dipilih". Kolom jumlah menyebut "1 sampai 30" | | |
+| 21.3 | Kuis belum punya jadwal | Dijelaskan harus mengatur jadwal, ada tombol "Atur jadwal Pre-test", tombol buat soal nonaktif | | |
+| 21.4 | Jumlah soal diisi 40, lalu buat soal | "Jumlah soal harus 1 sampai 30." dibacakan | | |
+| 21.5 | Mulai membuat soal | "Sedang membuat soal Pre-test. Hasilnya diumumkan saat selesai atau gagal." | | |
+| 21.6 | Pindah ke layar lain selama proses | Saat selesai tetap terdengar "[n] soal draf Pre-test siap. Periksa, lalu simpan." | | |
+| 21.7 | Buka draf di Kelola materi | Label menyebut soal, jawaban benar, dan penjelasan. Ketuk dua kali untuk mengubah | | |
+| 21.8 | Kosongkan penjelasan draf AI, lalu simpan | "Penjelasan jawaban belum diisi." | | |
+| 21.9 | Proses gagal (matikan internet di server) | "Soal Pre-test belum dibuat." dengan alasannya | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

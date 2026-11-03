@@ -86,6 +86,7 @@ class Question {
     this.correctIndex = 0,
     this.answerText = '',
     this.explanation,
+    this.aiGenerated = false,
   });
 
   /// `null` selama soal masih draf di aplikasi.
@@ -106,6 +107,10 @@ class Question {
 
   /// Pembahasan, baru dibuka ke siswa setelah tenggat kuis lewat.
   final String? explanation;
+
+  /// Draf buatan AI: penjelasannya wajib, dan pilihan gandanya boleh kurang
+  /// dari empat.
+  final bool aiGenerated;
 
   bool get saved => id != null;
 
@@ -155,6 +160,50 @@ class Question {
     return body;
   }
 
+  /// Draf dari hasil AI. Bentuknya sama seperti body `toApi`.
+  static Question fromAi(Map<String, dynamic> json) {
+    final prompt = _str(json['question']);
+    final explanation = json['explanation'] as String?;
+    switch (gameTypeFromApi(json['type'])) {
+      case GameType.quiz:
+        final options = _list(json['options']);
+        final correct = options.indexWhere((o) => o['is_correct'] == true);
+        return Question(
+          prompt: prompt,
+          options: [for (final o in options) _str(o['text'])],
+          correctIndex: correct < 0 ? 0 : correct,
+          explanation: explanation,
+          aiGenerated: true,
+        );
+      case GameType.trueFalse:
+        return Question(
+          prompt: prompt,
+          options: const ['Benar', 'Salah'],
+          correctIndex: json['correct_answer'] == false ? 1 : 0,
+          explanation: explanation,
+          aiGenerated: true,
+        );
+      case GameType.shortAnswer:
+        return Question(
+          prompt: prompt,
+          answerText: [
+            for (final a in _list(json['answers'])) _str(a['answer']),
+          ].join('; '),
+          explanation: explanation,
+          aiGenerated: true,
+        );
+      case GameType.ordering:
+        final items = _list(json['items'])
+          ..sort((a, b) => _int(a['correct_order']) - _int(b['correct_order']));
+        return Question(
+          prompt: prompt,
+          options: [for (final i in items) _str(i['text'])],
+          explanation: explanation,
+          aiGenerated: true,
+        );
+    }
+  }
+
   /// Soal tersimpan dari `GET /quizzes/{id}` (berisi kunci jawaban).
   static Question fromApi(Map<String, dynamic> json) {
     final type = gameTypeFromApi(json['type']);
@@ -197,6 +246,45 @@ class Question {
         );
     }
   }
+}
+
+/// Hasil `GET /teacher/materials/{id}/generate-questions`.
+class QuestionJob {
+  QuestionJob({
+    this.jobId,
+    required this.running,
+    required this.total,
+    required this.type,
+    required this.questions,
+    this.error,
+  });
+
+  factory QuestionJob.fromJson(Map<String, dynamic> json) => QuestionJob(
+    jobId: json['job_id'] as String?,
+    running: json['running'] == true,
+    total: _int(json['total']),
+    type: gameTypeFromApi(json['quiz_type']),
+    questions: [for (final q in _list(json['questions'])) Question.fromAi(q)],
+    error: json['error'] as String?,
+  );
+
+  /// `null` kalau kuis ini tidak punya proses atau hasil.
+  final String? jobId;
+  final bool running;
+  final int total;
+  final GameType type;
+  final List<Question> questions;
+  final String? error;
+}
+
+/// Status pembuatan soal AI satu kuis di aplikasi.
+class QuestionGeneration {
+  const QuestionGeneration({required this.running, this.message});
+
+  final bool running;
+
+  /// Hasil terakhir: berhasil, sebagian, atau gagal.
+  final String? message;
 }
 
 enum TestKind { pre, post }

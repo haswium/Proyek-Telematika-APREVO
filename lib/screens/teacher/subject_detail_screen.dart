@@ -6,6 +6,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
+import 'generate_questions_screen.dart';
 import 'material_editor_screen.dart';
 import 'material_images_screen.dart';
 import 'new_material_screen.dart';
@@ -92,6 +93,20 @@ class SubjectDetailScreen extends StatelessWidget {
                   icon: Icons.add_circle_outline,
                   onPressed: () => _createMaterial(context),
                 ),
+                if (materials.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Buat soal dengan AI'),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            GenerateQuestionsScreen(subject: subject),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 SectionTitle('Daftar materi (${materials.length})'),
                 if (materials.isEmpty)
