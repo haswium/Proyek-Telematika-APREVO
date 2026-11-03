@@ -50,3 +50,6 @@ app.*.map.json
 
 .venv/
 .claude/
+
+# Instruksi lokal, tidak di-commit.
+CLAUDE.md
