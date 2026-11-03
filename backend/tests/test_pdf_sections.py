@@ -305,3 +305,141 @@ def test_tabel_gambar_dan_keterangan_tetap_dibaca_per_baris():
         True,
         False,
     ]
+
+
+# Teks halaman 2 materi ScratchJR (Sesi 7 - Mengirim Pesan Rahasia).
+SCRATCHJR_PAGE_2_ITEMS = [
+    "Membuka modul pembelajaran CodeJR.",
+    "Mengenal code block Send Message di CodeJR.",
+    "Mengenal code block Receive Message di CodeJR.",
+    "Belajar bahwa sprite bisa mengirim pesan agar sprite lain melakukan sesuatu.",
+    "Membuat satu project CodeJR dengan tema Amplop Ajaib.",
+]
+
+
+def test_halaman_2_scratchjr_tanda_butir_di_tengah_baris_dipecah():
+    """Butir pertama menempel di baris kalimat pengantar, butir lain di
+    baris sendiri dengan tanda yang menempel."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    place_words(page, 72, 74, "2. Send Message dan Receive Message", 16, 0.1)
+    place_words(
+        page, 72, 109, "Pesan di CodeJr ini sebenarnya seperti aba-aba.", 11, 0.1
+    )
+    place_words(
+        page,
+        72,
+        150,
+        f"Pada hari ini kamu akan belajar : • {SCRATCHJR_PAGE_2_ITEMS[0]}",
+        11,
+        0.1,
+    )
+    y = 170
+    for item in SCRATCHJR_PAGE_2_ITEMS[1:]:
+        place_words(page, 72, y, f"•{item}", 11, 0.1)
+        y += 20
+    section = split_pdf_bytes(doc.tobytes())[0]
+    # Judul bernomor tetap judul halaman, bukan butir.
+    assert section.title == "2. Send Message dan Receive Message"
+    assert section.content.split("\n") == [
+        "Pesan di CodeJr ini sebenarnya seperti aba-aba.",
+        "Pada hari ini kamu akan belajar:",
+        *[f"- {item}" for item in SCRATCHJR_PAGE_2_ITEMS],
+    ]
+    assert "•" not in section.content
+
+
+def test_daftar_bernomor_memakai_nomor_aslinya():
+    pdf = make_pdf(
+        [
+            [
+                ("Langkah membuat project:", 11),
+                ("", 0),
+                ("10. Klik icon gambar dan pilih background CLASSROOM.", 11),
+                ("", 0),
+                ("11. Masukkan 2 sprite.", 11),
+                ("", 0),
+                ("a) Sprite Budi", 11),
+                ("", 0),
+                ("b) Sprite Gia", 11),
+                ("", 0),
+                ("M. Rizki membantu Budi.", 11),
+            ]
+        ]
+    )
+    assert split_pdf_bytes(pdf)[0].content.split("\n") == [
+        "Langkah membuat project:",
+        "10. Klik icon gambar dan pilih background CLASSROOM.",
+        "11. Masukkan 2 sprite.",
+        "a) Sprite Budi",
+        "b) Sprite Gia",
+        # Huruf besar dianggap inisial nama, bukan nomor butir.
+        "M. Rizki membantu Budi.",
+    ]
+
+
+def test_nomor_terpisah_dari_teksnya_tetap_butir():
+    from pdf_sections import Line, mark_bullets
+
+    def line(text, x0, size=11):
+        return Line(text, size, False, x0, 0, 300, 11, 10)
+
+    marked = mark_bullets([line("3.", 72, 12), line("Simpan proyekmu.", 90)])
+    assert [(m.text, m.bullet, m.number) for m in marked] == [
+        ("Simpan proyekmu.", True, "3.")
+    ]
+
+
+def test_isi_lama_dengan_tanda_butir_dirapikan_saat_dibaca():
+    from pdf_sections import normalize_content
+
+    old = (
+        "## Tujuan\n"
+        "Pada hari ini kamu akan belajar : "
+        + " ".join(f"● {item}" for item in SCRATCHJR_PAGE_2_ITEMS)
+        + "\n[[gambar:xref-14]]\n"
+        "• Sudah berupa butir\n"
+        "* Butir bintang\n"
+        "-5 derajat adalah suhu di bawah nol."
+    )
+    assert normalize_content(old).split("\n") == [
+        "## Tujuan",
+        "Pada hari ini kamu akan belajar :",
+        *[f"- {item}" for item in SCRATCHJR_PAGE_2_ITEMS],
+        "[[gambar:xref-14]]",
+        "- Sudah berupa butir",
+        "- Butir bintang",
+        "-5 derajat adalah suhu di bawah nol.",
+    ]
+
+
+def test_emoji_bola_lampu_di_refleksi_scratchjr_menjadi_butir():
+    """Seperti halaman 10 ScratchJR: tiga butir 💡 dalam satu baris."""
+    from pdf_sections import normalize_content
+
+    content = "💡 Siapa pengirimnya? 💡 Siapa penerimanya? 💡 Mengapa harus jelas?"
+    assert normalize_content(content).split("\n") == [
+        "- Siapa pengirimnya?",
+        "- Siapa penerimanya?",
+        "- Mengapa harus jelas?",
+    ]
+
+
+def test_lanjutan_butir_tanpa_indentasi_tetap_satu_butir():
+    """Seperti halaman 10 ScratchJR: baris lanjutan sejajar dengan tanda butir."""
+    pdf = make_pdf(
+        [
+            [
+                ("💡 Mengapa warna pesan pengirim", 11),
+                ("dan penerima harus sama?", 11),
+                ("💡 Siapa pengirimnya?", 11),
+                ("", 0),
+                ("Paragraf setelah daftar.", 11),
+            ]
+        ]
+    )
+    assert split_pdf_bytes(pdf)[0].content.split("\n") == [
+        "- Mengapa warna pesan pengirim dan penerima harus sama?",
+        "- Siapa pengirimnya?",
+        "Paragraf setelah daftar.",
+    ]

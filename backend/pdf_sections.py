@@ -21,7 +21,7 @@ kalau halaman tidak punya judul.
 import re
 import statistics
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pymupdf
 
@@ -29,13 +29,23 @@ SUBHEADING_PREFIX = "## "
 LIST_ITEM_PREFIX = "- "
 # Tanda butir simbol boleh langsung menempel ke teks ("●Mengenal").
 # , , , , : butir dari huruf Symbol/Wingdings
-# (PDF hasil Word).
-SYMBOL_BULLETS = "●•▪◦‣∙○■□◆◇➢➤►▸✓✔"
+# (PDF hasil Word). "·" muncul dari "•" di beberapa huruf PDF.
+# "💡" dipakai sebagai butir di materi ScratchJR.
+SYMBOL_BULLETS = "●•·▪◦‣∙○■□◆◇➢➤►▸✓✔💡"
 # Tanda butir yang juga dipakai dalam kalimat ("-5 derajat") hanya dihitung
 # butir kalau diikuti spasi.
-DASH_BULLETS = "-–—*·"
+DASH_BULLETS = "-–—*"
 BULLET_RE = re.compile(rf"^(?:[{SYMBOL_BULLETS}]\s*|[{re.escape(DASH_BULLETS)}]\s+)")
 BULLET_ONLY_RE = re.compile(rf"^[{SYMBOL_BULLETS}{re.escape(DASH_BULLETS)}]$")
+# Tanda butir simbol di tengah baris ("belajar: ● Membuka modul") memecah
+# baris di situ.
+INLINE_BULLET_RE = re.compile(rf"\s+(?=[{SYMBOL_BULLETS}]\s*\S)")
+# Nomor daftar: "1.", "2)", "a.". Huruf besar tidak dihitung supaya inisial
+# nama ("M. Rizki") tidak menjadi butir.
+NUMBER_RE = re.compile(r"^(\d{1,2}|[a-z])([.)])\s+(?=\S)")
+NUMBER_ONLY_RE = re.compile(r"^(\d{1,2}|[a-z])[.)]$")
+# Butir bernomor di isi halaman, nomor aslinya disimpan: "3. Buka aplikasi".
+NUMBERED_ITEM_RE = re.compile(r"^(\d{1,3}|[a-z])[.)] (?=\S)")
 HEADING_SIZE_RATIO = 1.15
 MAX_HEADING_LENGTH = 80
 MAX_BOLD_SUBHEADING_LENGTH = 60
@@ -70,6 +80,8 @@ class Line:
     y1: float
     baseline: float
     bullet: bool = False
+    # Nomor asli butir bernomor ("3."), kosong untuk butir bertanda simbol.
+    number: str = ""
     # Kunci urutan baca, diisi assign_reading_order.
     order: tuple = ()
 
@@ -80,6 +92,8 @@ class Block:
     text: str  # untuk "image": image_key
     size: float
     order: tuple = ()
+    # Nomor asli butir bernomor ("3."), kosong untuk butir bertanda simbol.
+    number: str = ""
 
 
 @dataclass
@@ -216,16 +230,28 @@ def merge_rows(lines: list[Line]) -> list[Line]:
     return merged
 
 
+def split_inline_bullets(text: str) -> list[str]:
+    """Memecah teks di tanda butir simbol yang ada di tengahnya. Bagian
+    sebelum butir pertama tetap kalimat biasa (kalimat pengantar)."""
+    return [part.strip() for part in INLINE_BULLET_RE.split(text) if part.strip()]
+
+
 def mark_bullets(lines: list[Line]) -> list[Line]:
     """Menandai baris butir dan membuang tanda butirnya.
 
-    Tanda butir bisa menempel di awal baris, atau menjadi baris sendiri
-    (ukuran atau huruf berbeda) yang sejajar dengan teks butirnya.
+    Tanda butir bisa menempel di awal baris, ada di tengah baris, atau
+    menjadi baris sendiri (ukuran atau huruf berbeda) yang sejajar dengan
+    teks butirnya. Nomor daftar ("1.", "a.") disimpan di `number`.
     """
     result: list[Line] = []
     pending: Line | None = None
-    for line in lines:
-        if BULLET_ONLY_RE.match(line.text):
+    parts = [
+        replace(line, text=text)
+        for line in lines
+        for text in split_inline_bullets(line.text)
+    ]
+    for line in parts:
+        if BULLET_ONLY_RE.match(line.text) or NUMBER_ONLY_RE.match(line.text):
             pending = line
             continue
         if (
@@ -234,14 +260,32 @@ def mark_bullets(lines: list[Line]) -> list[Line]:
             and line.x0 >= pending.x0
         ):
             line.bullet = True
+            if NUMBER_ONLY_RE.match(pending.text):
+                line.number = pending.text
             line.x0 = pending.x0
         pending = None
         match = BULLET_RE.match(line.text)
+        number = None if line.bullet else NUMBER_RE.match(line.text)
         if match and line.text[match.end() :].strip():
             line.text = line.text[match.end() :].strip()
             line.bullet = True
+        elif number:
+            line.number = number.group(1) + number.group(2)
+            line.text = line.text[number.end() :].strip()
+            line.bullet = True
         result.append(line)
     return result
+
+
+def unmark_numbered_headings(lines: list[Line], body_size: float) -> None:
+    """Judul bernomor ("2. Send Message") tetap judul, bukan butir."""
+    for line in lines:
+        if line.number and (
+            line.bold or line.size >= body_size * HEADING_SIZE_RATIO
+        ):
+            line.text = f"{line.number} {line.text}"
+            line.number = ""
+            line.bullet = False
 
 
 def body_font_size(lines: list[Line]) -> float:
@@ -265,9 +309,14 @@ def continues_paragraph(previous: Line, line: Line) -> bool:
 
 
 def continues_item(first: Line, line: Line) -> bool:
-    """Lanjutan butir menjorok ke kanan dari tanda butirnya. Baris yang
-    sejajar tanda butir sudah paragraf baru setelah daftar."""
-    return not first.bullet or line.x0 > first.x0 + 0.3 * line.size
+    """Lanjutan butir menjorok ke kanan dari tanda butirnya, atau sejajar
+    tetapi mulai dengan huruf kecil karena kalimatnya belum selesai. Baris
+    sejajar lainnya sudah paragraf baru setelah daftar."""
+    return (
+        not first.bullet
+        or line.x0 > first.x0 + 0.3 * line.size
+        or line.text[:1].islower()
+    )
 
 
 def join_lines(texts: list[str]) -> str:
@@ -294,6 +343,7 @@ def classify(text: str, line: Line, body_size: float) -> str:
 
 
 def group_blocks(lines: list[Line], body_size: float) -> list[Block]:
+    unmark_numbered_headings(lines, body_size)
     groups: list[list[Line]] = []
     for line in lines:
         if is_noise(line):
@@ -318,7 +368,9 @@ def group_blocks(lines: list[Line], body_size: float) -> list[Block]:
             continue
         text = join_lines([line.text for line in group])
         kind = "item" if group[0].bullet else classify(text, group[0], body_size)
-        blocks.append(Block(kind, text, group[0].size, group[0].order))
+        blocks.append(
+            Block(kind, text, group[0].size, group[0].order, group[0].number)
+        )
     return blocks
 
 
@@ -469,8 +521,33 @@ def content_line(block: Block) -> str:
     if block.kind == "paragraph":
         return block.text
     if block.kind == "item":
+        if block.number:
+            return f"{block.number} {block.text}"
         return LIST_ITEM_PREFIX + block.text
     return SUBHEADING_PREFIX + block.text
+
+
+def normalize_content(content: str) -> str:
+    """Merapikan butir di isi halaman yang tersimpan: tanda butir di tengah
+    baris dipecah dan tanda simbol diganti awalan daftar. Dipakai untuk
+    materi lama yang diekstrak sebelum butir dikenali, dan teks ketikan guru.
+    """
+    lines = []
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if (
+            not stripped
+            or IMAGE_MARKER_RE.match(stripped)
+            or stripped.startswith(SUBHEADING_PREFIX)
+        ):
+            lines.append(line)
+            continue
+        for part in split_inline_bullets(stripped):
+            match = BULLET_RE.match(part)
+            if match and part[match.end() :].strip():
+                part = LIST_ITEM_PREFIX + part[match.end() :].strip()
+            lines.append(part)
+    return "\n".join(lines)
 
 
 def image_keys(content: str) -> list[str]:

@@ -217,3 +217,21 @@ def test_buat_kuis_dan_jadwal(client, login, fake_db):
 def test_endpoint_debug_mati_secara_bawaan(client, fake_db):
     assert client.post("/test-login").status_code == 404
     assert client.get("/test-supabase").status_code == 404
+
+
+def test_isi_halaman_lama_dirapikan_saat_dibaca_siswa(client, login, fake_db):
+    setup_subject(client, login, fake_db)
+    fake_db["material_sections"] = [
+        {
+            "id": "s1",
+            "material_id": "m1",
+            "position": 1,
+            "title": "Tujuan",
+            "content": "Kamu akan belajar: ● Membuka modul ● Mengenal blok",
+        }
+    ]
+    response = client.get("/materials/m1/sections")
+    assert response.status_code == 200, response.text
+    assert response.json()["sections"][0]["content"] == (
+        "Kamu akan belajar:\n- Membuka modul\n- Mengenal blok"
+    )

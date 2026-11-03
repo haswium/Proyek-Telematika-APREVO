@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aprevo/models/models.dart';
 import 'package:aprevo/screens/student/section_reader_screen.dart';
 import 'package:aprevo/widgets/common.dart';
 
@@ -238,5 +239,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Daftar materi'), findsOneWidget);
     expect(find.byType(MaterialSectionsScreen), findsNothing);
+  });
+
+  testWidgets('halaman 2 ScratchJR: daftar bertitik dan bernomor digambar '
+      'aplikasi, tiap butir satu fokus', (tester) async {
+    tallScreen(tester);
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      testApp(
+        SectionReaderScreen(
+          materialTitle: 'ScratchJR',
+          sections: [
+            MaterialSection(
+              id: 's2',
+              position: 2,
+              title: '2. Send Message dan Receive Message',
+              content:
+                  'Pada hari ini kamu akan belajar:\n'
+                  '- Membuka modul pembelajaran CodeJR.\n'
+                  '- Mengenal code block Send Message di CodeJR.\n'
+                  '- Mengenal code block Receive Message di CodeJR.\n'
+                  '- Membuat satu project CodeJR dengan tema Amplop Ajaib.\n'
+                  'Langkah pembuatan:\n'
+                  '10. Klik icon gambar.\n'
+                  '11. Masukkan 2 sprite.\n'
+                  '12. Simpan proyekmu.\n'
+                  'a) Sprite Budi\n'
+                  'b) Sprite Gia',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final intro = find.bySemanticsLabel('Pada hari ini kamu akan belajar:');
+    final first = find.bySemanticsLabel(
+      'Butir 1 dari 4: Membuka modul pembelajaran CodeJR.',
+    );
+    final last = find.bySemanticsLabel(
+      'Butir 4 dari 4: Membuat satu project CodeJR dengan tema Amplop Ajaib.',
+    );
+    expect(intro, findsOneWidget);
+    expect(first, findsOneWidget);
+    expect(last, findsOneWidget);
+    expect(tester.getTopLeft(intro).dy, lessThan(tester.getTopLeft(first).dy));
+    // Tanda butir digambar, bukan teks.
+    expect(find.textContaining('•'), findsNothing);
+    expect(find.textContaining('- '), findsNothing);
+    expect(find.text('Membuka modul pembelajaran CodeJR.'), findsOneWidget);
+
+    // Daftar bernomor memakai nomor aslinya, dibacakan kalau berbeda dari
+    // urutannya.
+    expect(find.text('10.'), findsOneWidget);
+    expect(find.text('Klik icon gambar.'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Butir 1 dari 3, nomor 10: Klik icon gambar.'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('Butir 3 dari 3, nomor 12: Simpan proyekmu.'),
+      findsOneWidget,
+    );
+    expect(find.text('a)'), findsOneWidget);
+    expect(find.bySemanticsLabel('Butir 2 dari 2: Sprite Gia'), findsOneWidget);
+    handle.dispose();
+  });
+
+  test('label butir menyebut nomor asli hanya kalau berbeda', () {
+    expect(listItemLabel(0, 2, null, 'Satu'), 'Butir 1 dari 2: Satu');
+    expect(listItemLabel(1, 2, '2.', 'Dua'), 'Butir 2 dari 2: Dua');
+    expect(listItemLabel(0, 2, '3)', 'Tiga'), 'Butir 1 dari 2, nomor 3: Tiga');
+    expect(listItemLabel(1, 2, 'b.', 'Bola'), 'Butir 2 dari 2: Bola');
   });
 }

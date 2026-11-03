@@ -28,7 +28,13 @@ from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
 import logging
-from pdf_sections import image_keys, page_images, plain_text, split_pdf_bytes
+from pdf_sections import (
+    image_keys,
+    normalize_content,
+    page_images,
+    plain_text,
+    split_pdf_bytes,
+)
 from ai_client import GeminiKeyMissing, gemini_client
 from ai_quiz import generate_quiz
 from PIL import UnidentifiedImageError
@@ -2766,9 +2772,13 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
         .order("position")
         .execute()
     )
+    sections = sections_response.data or []
+    # Materi lama dan teks ketikan guru bisa masih memuat tanda butir.
+    for section in sections:
+        section["content"] = normalize_content(section.get("content") or "")
     return {
         "material": {"id": material["id"], "title": material["title"]},
-        "sections": sections_response.data or [],
+        "sections": sections,
         # Deskripsi untuk penanda [[gambar:...]] di isi halaman.
         "images": [public_image(row) for row in material_image_rows(material_id)],
     }
