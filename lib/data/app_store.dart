@@ -174,6 +174,17 @@ class AppStore extends ChangeNotifier {
 
   // ---- Guru.
 
+  Future<SubjectDeleteSummary> subjectDeleteSummary(String subjectId) async =>
+      SubjectDeleteSummary.fromJson(
+        await api.get('/teacher/subjects/$subjectId/delete-summary'),
+      );
+
+  /// Menghapus kelas beserta seluruh isinya.
+  Future<void> deleteSubject(String subjectId) async {
+    await api.delete('/teacher/subjects/$subjectId');
+    notifyListeners();
+  }
+
   /// Daftar anggota kelas untuk guru pemilik.
   Future<List<SubjectMember>> subjectMembers(String subjectId) async {
     final data = await api.get('/teacher/subjects/$subjectId/members');

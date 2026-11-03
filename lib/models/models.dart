@@ -206,6 +206,31 @@ extension TestKindInfo on TestKind {
   String get api => this == TestKind.pre ? 'pre' : 'post';
 }
 
+/// Isi kelas yang ikut terhapus, untuk dialog konfirmasi guru.
+class SubjectDeleteSummary {
+  const SubjectDeleteSummary({
+    required this.materials,
+    required this.quizzes,
+    required this.students,
+  });
+
+  factory SubjectDeleteSummary.fromJson(Map<String, dynamic> json) =>
+      SubjectDeleteSummary(
+        materials: _int(json['material_count']),
+        quizzes: _int(json['quiz_count']),
+        students: _int(json['student_count']),
+      );
+
+  final int materials;
+  final int quizzes;
+  final int students;
+
+  String warning(String subjectName) =>
+      'Kelas $subjectName akan dihapus permanen beserta $materials materi, '
+      '$quizzes kuis, nilai, dan $students anggota. Tindakan ini tidak bisa '
+      'dibatalkan.';
+}
+
 /// Satu siswa di daftar anggota kelas untuk guru.
 class SubjectMember {
   SubjectMember({

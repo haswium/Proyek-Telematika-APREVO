@@ -285,6 +285,18 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 22.8 | Fokus ke daftar teman | Hanya nama, satu fokus per baris, tanpa email. Baris sendiri: "[nama], ini kamu" | | |
 | 22.9 | Siswa yang dikeluarkan membuka kelas itu lagi | Pesan bahwa dia belum bergabung, bukan layar kosong | | |
 
+## 23. Hapus kelas
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 23.1 | Guru, halaman kelas, geser sampai habis | "Hapus kelas" adalah tombol terakhir, terpisah dari menu lain | | |
+| 23.2 | Ketuk dua kali "Hapus kelas" | Dialog terbuka. Terdengar "Kelas [nama] akan dihapus permanen beserta [n] materi, [n] kuis, nilai, dan [n] anggota. Tindakan ini tidak bisa dibatalkan." | | |
+| 23.3 | Perhatikan fokus awal di dialog | Fokus TalkBack ada di tombol "Batal", bukan "Ya, hapus kelas". **Wajib dicek di HP**, tes otomatis hanya memeriksa fokus input | | |
+| 23.4 | Pilih "Batal" | Dialog tertutup, kelas tetap ada | | |
+| 23.5 | Ulangi, pilih "Ya, hapus kelas" | Kembali ke daftar kelas, terdengar "Kelas [nama] dihapus", kelas hilang dari daftar | | |
+| 23.6 | Siswa membuka kelas itu dari layar yang masih terbuka, atau menarik ulang | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke daftar kelas". Tidak ada tombol "Coba lagi" | | |
+| 23.7 | Siswa memasukkan kode akses kelas itu | "Kelas ini sudah dihapus guru." dibacakan | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

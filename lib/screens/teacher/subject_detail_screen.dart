@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
+import '../../services/announce.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -32,6 +34,21 @@ class SubjectDetailScreen extends StatelessWidget {
         builder: (_) =>
             MaterialEditorScreen(subject: subject, material: material),
       ),
+    );
+  }
+
+  Future<void> _deleteSubject(BuildContext context) async {
+    final deleted = await showDialog<bool>(
+      context: context,
+      // Tidak tertutup tanpa sengaja selama penghapusan berjalan.
+      barrierDismissible: false,
+      builder: (_) => _DeleteSubjectDialog(subject: subject),
+    );
+    if (deleted != true || !context.mounted) return;
+    Navigator.popUntil(context, (route) => route.isFirst);
+    // Setelah frame, supaya tidak tertimpa pembacaan layar daftar kelas.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => announce('Kelas ${subject.name} dihapus'),
     );
   }
 
@@ -125,11 +142,122 @@ class SubjectDetailScreen extends StatelessWidget {
                     'publikasi.',
                     style: AppType.bodySmall,
                   ),
+                // Paling bawah dan berjarak, supaya tidak tertekan tanpa sengaja.
+                const SizedBox(height: 64),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Hapus kelas'),
+                  onPressed: () => _deleteSubject(context),
+                ),
               ],
             );
           },
         ),
       ),
+    );
+  }
+}
+
+/// Langkah kedua sebelum kelas dihapus: menyebut apa saja yang ikut terhapus.
+class _DeleteSubjectDialog extends StatefulWidget {
+  const _DeleteSubjectDialog({required this.subject});
+
+  final Subject subject;
+
+  @override
+  State<_DeleteSubjectDialog> createState() => _DeleteSubjectDialogState();
+}
+
+class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
+  SubjectDeleteSummary? _summary;
+  bool _busy = false;
+  String? _error;
+  int _errorSerial = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSummary();
+  }
+
+  Future<void> _loadSummary() async {
+    try {
+      final summary = await store.subjectDeleteSummary(widget.subject.id);
+      if (!mounted) return;
+      setState(() => _summary = summary);
+      // Fokus awal ada di tombol Batal, jadi peringatannya harus dibacakan.
+      announce(summary.warning(widget.subject.name));
+    } on ApiException catch (e) {
+      _showError(e);
+    }
+  }
+
+  void _showError(ApiException e) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = e.message;
+      _errorSerial++;
+    });
+  }
+
+  Future<void> _delete() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await store.deleteSubject(widget.subject.id);
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      _showError(e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _summary;
+    final buttonStyle = TextButton.styleFrom(
+      minimumSize: const Size(kTouchTarget, kTouchTarget),
+    );
+    return AlertDialog(
+      title: Text('Hapus kelas ${widget.subject.name}?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (summary != null)
+              Text(
+                summary.warning(widget.subject.name),
+                style: AppType.bodyMedium,
+              )
+            else if (_error == null)
+              Text('Memuat isi kelas.', style: AppType.bodyMedium),
+            if (_busy) ...[
+              const SizedBox(height: 12),
+              Text('Sedang menghapus kelas.', style: AppType.bodyMedium),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              ErrorCard(key: ErrorCard.keyFor(_errorSerial), message: _error!),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          autofocus: true,
+          style: buttonStyle,
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('Batal'),
+        ),
+        TextButton(
+          style: buttonStyle,
+          onPressed: _busy || summary == null ? null : _delete,
+          child: const Text('Ya, hapus kelas'),
+        ),
+      ],
     );
   }
 }

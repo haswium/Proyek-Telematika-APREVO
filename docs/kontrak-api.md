@@ -212,11 +212,27 @@ untuk materi kelas ini. Nilainya tetap tersimpan. Siswa bisa bergabung lagi deng
 kode akses, dan nilainya muncul lagi. Respons: `{"message", "student_count"}`.
 Error: `404` kelas tidak ditemukan, bukan milik guru, atau siswa bukan anggota.
 
+### GET `/teacher/subjects/{subject_id}/delete-summary`
+
+Hanya guru pemilik. Isi yang ikut terhapus, untuk dialog konfirmasi. Respons:
+`{"material_count", "quiz_count", "student_count"}`. Error: `404` kelas tidak
+ditemukan atau bukan milik guru.
+
+### DELETE `/teacher/subjects/{subject_id}`
+
+Hanya guru pemilik. Menghapus permanen materi, halaman, gambar, kuis, soal, hasil,
+jawaban, anggota, serta berkas di Storage `materials-pdf` dan `material-images`.
+Baris kelas tetap ada dengan `deleted_at` terisi, hanya berisi nama dan kode akses,
+supaya siswa mendapat penjelasan dan kode aksesnya tidak dipakai ulang. Respons:
+`{"message", "subject": {id, name}}`. Error: `404` kelas tidak ditemukan atau bukan
+milik guru, `500` gagal di tengah; kelas masih ada dan bisa dihapus ulang.
+
 ### POST `/student/subjects/join`
 
 Body `{"code": "KXPRTA"}`. Huruf kecil, spasi, dan strip diabaikan. Bergabung
 ulang tidak error. Respons: `{"message", "already_joined", "subject": {id,
-name}}`. Error: `400` format kode salah, `404` kode tidak ditemukan.
+name}}`. Error: `400` format kode salah, `404` kode tidak ditemukan, `410` kelas
+sudah dihapus guru.
 
 ### GET `/student/subjects`
 
@@ -227,11 +243,13 @@ Respons: `{"subjects": [{id, name, teacher_name, material_count, joined_at}]}`.
 
 Hanya anggota. Respons: `{"subject": {id, name}, "teacher_name", "student_count",
 "classmates": [{name, is_me}]}`, urut nama, tanpa id, email, dan tanggal bergabung.
-Error: `403` belum bergabung, `404` kelas tidak ditemukan.
+Error: `403` belum bergabung, `404` kelas tidak ditemukan, `410` kelas sudah dihapus
+guru (`"Kelas ini sudah dihapus guru"`).
 
 ### GET `/student/subjects/{subject_id}/materials`
 
-Hanya anggota. Materi yang dipublikasikan beserta status kuis:
+Hanya anggota. `410` kalau kelas sudah dihapus guru. Materi yang dipublikasikan
+beserta status kuis:
 
 ```json
 {

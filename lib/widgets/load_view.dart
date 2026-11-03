@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../services/announce.dart';
+import '../services/api_client.dart';
 import '../theme/app_theme.dart';
 import 'common.dart';
 
@@ -59,6 +60,9 @@ class _LoadViewState<T> extends State<LoadView<T>> {
   T? _data;
   bool _hasData = false;
   bool _loading = false;
+
+  /// Isi layar sudah tidak ada lagi (HTTP 410), misalnya kelas dihapus guru.
+  String? _gone;
 
   /// Store berubah saat sedang memuat: muat sekali lagi setelahnya.
   bool _again = false;
@@ -116,27 +120,41 @@ class _LoadViewState<T> extends State<LoadView<T>> {
         _error = null;
         _loading = false;
       });
-    } catch (e) {
+    } on ApiException catch (e) {
       if (!mounted || serial != _serial) return;
-      _failures++;
-      if (_hasData && _failures < widget.failuresBeforeError) {
-        // Gangguan sesaat: data lama tetap tampil, coba lagi diam-diam.
-        setState(() => _loading = false);
-        _retryTimer?.cancel();
-        _retryTimer = Timer(widget.retryDelay, () {
-          if (mounted) _load(announceLoading: false);
-        });
-      } else {
-        final message = e.toString();
+      if (e.statusCode == 410) {
         setState(() {
-          _error = message;
+          _gone = e.message;
           _loading = false;
         });
+      } else {
+        _onFailure(e);
       }
+    } catch (e) {
+      if (!mounted || serial != _serial) return;
+      _onFailure(e);
     }
     if (_again && mounted) {
       _again = false;
       _load(announceLoading: false);
+    }
+  }
+
+  void _onFailure(Object e) {
+    _failures++;
+    if (_hasData && _failures < widget.failuresBeforeError) {
+      // Gangguan sesaat: data lama tetap tampil, coba lagi diam-diam.
+      setState(() => _loading = false);
+      _retryTimer?.cancel();
+      _retryTimer = Timer(widget.retryDelay, () {
+        if (mounted) _load(announceLoading: false);
+      });
+    } else {
+      final message = e.toString();
+      setState(() {
+        _error = message;
+        _loading = false;
+      });
     }
   }
 
@@ -165,6 +183,27 @@ class _LoadViewState<T> extends State<LoadView<T>> {
 
   @override
   Widget build(BuildContext context) {
+    final gone = _gone;
+    if (gone != null) {
+      // Bukan gangguan yang bisa dicoba lagi, jadi tanpa tombol "Coba lagi".
+      return _wrap([
+        Semantics(
+          container: true,
+          liveRegion: true,
+          child: AppCard(
+            color: AppColors.highlight,
+            child: Text(gone, style: AppType.titleMedium),
+          ),
+        ),
+        const SizedBox(height: 16),
+        PrimaryButton(
+          label: 'Kembali ke daftar kelas',
+          icon: Icons.arrow_back,
+          onPressed: () =>
+              Navigator.popUntil(context, (route) => route.isFirst),
+        ),
+      ]);
+    }
     if (_error != null) {
       return _wrap([
         ErrorCard(key: ErrorCard.keyFor(_serial), message: _error!),
