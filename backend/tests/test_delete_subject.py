@@ -198,7 +198,42 @@ def test_tanpa_login_ditolak(client, kelas, fake_db):
     assert len(fake_db["materials"]) == 2
 
 
-def test_storage_gagal_data_masih_utuh_dan_bisa_diulang(
+def unfinished(client):
+    return client.get("/teacher/subjects").json()["unfinished_deletions"]
+
+
+def test_urutan_penanda_data_storage_lalu_alamat_berkas(
+    client, kelas, fake_db, storage, monkeypatch
+):
+    """Saat Storage dipanggil, kelas sudah ditandai dan data lain sudah habis,
+    tetapi baris yang menyimpan alamat berkas masih ada."""
+    seen = {}
+    original = storage.from_
+
+    def spy(bucket):
+        seen.setdefault(
+            bucket,
+            {
+                "deleted": next(
+                    s for s in fake_db["subjects"] if s["id"] == kelas.id
+                )["deleted_at"],
+                "quizzes": [q["id"] for q in fake_db["quizzes"]],
+                "materials": [m["id"] for m in fake_db["materials"]],
+                "images": [i["id"] for i in fake_db["material_images"]],
+            },
+        )
+        return original(bucket)
+
+    monkeypatch.setattr(storage, "from_", spy)
+    assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 200
+    for bucket in ("material-images", "materials-pdf"):
+        assert seen[bucket]["deleted"] is not None
+        assert seen[bucket]["quizzes"] == ["lain-quizzes"]
+        assert "m1" in seen[bucket]["materials"]
+        assert "ipa-material_images" in seen[bucket]["images"]
+
+
+def test_storage_gagal_alamat_berkas_tersisa_dan_bisa_dilanjutkan(
     client, kelas, fake_db, storage, monkeypatch
 ):
     original = storage.from_
@@ -216,14 +251,25 @@ def test_storage_gagal_data_masih_utuh_dan_bisa_diulang(
     response = client.delete(f"/teacher/subjects/{kelas.id}")
     assert response.status_code == 500
     assert response.json()["detail"] == "Kelas belum terhapus sepenuhnya. Coba lagi"
-    assert len(fake_db["materials"]) == 2
-    assert kelas.id in [
-        s["id"] for s in client.get("/teacher/subjects").json()["subjects"]
-    ]
+    # Kelas sudah hilang dari daftar, data lain sudah habis, alamat berkas tersisa.
+    subjects = client.get("/teacher/subjects").json()["subjects"]
+    assert kelas.id not in [s["id"] for s in subjects]
+    assert [row["id"] for row in unfinished(client)] == [kelas.id]
+    assert any(m["id"] == "m1" for m in fake_db["materials"])
+    assert not any("ipa" in q["id"] for q in fake_db["quizzes"])
+    # Siswa sudah mendapat pesan yang jelas.
+    teacher = main.app.dependency_overrides[main.get_current_user]
+    act_as(kelas.student)
+    assert client.get(f"/student/subjects/{kelas.id}/materials").status_code == 410
+    main.app.dependency_overrides[main.get_current_user] = teacher
 
     monkeypatch.setattr(storage, "from_", original)
     assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 200
     assert ("materials-pdf", "ipa.pdf") not in storage.files
+    assert ("material-images", "ipa.png") not in storage.files
+    assert not any(m["id"] == "m1" for m in fake_db["materials"])
+    assert unfinished(client) == []
+    assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 404
 
 
 def test_gagal_di_tengah_kelas_masih_ada_dan_bisa_diulang(
@@ -240,11 +286,35 @@ def test_gagal_di_tengah_kelas_masih_ada_dan_bisa_diulang(
     monkeypatch.setattr(Query, "execute", execute)
     assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 500
     subject = next(s for s in fake_db["subjects"] if s["id"] == kelas.id)
-    assert subject["deleted_at"] is None
+    first_mark = subject["deleted_at"]
+    assert first_mark is not None
+    assert [row["id"] for row in unfinished(client)] == [kelas.id]
 
     armed["on"] = False
     assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 200
     assert not any(m["id"] == "m1" for m in fake_db["materials"])
+    assert not any("ipa" in str(r.get("id")) for r in fake_db["material_sections"])
+    # Penanda waktu pertama tidak ditimpa, dan daftar sudah bersih.
+    assert subject["deleted_at"] == first_mark
+    assert unfinished(client) == []
+
+
+def test_guru_lain_tidak_bisa_melanjutkan_penghapusan(
+    client, kelas, login, fake_db, monkeypatch
+):
+    original = Query.execute
+
+    def execute(self):
+        if self.action == "delete" and self.table == "material_sections":
+            raise RuntimeError("Database putus")
+        return original(self)
+
+    monkeypatch.setattr(Query, "execute", execute)
+    assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 500
+    monkeypatch.setattr(Query, "execute", original)
+    login("teacher", "Guru Lain")
+    assert client.delete(f"/teacher/subjects/{kelas.id}").status_code == 404
+    assert unfinished(client) == []
 
 
 def test_kelas_tanpa_isi(client, login, fake_db, storage):

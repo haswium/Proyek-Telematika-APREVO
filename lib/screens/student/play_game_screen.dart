@@ -43,19 +43,21 @@ class PlayGameScreen extends StatelessWidget {
     return PurpleScaffold(
       appBar: aprevoAppBar('${quiz.kind.label}: $materialTitle'),
       body: SafeArea(
-        child: LoadView<QuizSession>(
-          listenToStore: false,
-          loadingMessage: 'Menyiapkan soal ${quiz.kind.label}.',
-          load: () => store.startQuiz(quiz.id),
-          builder: (context, session, _) => session.questions.isEmpty
-              ? const EmptyState(message: 'Kuis ini belum punya soal.')
-              : _QuizRunner(
-                  session: session,
-                  quiz: quiz,
-                  materialTitle: materialTitle,
-                  studentName: studentName,
-                  preTest: preTest,
-                ),
+        child: SubjectGoneGuard(
+          child: LoadView<QuizSession>(
+            listenToStore: false,
+            loadingMessage: 'Menyiapkan soal ${quiz.kind.label}.',
+            load: () => store.startQuiz(quiz.id),
+            builder: (context, session, _) => session.questions.isEmpty
+                ? const EmptyState(message: 'Kuis ini belum punya soal.')
+                : _QuizRunner(
+                    session: session,
+                    quiz: quiz,
+                    materialTitle: materialTitle,
+                    studentName: studentName,
+                    preTest: preTest,
+                  ),
+          ),
         ),
       ),
     );

@@ -294,8 +294,12 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 23.3 | Perhatikan fokus awal di dialog | Fokus TalkBack ada di tombol "Batal", bukan "Ya, hapus kelas". **Wajib dicek di HP**, tes otomatis hanya memeriksa fokus input | | |
 | 23.4 | Pilih "Batal" | Dialog tertutup, kelas tetap ada | | |
 | 23.5 | Ulangi, pilih "Ya, hapus kelas" | Kembali ke daftar kelas, terdengar "Kelas [nama] dihapus", kelas hilang dari daftar | | |
-| 23.6 | Siswa membuka kelas itu dari layar yang masih terbuka, atau menarik ulang | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke daftar kelas". Tidak ada tombol "Coba lagi" | | |
+| 23.6 | Siswa membuka kelas itu dari layar yang masih terbuka, atau menarik ulang | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda". Tidak ada tombol "Coba lagi" | | |
 | 23.7 | Siswa memasukkan kode akses kelas itu | "Kelas ini sudah dihapus guru." dibacakan | | |
+| 23.8 | Siswa sedang membaca materi, guru menghapus kelasnya, siswa menekan "Halaman berikutnya" | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda". Tanpa menekan apa pun, pesan muncul paling lama 30 detik | | |
+| 23.9 | Siswa sedang mengerjakan kuis, guru menghapus kelasnya, siswa mengirim jawaban | Pesan yang sama, bukan "Jawaban belum terkirim" | | |
+| 23.10 | Penghapusan gagal di tengah (matikan server saat menghapus), lalu buka daftar kelas | Terdengar "Penghapusan kelas [nama] belum selesai", lalu tombol "Lanjutkan hapus kelas [nama]" | | |
+| 23.11 | Ketuk dua kali tombol itu | "Kelas [nama] dihapus" dibacakan, kartunya hilang | | |
 
 ## Tanpa TalkBack
 

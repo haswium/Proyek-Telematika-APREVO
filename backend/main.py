@@ -1869,6 +1869,14 @@ def list_teacher_subjects(auth=Depends(require_teacher)):
         )
         for row in materials_response.data or []:
             material_counts[row["subject_id"]] += 1
+    deleted = (
+        supabase_admin.table("subjects")
+        .select("id, name")
+        .eq("teacher_id", auth["user_id"])
+        .not_.is_("deleted_at", "null")
+        .execute()
+    ).data or []
+    leftovers = subjects_with_leftovers([row["id"] for row in deleted])
     return {
         "subjects": [
             {
@@ -1877,7 +1885,9 @@ def list_teacher_subjects(auth=Depends(require_teacher)):
                 "material_count": material_counts[subject["id"]],
             }
             for subject in subjects
-        ]
+        ],
+        # Penghapusan yang berhenti di tengah, untuk dilanjutkan guru.
+        "unfinished_deletions": [row for row in deleted if row["id"] in leftovers],
     }
 
 
@@ -2662,8 +2672,11 @@ def remove_subject_member(
 
 # Isi satu materi dalam urutan aman untuk foreign key: anak dihapus sebelum
 # induknya, dan jawaban sebelum soal yang dirujuknya. Bentuk tiap baris:
-# (tabel, kolom yang menunjuk ke induk, anak-anaknya).
+# (tabel, kolom yang menunjuk ke induk, anak-anaknya). material_images dan
+# materials tidak ada di sini: keduanya menyimpan alamat berkas Storage, jadi
+# dihapus paling akhir.
 MATERIAL_CHILD_TABLES = (
+    ("material_access", "material_id", ()),
     (
         "quizzes",
         "material_id",
@@ -2695,9 +2708,7 @@ MATERIAL_CHILD_TABLES = (
             ),
         ),
     ),
-    ("material_images", "material_id", ()),
     ("material_sections", "material_id", ()),
-    ("material_access", "material_id", ()),
 )
 # Alamat permintaan punya batas panjang, dan select dibatasi 1000 baris.
 DELETE_CHUNK_SIZE = 100
@@ -2759,20 +2770,61 @@ def subject_delete_summary(subject_id: str, auth=Depends(require_teacher)):
     }
 
 
+def subjects_with_leftovers(subject_ids):
+    """Kelas terhapus yang isinya belum habis. Baris materials dan anggota
+    hanya tersisa kalau penghapusan berhenti di tengah."""
+    if not subject_ids:
+        return set()
+    left = set()
+    for table in ("materials", "subject_students"):
+        rows = (
+            supabase_admin.table(table)
+            .select("subject_id")
+            .in_("subject_id", subject_ids)
+            .execute()
+        ).data or []
+        left |= {row["subject_id"] for row in rows}
+    return left
+
+
 @app.delete("/teacher/subjects/{subject_id}")
 def delete_subject(subject_id: str, auth=Depends(require_teacher)):
-    """Menghapus kelas beserta seluruh isinya.
+    """Menghapus kelas beserta seluruh isinya, dan melanjutkan penghapusan yang
+    berhenti di tengah.
 
-    Berkas Storage dihapus lebih dulu: kalau gagal, data belum berubah dan
-    alamat berkasnya tidak hilang. Baris kelas sendiri tetap ada dengan
-    `deleted_at` terisi, tanpa isi apa pun, supaya siswa yang membuka kelas ini
-    mendapat penjelasan. Kelas baru ditandai terhapus setelah isinya habis, jadi
-    kalau gagal di tengah, kelas masih tampil dan guru bisa mengulang.
+    Urutannya: tandai `deleted_at` supaya kelas langsung hilang dari guru dan
+    siswa, hapus data, hapus berkas Storage, lalu hapus material_images dan
+    materials. Dua tabel itu terakhir karena hanya di sanalah alamat berkas
+    tersimpan: kalau Storage gagal, alamatnya masih ada untuk diulang. Baris kelas
+    tetap ada, tanpa isi apa pun, supaya siswa yang membuka kelas ini mendapat
+    penjelasan.
     """
-    subject = get_owned_subject(subject_id, auth["user_id"])
+    subject = (
+        supabase_admin.table("subjects")
+        .select("id, name, teacher_id, deleted_at")
+        .eq("id", subject_id)
+        .eq("teacher_id", auth["user_id"])
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if subject is None or (
+        subject.get("deleted_at") and subject_id not in subjects_with_leftovers([subject_id])
+    ):
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     try:
+        if not subject.get("deleted_at"):
+            supabase_admin.table("subjects").update(
+                {"deleted_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", subject_id).execute()
+        # Anggota lebih dulu supaya siswa langsung kehilangan akses.
+        supabase_admin.table("subject_students").delete().eq(
+            "subject_id", subject_id
+        ).execute()
         materials = subject_material_rows(subject_id)
         material_ids = [row["id"] for row in materials]
+        for table, column, children in MATERIAL_CHILD_TABLES:
+            delete_rows(table, column, material_ids, children)
         remove_from_storage(
             "material-images",
             [
@@ -2786,15 +2838,8 @@ def delete_subject(subject_id: str, auth=Depends(require_teacher)):
             "materials-pdf",
             [row["file_url"] for row in materials if row.get("file_url")],
         )
-        for table, column, children in MATERIAL_CHILD_TABLES:
-            delete_rows(table, column, material_ids, children)
+        delete_rows("material_images", "material_id", material_ids, ())
         delete_rows("materials", "id", material_ids, ())
-        supabase_admin.table("subject_students").delete().eq(
-            "subject_id", subject_id
-        ).execute()
-        supabase_admin.table("subjects").update(
-            {"deleted_at": datetime.now(timezone.utc).isoformat()}
-        ).eq("id", subject_id).execute()
     except Exception as error:
         logger.exception("Gagal menghapus kelas %s", subject_id)
         raise HTTPException(

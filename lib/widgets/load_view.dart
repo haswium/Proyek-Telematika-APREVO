@@ -185,24 +185,7 @@ class _LoadViewState<T> extends State<LoadView<T>> {
   Widget build(BuildContext context) {
     final gone = _gone;
     if (gone != null) {
-      // Bukan gangguan yang bisa dicoba lagi, jadi tanpa tombol "Coba lagi".
-      return _wrap([
-        Semantics(
-          container: true,
-          liveRegion: true,
-          child: AppCard(
-            color: AppColors.highlight,
-            child: Text(gone, style: AppType.titleMedium),
-          ),
-        ),
-        const SizedBox(height: 16),
-        PrimaryButton(
-          label: 'Kembali ke daftar kelas',
-          icon: Icons.arrow_back,
-          onPressed: () =>
-              Navigator.popUntil(context, (route) => route.isFirst),
-        ),
-      ]);
+      return _wrap(goneNotice(context, gone));
     }
     if (_error != null) {
       return _wrap([
@@ -222,6 +205,75 @@ class _LoadViewState<T> extends State<LoadView<T>> {
       context,
       _data as T,
       () => _load(announceLoading: false),
+    );
+  }
+}
+
+/// Isi layar yang sudah tidak ada, misalnya kelas dihapus guru. Bukan gangguan
+/// yang bisa dicoba lagi, jadi tanpa tombol "Coba lagi".
+List<Widget> goneNotice(BuildContext context, String message) => [
+  Semantics(
+    container: true,
+    liveRegion: true,
+    child: AppCard(
+      color: AppColors.highlight,
+      child: Text(message, style: AppType.titleMedium),
+    ),
+  ),
+  const SizedBox(height: 16),
+  PrimaryButton(
+    label: 'Kembali ke beranda',
+    icon: Icons.arrow_back,
+    onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
+  ),
+];
+
+/// Seberapa sering kelas diperiksa selama layar baca atau kuis terbuka.
+const Duration kSubjectCheckInterval = Duration(seconds: 30);
+
+/// Mengganti isi layar dengan pesan kalau kelas yang dibuka siswa dihapus guru.
+/// Layar baca tidak meminta data lagi setelah halamannya termuat, jadi kelasnya
+/// diperiksa berkala. Di layar guru tidak ada yang diperiksa.
+class SubjectGoneGuard extends StatefulWidget {
+  const SubjectGoneGuard({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<SubjectGoneGuard> createState() => _SubjectGoneGuardState();
+}
+
+class _SubjectGoneGuardState extends State<SubjectGoneGuard> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    store.addListener(_onStoreChanged);
+    _timer = Timer.periodic(
+      kSubjectCheckInterval,
+      (_) => store.checkOpenSubject(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    store.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gone = store.openSubjectGone;
+    if (gone == null) return widget.child;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: goneNotice(context, gone),
     );
   }
 }

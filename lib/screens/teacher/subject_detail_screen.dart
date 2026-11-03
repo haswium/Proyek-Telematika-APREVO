@@ -38,17 +38,26 @@ class SubjectDetailScreen extends StatelessWidget {
   }
 
   Future<void> _deleteSubject(BuildContext context) async {
-    final deleted = await showDialog<bool>(
+    final outcome = await showDialog<_DeleteOutcome>(
       context: context,
       // Tidak tertutup tanpa sengaja selama penghapusan berjalan.
       barrierDismissible: false,
       builder: (_) => _DeleteSubjectDialog(subject: subject),
     );
-    if (deleted != true || !context.mounted) return;
+    if (outcome == null ||
+        outcome == _DeleteOutcome.cancelled ||
+        !context.mounted) {
+      return;
+    }
     Navigator.popUntil(context, (route) => route.isFirst);
     // Setelah frame, supaya tidak tertimpa pembacaan layar daftar kelas.
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => announce('Kelas ${subject.name} dihapus'),
+      (_) => announce(
+        outcome == _DeleteOutcome.deleted
+            ? 'Kelas ${subject.name} dihapus'
+            : 'Penghapusan kelas ${subject.name} belum selesai. Lanjutkan dari '
+                  'daftar kelas.',
+      ),
     );
   }
 
@@ -158,6 +167,15 @@ class SubjectDetailScreen extends StatelessWidget {
   }
 }
 
+enum _DeleteOutcome {
+  cancelled,
+  deleted,
+
+  /// Guru menutup dialog setelah penghapusan gagal. Kelas sudah hilang dari
+  /// daftar, jadi layarnya tidak bisa dipakai lagi.
+  unfinished,
+}
+
 /// Langkah kedua sebelum kelas dihapus: menyebut apa saja yang ikut terhapus.
 class _DeleteSubjectDialog extends StatefulWidget {
   const _DeleteSubjectDialog({required this.subject});
@@ -171,6 +189,7 @@ class _DeleteSubjectDialog extends StatefulWidget {
 class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
   SubjectDeleteSummary? _summary;
   bool _busy = false;
+  bool _attempted = false;
   String? _error;
   int _errorSerial = 0;
 
@@ -204,11 +223,12 @@ class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
   Future<void> _delete() async {
     setState(() {
       _busy = true;
+      _attempted = true;
       _error = null;
     });
     try {
       await store.deleteSubject(widget.subject.id);
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, _DeleteOutcome.deleted);
     } on ApiException catch (e) {
       _showError(e);
     }
@@ -249,7 +269,14 @@ class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
         TextButton(
           autofocus: true,
           style: buttonStyle,
-          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          onPressed: _busy
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  _attempted
+                      ? _DeleteOutcome.unfinished
+                      : _DeleteOutcome.cancelled,
+                ),
           child: const Text('Batal'),
         ),
         TextButton(

@@ -1,5 +1,6 @@
 """Daftar anggota kelas dan mengeluarkan siswa."""
 
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -77,6 +78,23 @@ def test_guru_melihat_daftar_urut_nama_dengan_email(client, kelas):
         "email": "andi@contoh.test",
         "joined_at": "2026-11-03T02:00:00+00:00",
     }
+
+
+def test_email_diambil_paralel(client, kelas, monkeypatch):
+    """Semua permintaan harus berjalan bersamaan untuk melewati Barrier. Kalau
+    berurutan, Barrier habis waktu dan emailnya jadi kosong."""
+    barrier = threading.Barrier(3, timeout=5)
+
+    class ParallelAdmin:
+        def get_user_by_id(self, user_id):
+            barrier.wait()
+            return SimpleNamespace(user=SimpleNamespace(email=f"{user_id}@contoh.test"))
+
+    monkeypatch.setattr(
+        main.supabase_admin, "auth", SimpleNamespace(admin=ParallelAdmin())
+    )
+    students = client.get(members_url(kelas)).json()["students"]
+    assert all(s["email"] == f"{s['id']}@contoh.test" for s in students)
 
 
 def test_email_gagal_diambil_daftar_tetap_tampil(client, kelas):

@@ -85,6 +85,9 @@ Respons: `{"message", "subject": {id, name, access_code, teacher_id, created_at}
 Respons: `{"subjects": [{id, name, access_code, created_at, student_count,
 material_count}]}`.
 
+`GET /teacher/subjects` juga berisi `unfinished_deletions`: `[{id, name}]`, kelas
+yang penghapusannya berhenti di tengah.
+
 ### GET `/teacher/subjects/{subject_id}/materials`
 
 Semua materi, termasuk draf. Respons: `{"subject": {...}, "materials": [{id,
@@ -222,10 +225,14 @@ ditemukan atau bukan milik guru.
 
 Hanya guru pemilik. Menghapus permanen materi, halaman, gambar, kuis, soal, hasil,
 jawaban, anggota, serta berkas di Storage `materials-pdf` dan `material-images`.
-Baris kelas tetap ada dengan `deleted_at` terisi, hanya berisi nama dan kode akses,
-supaya siswa mendapat penjelasan dan kode aksesnya tidak dipakai ulang. Respons:
-`{"message", "subject": {id, name}}`. Error: `404` kelas tidak ditemukan atau bukan
-milik guru, `500` gagal di tengah; kelas masih ada dan bisa dihapus ulang.
+Urutannya: isi `deleted_at`, hapus data, hapus berkas, lalu hapus `material_images`
+dan `materials` yang menyimpan alamat berkas. Baris kelas tetap ada dengan
+`deleted_at` terisi, hanya berisi nama dan kode akses, supaya siswa mendapat
+penjelasan dan kode aksesnya tidak dipakai ulang. Respons: `{"message", "subject":
+{id, name}}`. Error: `404` kelas tidak ditemukan, bukan milik guru, atau sudah
+terhapus habis; `500` berhenti di tengah. Setelah `500`, kelas masuk
+`unfinished_deletions` di `GET /teacher/subjects`, dan memanggil endpoint ini lagi
+melanjutkan sisanya.
 
 ### POST `/student/subjects/join`
 

@@ -208,6 +208,7 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_scroll.hasClients) _scroll.jumpTo(0);
+      store.checkOpenSubject();
       // Fokus pindah dari tombol ke header halaman baru, supaya siswa
       // langsung membaca dari atas.
       _headerFocus.requestFocus();
@@ -234,65 +235,67 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
     return PurpleScaffold(
       appBar: aprevoAppBar(widget.materialTitle),
       body: SafeArea(
-        child: ListView(
-          controller: _scroll,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Focus(
-              focusNode: _headerFocus,
-              child: Semantics(
-                header: true,
-                child: Text(_position, style: AppType.headlineMedium),
-              ),
-            ),
-            const SizedBox(height: 20),
-            AppCard(
-              key: ValueKey('halaman-$_index'),
-              color: AppColors.soft,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (blocks.isEmpty)
-                    Text(_emptyContent, style: AppType.bodyLarge),
-                  for (var i = 0; i < blocks.length; i++) ...[
-                    if (i > 0) const SizedBox(height: 18),
-                    switch (blocks[i]) {
-                      final _ItemList list => _list(list),
-                      final String line => _block(line),
-                      _ => const SizedBox.shrink(),
-                    },
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 28),
-            SizedBox(
-              width: double.infinity,
-              child: isLast
-                  ? PrimaryButton(
-                      label: 'Selesai, kembali ke daftar materi',
-                      icon: Icons.check,
-                      onPressed: _finish,
-                    )
-                  : PrimaryButton(
-                      label: 'Halaman berikutnya',
-                      icon: Icons.arrow_forward,
-                      onPressed: () => _go(1),
-                    ),
-            ),
-            if (hasPrev) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Halaman sebelumnya'),
-                  onPressed: () => _go(-1),
+        child: SubjectGoneGuard(
+          child: ListView(
+            controller: _scroll,
+            padding: const EdgeInsets.all(20),
+            children: [
+              Focus(
+                focusNode: _headerFocus,
+                child: Semantics(
+                  header: true,
+                  child: Text(_position, style: AppType.headlineMedium),
                 ),
               ),
+              const SizedBox(height: 20),
+              AppCard(
+                key: ValueKey('halaman-$_index'),
+                color: AppColors.soft,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (blocks.isEmpty)
+                      Text(_emptyContent, style: AppType.bodyLarge),
+                    for (var i = 0; i < blocks.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 18),
+                      switch (blocks[i]) {
+                        final _ItemList list => _list(list),
+                        final String line => _block(line),
+                        _ => const SizedBox.shrink(),
+                      },
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                child: isLast
+                    ? PrimaryButton(
+                        label: 'Selesai, kembali ke daftar materi',
+                        icon: Icons.check,
+                        onPressed: _finish,
+                      )
+                    : PrimaryButton(
+                        label: 'Halaman berikutnya',
+                        icon: Icons.arrow_forward,
+                        onPressed: () => _go(1),
+                      ),
+              ),
+              if (hasPrev) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Halaman sebelumnya'),
+                    onPressed: () => _go(-1),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
