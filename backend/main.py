@@ -2580,53 +2580,6 @@ def update_material_table(
     return {"message": "Tabel disimpan", "table": table}
 
 
-class MaterialTableUpdateRequest(BaseModel):
-    title: str = Field(default="", max_length=200)
-    columns: list[str]
-    rows: list[list[str]]
-
-
-@app.patch("/teacher/materials/{material_id}/sections/{section_id}/tables/{table_index}")
-def update_material_table(
-    material_id: str,
-    section_id: str,
-    table_index: int,
-    data: MaterialTableUpdateRequest,
-    auth=Depends(require_teacher),
-):
-    """Guru memperbaiki isi tabel hasil PDF."""
-    get_owned_material(material_id, auth["user_id"])
-    columns = [name.strip() for name in data.columns]
-    rows = [[cell.strip() for cell in row] for row in data.rows]
-    if len(columns) < 2 or not all(columns):
-        raise HTTPException(status_code=400, detail="Semua kolom tabel harus punya nama.")
-    if any(len(row) != len(columns) for row in rows):
-        raise HTTPException(
-            status_code=400, detail="Jumlah sel tiap baris harus sama dengan jumlah kolom."
-        )
-    if not any(any(row) for row in rows):
-        raise HTTPException(status_code=400, detail="Tabel harus punya isi.")
-    if any(len(cell) > 2000 for cell in [*columns, *(c for row in rows for c in row)]):
-        raise HTTPException(status_code=400, detail="Isi sel tabel terlalu panjang.")
-    sections = (
-        supabase_admin.table("material_sections")
-        .select("id, content")
-        .eq("material_id", material_id)
-        .execute()
-    ).data or []
-    section = next((row for row in sections if str(row["id"]) == section_id), None)
-    if section is None:
-        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
-    table = {"title": data.title.strip(), "columns": columns, "rows": rows}
-    content = replace_table(section.get("content") or "", table_index, table)
-    if content is None:
-        raise HTTPException(status_code=404, detail="Tabel tidak ditemukan")
-    supabase_admin.table("material_sections").update({"content": content}).eq(
-        "id", section["id"]
-    ).execute()
-    return {"message": "Tabel disimpan", "table": table}
-
-
 @app.patch("/teacher/quizzes/{quiz_id}/schedule")
 def update_quiz_schedule(
     quiz_id: str, data: QuizScheduleRequest, auth=Depends(require_teacher)
