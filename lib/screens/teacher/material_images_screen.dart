@@ -516,6 +516,7 @@ class _ImageCardState extends State<_ImageCard> {
           if (_feedback != null) ...[
             const SizedBox(height: 10),
             Semantics(
+              container: true,
               liveRegion: true,
               child: Text(_feedback!, style: AppType.bodyMedium),
             ),
