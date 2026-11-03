@@ -268,6 +268,44 @@ def test_gambar_yang_ditandai_dekoratif_tidak_menghalangi_terbit(
     assert response.status_code == 200
 
 
+def test_gambar_di_luar_isi_halaman_juga_menghalangi_terbit(
+    client, login, fake_db, storage, gemini
+):
+    """Guru melihat semua baris gambar, jadi syarat terbit mengikuti daftar itu."""
+    material_id, _ = upload(client, login, fake_db)
+    photo = images(client, material_id)[0]
+    client.patch(
+        f"/teacher/materials/{material_id}/images/{photo['id']}",
+        json={"is_decorative": True},
+    )
+    fake_db["material_images"].append(
+        {
+            "id": "lepas",
+            "material_id": material_id,
+            "image_key": "xref-999",
+            "page_number": 3,
+            "image_url": "lepas.png",
+            "description": None,
+            "is_decorative": False,
+        }
+    )
+    publish = lambda: client.patch(  # noqa: E731
+        f"/teacher/materials/{material_id}", json={"is_published": True}
+    )
+    response = publish()
+    assert response.status_code == 409
+    assert "1 gambar (halaman 3)" in response.json()["detail"]
+    assert [i["id"] for i in images(client, material_id) if i["needs_description"]] == [
+        "lepas"
+    ]
+
+    client.patch(
+        f"/teacher/materials/{material_id}/images/lepas",
+        json={"description": "Peta kelas."},
+    )
+    assert publish().status_code == 200
+
+
 def test_guru_edit_deskripsi_dan_materi_terbit_tetap_lengkap(
     client, login, fake_db, storage, gemini
 ):

@@ -2121,13 +2121,12 @@ def ordered_image_rows(material_id):
 
 def undescribed_image_pages(material_id):
     """Halaman yang masih punya gambar tanpa deskripsi dan bukan dekoratif.
-    Gambar yang belum punya baris sama sekali juga dihitung."""
-    rows = {row["image_key"]: row for row in material_image_rows(material_id)}
-    pages = []
-    for key in material_content_image_keys(material_id):
-        row = rows.get(key)
-        if row is None or needs_description(row):
-            pages.append((row or {}).get("page_number"))
+    Semua baris gambar dihitung, sama dengan daftar yang dilihat guru. Gambar
+    di isi halaman yang belum punya baris sama sekali juga dihitung."""
+    rows = material_image_rows(material_id)
+    pages = [row.get("page_number") for row in rows if needs_description(row)]
+    known = {row["image_key"] for row in rows}
+    pages += [None for key in material_content_image_keys(material_id) if key not in known]
     return pages
 
 

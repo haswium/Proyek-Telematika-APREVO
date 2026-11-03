@@ -124,7 +124,8 @@ kelas tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 ### PATCH `/teacher/materials/{material_id}`
 
 Body (isi salah satu atau keduanya): `{"title": "...", "is_published": true}`.
-Respons: `{"message", "material"}`.
+Respons: `{"message", "material"}`. Error: `409` saat menerbitkan kalau masih
+ada gambar yang belum punya deskripsi atau tanda dekoratif.
 
 ### POST `/teacher/materials/{material_id}/quizzes`
 

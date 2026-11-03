@@ -184,11 +184,7 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
 
   /// Ringkasan gambar yang menghalangi materi terbit.
   List<Widget> _pending(List<PageImage> images) {
-    final pending = [
-      for (var i = 0; i < images.length; i++)
-        if (images[i].needsDescription) (number: i + 1, image: images[i]),
-    ];
-    if (pending.isEmpty) {
+    if (!images.any((image) => image.needsDescription)) {
       if (images.isEmpty) return const [];
       return [
         Text(
@@ -198,37 +194,7 @@ class _MaterialImagesScreenState extends State<MaterialImagesScreen> {
         const SizedBox(height: 16),
       ];
     }
-    return [
-      AppCard(
-        color: AppColors.highlight,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              header: true,
-              child: Text(
-                'Belum dideskripsikan (${pending.length})',
-                style: AppType.titleMedium,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Materi baru bisa terbit setelah gambar ini diberi deskripsi '
-              'atau ditandai dekoratif.',
-              style: AppType.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            for (final p in pending)
-              Text(
-                '• Gambar ${p.number}'
-                '${p.image.pageNumber == null ? '' : ', halaman ${p.image.pageNumber}'}',
-                style: AppType.bodyMedium,
-              ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-    ];
+    return [PendingImagesCard(images: images), const SizedBox(height: 16)];
   }
 
   /// Progres proses latar belakang. Teks biasa, bukan liveRegion, supaya
@@ -554,6 +520,54 @@ class _ImageCardState extends State<_ImageCard> {
               child: Text(_feedback!, style: AppType.bodyMedium),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Daftar gambar yang menghalangi materi terbit. Nomornya sama dengan urutan
+/// di layar Gambar materi. Tiap butir satu fokus TalkBack.
+class PendingImagesCard extends StatelessWidget {
+  const PendingImagesCard({super.key, required this.images});
+
+  /// Semua gambar materi, urut seperti di layar Gambar materi.
+  final List<PageImage> images;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = [
+      for (var i = 0; i < images.length; i++)
+        if (images[i].needsDescription)
+          'Gambar ${i + 1}'
+              '${images[i].pageNumber == null ? '' : ', halaman ${images[i].pageNumber}'}',
+    ];
+    return AppCard(
+      color: AppColors.highlight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              'Belum dideskripsikan (${pending.length})',
+              style: AppType.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Materi baru bisa terbit setelah gambar ini diberi deskripsi '
+            'atau ditandai dekoratif.',
+            style: AppType.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < pending.length; i++)
+            Semantics(
+              container: true,
+              label: 'Butir ${i + 1} dari ${pending.length}: ${pending[i]}',
+              excludeSemantics: true,
+              child: Text(pending[i], style: AppType.bodyMedium),
+            ),
         ],
       ),
     );

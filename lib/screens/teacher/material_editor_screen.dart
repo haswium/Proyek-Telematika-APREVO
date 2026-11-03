@@ -14,12 +14,16 @@ import 'question_form_screen.dart';
 import 'quiz_schedule_screen.dart';
 import 'results_screen.dart';
 
-/// Data editor: materi beserta soal tersimpan pre-test dan post-test.
+/// Data editor: materi beserta soal tersimpan pre-test dan post-test, dan
+/// gambarnya.
 class _EditorData {
-  _EditorData(this.material, this.quizzes);
+  _EditorData(this.material, this.quizzes, this.images);
 
   final LessonMaterial material;
   final Map<TestKind, TeacherQuiz?> quizzes;
+  final List<PageImage> images;
+
+  int get pendingImages => images.where((i) => i.needsDescription).length;
 
   /// Jenis soal yang sudah dipakai soal tersimpan, atau `null`.
   GameType? get savedType {
@@ -80,10 +84,11 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
       pre == null ? Future.value(null) : store.teacherQuiz(pre),
       post == null ? Future.value(null) : store.teacherQuiz(post),
     ]);
+    final images = await store.teacherImages(m.id);
     return _EditorData(m, {
       TestKind.pre: quizzes[0],
       TestKind.post: quizzes[1],
-    });
+    }, images);
   }
 
   void _toast(String message) {
@@ -189,8 +194,25 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     }
   }
 
+  void _openImages(LessonMaterial m) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            MaterialImagesScreen(materialId: m.id, materialTitle: m.title),
+      ),
+    );
+  }
+
   Future<void> _setPublished(_EditorData data, bool value) async {
     if (value) {
+      if (data.pendingImages > 0) {
+        _toast(
+          'Belum bisa terbit: ${data.pendingImages} gambar belum '
+          'dideskripsikan atau ditandai dekoratif.',
+        );
+        return;
+      }
       final missing = [
         for (final kind in TestKind.values)
           if (data.savedCount(kind) == 0) kind.label,
@@ -313,15 +335,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
           semanticLabel:
               'Gambar dan deskripsi materi ${m.title}. Periksa deskripsi AI '
               'sebelum terbit',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MaterialImagesScreen(
-                materialId: m.id,
-                materialTitle: m.title,
-              ),
-            ),
-          ),
+          onTap: () => _openImages(m),
         ),
         ListRow(
           icon: Icons.insights_outlined,
@@ -367,6 +381,16 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
         ),
         for (final kind in TestKind.values) ..._testSection(data, kind, type),
         const SizedBox(height: 16),
+        if (data.pendingImages > 0) ...[
+          PendingImagesCard(images: data.images),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.image_outlined),
+            label: const Text('Lengkapi gambar'),
+            onPressed: () => _openImages(m),
+          ),
+          const SizedBox(height: 16),
+        ],
         AppCard(
           color: m.published ? AppColors.mint : AppColors.soft,
           borderColor: AppColors.ink,
