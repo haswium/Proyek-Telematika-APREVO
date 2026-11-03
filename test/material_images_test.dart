@@ -177,6 +177,7 @@ void main() {
     tester,
   ) async {
     tallScreen(tester);
+    final handle = tester.ensureSemantics();
     final images = [_image('1', description: 'Budi menabung.')];
     final server = FakeServer({
       'GET /teacher/materials/m1/images': (_) => {'images': images},
@@ -194,17 +195,16 @@ void main() {
     expect(server.bodyOf('PATCH /teacher/materials/m1/images/1'), {
       'description': 'Budi memasukkan koin.',
     });
-    expect(
-      find.text('Deskripsi gambar 1 dari 1, halaman 2 disimpan.'),
-      findsOneWidget,
-    );
+    expectLive(tester, 'Deskripsi gambar 1 dari 1, halaman 2 disimpan.');
 
     await tapAndPump(tester, find.text('Dekoratif, tidak dibacakan'));
     await tester.pumpAndSettle();
     expect(server.bodyOf('PATCH /teacher/materials/m1/images/1'), {
       'is_decorative': true,
     });
+    expectLive(tester, 'Ditandai dekoratif, tidak dibacakan ke siswa.');
     expect(find.byType(TextField), findsNothing);
+    handle.dispose();
   });
 
   testWidgets('gambar yang belum dideskripsikan didaftar', (tester) async {

@@ -65,6 +65,7 @@ class FakeServer {
     addTearDown(() {
       store.api = previous;
       store.forgetOpenSubject();
+      store.resetQuestionGeneration();
     });
   }
 }

@@ -57,6 +57,13 @@ TEACHER_CASES = [
         "/teacher/materials/m1/generate-quiz",
         {"total_questions": 1, "quiz_type": "true_false"},
     ),
+    (
+        "POST",
+        "/teacher/materials/m1/generate-questions",
+        {"test_kind": "pre", "quiz_type": "true_false", "total_questions": 1},
+    ),
+    ("GET", "/teacher/materials/m1/generate-questions?test_kind=pre", None),
+    ("DELETE", "/teacher/materials/m1/generate-questions?test_kind=pre", None),
     ("POST", "/teacher/materials/m1/generate-image-description", None),
     ("GET", "/teacher/materials/m1/image-description", None),
     ("POST", "/teacher/materials/m1/images/g1/describe", None),
@@ -170,7 +177,7 @@ def test_daftar_kasus_mencakup_semua_endpoint_kelas():
 
 def matches(path, url):
     path_parts = path.split("/")
-    url_parts = url.split("/")
+    url_parts = url.split("?")[0].split("/")
     return len(path_parts) == len(url_parts) and all(
         pattern.startswith("{") or pattern == part
         for pattern, part in zip(path_parts, url_parts)

@@ -9,6 +9,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import '../student/section_reader_screen.dart';
+import 'generate_questions_screen.dart';
 import 'material_images_screen.dart';
 import 'material_tables_screen.dart';
 import 'question_form_screen.dart';
@@ -59,22 +60,17 @@ class MaterialEditorScreen extends StatefulWidget {
 }
 
 class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
-  final Map<TestKind, List<Question>> _drafts = {
-    TestKind.pre: [],
-    TestKind.post: [],
-  };
+  List<Question> _drafts(TestKind kind) =>
+      store.questionDrafts(widget.material.id, kind);
 
-  /// Jenis soal pilihan guru sebelum ada soal tersimpan.
-  GameType _chosenType = GameType.quiz;
-
-  /// Kuis yang sedang dibuatkan soal AI, atau sedang dikirim.
-  TestKind? _generating;
+  /// Kuis yang sedang dikirim.
   TestKind? _saving;
   bool _publishing = false;
 
-  bool get _busy => _generating != null || _saving != null || _publishing;
+  bool get _busy => _saving != null || _publishing;
 
   Future<_EditorData> _load() async {
+    await store.resumeQuestionGeneration(widget.material.id);
     final m = await store.teacherMaterial(
       widget.subject.id,
       widget.material.id,
@@ -113,7 +109,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
   }
 
   Future<void> _addOrEdit(TestKind kind, GameType type, {int? index}) async {
-    final list = _drafts[kind]!;
+    final list = _drafts(kind);
     final result = await Navigator.push<Question>(
       context,
       MaterialPageRoute(
@@ -139,27 +135,13 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     );
   }
 
-  Future<void> _generate(TestKind kind, GameType type, String topic) async {
-    setState(() => _generating = kind);
-    final generated = await store.generateQuestions(type, topic);
-    if (!mounted) return;
-    setState(() {
-      _generating = null;
-      _drafts[kind]!.addAll(generated);
-    });
-    announce(
-      '${generated.length} soal draf ${kind.label} dibuat. Periksa, lalu '
-      'simpan ke server.',
-    );
-  }
-
   void _copyPreToPost(_EditorData data) {
     final pre = [
       ...?data.quizzes[TestKind.pre]?.questions,
-      ..._drafts[TestKind.pre]!,
+      ..._drafts(TestKind.pre),
     ];
     setState(() {
-      _drafts[TestKind.post]!.addAll([
+      _drafts(TestKind.post).addAll([
         // Disalin sebagai draf baru (tanpa id) supaya dikirim ke post-test.
         for (final q in pre)
           Question(
@@ -168,6 +150,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
             correctIndex: q.correctIndex,
             answerText: q.answerText,
             explanation: q.explanation,
+            aiGenerated: q.aiGenerated,
           ),
       ]);
     });
@@ -175,7 +158,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
   }
 
   Future<void> _saveDrafts(TestKind kind, QuizInfo quiz, GameType type) async {
-    final drafts = _drafts[kind]!;
+    final drafts = _drafts(kind);
     if (drafts.isEmpty) return;
     setState(() => _saving = kind);
     announce('Menyimpan ${drafts.length} soal ${kind.label}.');
@@ -186,6 +169,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
       setState(() {
         _saving = null;
         drafts.clear();
+        store.dismissQuestionMessage(widget.material.id, kind);
       });
       _toast('$count soal ${kind.label} tersimpan di server.');
     } on ApiException catch (e) {
@@ -254,9 +238,11 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     final m = data.material;
     final subject = widget.subject;
     final savedType = data.savedType;
-    final type = savedType ?? _chosenType;
+    final type = savedType ?? store.draftType(m.id) ?? GameType.quiz;
     final typeLocked =
-        savedType != null || _drafts.values.any((d) => d.isNotEmpty);
+        savedType != null ||
+        store.hasQuestionDrafts(m.id) ||
+        store.isGeneratingQuestions(m.id);
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -387,7 +373,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                 selected: type == t,
                 onSelected: typeLocked
                     ? null
-                    : (_) => setState(() => _chosenType = t),
+                    : (_) => setState(() => store.setDraftType(m.id, t)),
               ),
           ],
         ),
@@ -461,9 +447,11 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
       ];
     }
     final saved = teacherQuiz?.questions ?? const <Question>[];
-    final drafts = _drafts[kind]!;
+    final drafts = _drafts(kind);
     final preCount =
-        data.savedCount(TestKind.pre) + _drafts[TestKind.pre]!.length;
+        data.savedCount(TestKind.pre) + _drafts(TestKind.pre).length;
+    final generation = store.questionGeneration(data.material.id, kind);
+    final generating = generation?.running ?? false;
     return [
       SectionTitle('$label (${saved.length} soal tersimpan)'),
       Text('${info.scheduleText}.', style: AppType.bodyMedium),
@@ -490,7 +478,9 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
           subtitle: drafts[i].prompt,
           semanticLabel:
               '$label draf soal ${saved.length + i + 1}, belum tersimpan. '
-              '${drafts[i].prompt}. Ketuk untuk ubah',
+              '${drafts[i].prompt}. Jawaban benar: '
+              '${drafts[i].correctText(type)}. Penjelasan: '
+              '${drafts[i].explanation ?? 'belum ada'}. Ketuk untuk ubah',
           onTap: _busy ? null : () => _addOrEdit(kind, type, index: i),
           trailing: IconButton(
             tooltip: 'Hapus draf $label soal ${saved.length + i + 1}',
@@ -509,17 +499,18 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
                   },
           ),
         ),
-      if (_generating == kind)
+      // Sudah diumumkan oleh store, jadi bukan liveRegion. Teks ini untuk
+      // guru yang baru sampai ke layar ini.
+      if (generating || generation?.message != null) ...[
         Semantics(
           container: true,
-          liveRegion: true,
-          label: 'AI sedang membuat soal $label. Tunggu sebentar.',
-          excludeSemantics: true,
-          child: const Padding(
-            padding: EdgeInsets.all(20),
-            child: Center(child: CircularProgressIndicator()),
+          child: Text(
+            generating ? 'Sedang membuat soal $label' : generation!.message!,
+            style: AppType.bodyMedium,
           ),
         ),
+        const SizedBox(height: 12),
+      ],
       if (drafts.isNotEmpty) ...[
         PrimaryButton(
           label: _saving == kind
@@ -539,9 +530,18 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
       FilledButton.icon(
         icon: const Icon(Icons.auto_awesome),
         label: Text('Buat soal $label dengan AI'),
-        onPressed: _busy
+        onPressed: _busy || generating
             ? null
-            : () => _generate(kind, type, data.material.title),
+            : () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GenerateQuestionsScreen(
+                    subject: widget.subject,
+                    material: data.material,
+                    kind: kind,
+                  ),
+                ),
+              ),
       ),
       if (kind == TestKind.post &&
           saved.isEmpty &&
