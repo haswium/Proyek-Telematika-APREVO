@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/app_store.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
+import 'choose_role_screen.dart';
 import 'student/student_shell.dart';
 import 'student/onboarding_screen.dart';
 import 'teacher/teacher_shell.dart';
@@ -12,7 +13,9 @@ import 'welcome_screen.dart';
 /// layar-layar sebelumnya supaya tombol kembali tidak balik ke form masuk.
 void goHome(BuildContext context, Account account) {
   final Widget home;
-  if (account.role == UserRole.teacher) {
+  if (!account.roleChosen) {
+    home = const ChooseRoleScreen();
+  } else if (account.role == UserRole.teacher) {
     home = const TeacherShell();
   } else if (store.needsOnboarding(account)) {
     home = OnboardingScreen(studentName: account.name);

@@ -165,6 +165,70 @@ Alamat dan kunci Supabase tidak ada di kode. Keduanya masuk saat build dari
 4. Hasilnya ada di `build/app/outputs/flutter-apk/app-release.apk`.
 5. Pasang dulu di satu HP, lalu cek `docs/uji-talkback.md` bagian 25.
 
+## Login Google
+
+Lakukan sekali, sebelum APK dengan tombol Google dibagikan. Nama menu di dashboard
+bisa sedikit berubah. Ganti `ID-PROYEK` dengan ID proyek Supabase (bagian depan
+`SUPABASE_URL`).
+
+### A. Database Supabase
+
+Buka **SQL Editor**, lalu jalankan isi `backend/migrations/006_pilih_peran.sql`.
+Lakukan ini sebelum Google diaktifkan. Tanpa migrasi ini akun Google baru otomatis
+menjadi siswa, sehingga pilihan Guru tidak berlaku.
+
+### B. Google Cloud (<https://console.cloud.google.com>)
+
+1. Buat atau pilih proyek.
+2. **APIs & Services > OAuth consent screen**: pilih **External**, lalu isi nama
+   aplikasi `APREVO` dan email kontak. Cakupan yang dipakai hanya `openid`, `email`,
+   dan `profile`.
+3. Selama statusnya **Testing**, hanya email di **Test users** yang bisa masuk, jadi
+   tambahkan akun uji. Sebelum dibagikan ke siswa, ubah ke **In production**.
+4. **APIs & Services > Credentials > Create credentials > OAuth client ID**, lalu
+   pilih jenis **Web application**, bukan Android, karena yang menghubungi Google
+   adalah Supabase.
+5. Di **Authorized redirect URIs**, isi:
+
+   ```text
+   https://ID-PROYEK.supabase.co/auth/v1/callback
+   ```
+
+6. Simpan, lalu catat **Client ID** dan **Client secret**. Client secret bersifat
+   **rahasia** dan hanya diisi di dashboard Supabase, jangan masuk ke aplikasi atau
+   repo.
+
+### C. Dashboard Supabase
+
+1. **Authentication > Sign In / Providers > Google**: aktifkan, lalu tempel Client ID
+   dan Client secret.
+2. **Authentication > URL Configuration > Redirect URLs**: tambahkan persis:
+
+   ```text
+   id.aprevo.app://login-callback
+   ```
+
+   Alamat ini harus sama dengan `kAuthRedirectUrl` di
+   `lib/services/google_auth.dart` dan intent-filter di `AndroidManifest.xml`.
+
+### D. Backend dan aplikasi
+
+1. Backend harus sudah memuat `POST /me/role`. Render men-deploy-nya setelah kode
+   masuk ke `main`.
+2. Build APK seperti langkah 7, karena intent-filter ada di dalam APK.
+
+### Kalau login Google bermasalah
+
+| Gejala | Yang diperiksa |
+|---|---|
+| Google menampilkan `redirect_uri_mismatch` | Authorized redirect URIs di langkah B5 |
+| Google menampilkan "Access blocked" | Email ada di Test users, atau status sudah In production |
+| Browser berhenti di halaman Site URL atau `localhost` | Redirect URLs di langkah C2 |
+| Pesan `Unsupported provider` | Google sudah diaktifkan di langkah C1 |
+| Browser tidak kembali ke aplikasi | APK sudah dibuat ulang setelah intent-filter ditambahkan |
+| Memilih peran gagal dengan 404 | Backend di Render sudah memuat `POST /me/role` |
+| Guru ditolak dengan "Hanya guru yang boleh..." | Migrasi di langkah A sudah dijalankan sebelum akun itu dibuat |
+
 ## 8. Bagikan ke siswa
 
 1. Bagikan file APK, misalnya lewat tautan Google Drive. Jangan menaruh APK di repo.

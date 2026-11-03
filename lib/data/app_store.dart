@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 import '../models/models.dart';
 import '../services/announce.dart';
 import '../services/api_client.dart';
+import '../services/google_auth.dart';
 import '../services/settings.dart';
 
 /// Seberapa sering status pembuatan soal AI diperiksa.
@@ -62,19 +63,22 @@ class AppStore extends ChangeNotifier {
 
   Account? currentUser;
 
+  /// Diganti di tes dengan tiruan.
+  GoogleAuth googleAuth = const GoogleAuth();
+
   static const String _notConfigured =
-      'Aplikasi belum tersambung ke Supabase. Isi kunci anon di '
-      'lib/config/supabase_config.dart.';
+      'Aplikasi belum tersambung ke server akun.';
 
   /// Nama dan peran disimpan di metadata akun Supabase saat daftar.
   Account _fromUser(User user) {
     final meta = user.userMetadata ?? const <String, dynamic>{};
     final email = user.email ?? '';
-    final name = (meta['name'] ?? '').toString().trim();
+    final name = (meta['name'] ?? meta['full_name'] ?? '').toString().trim();
     return Account(
       name: name.isNotEmpty ? name : email.split('@').first,
       email: email,
       role: meta['role'] == 'teacher' ? UserRole.teacher : UserRole.student,
+      roleChosen: meta['role'] == 'teacher' || meta['role'] == 'student',
     );
   }
 
@@ -123,6 +127,32 @@ class AppStore extends ChangeNotifier {
       return _authMessage(e.message);
     } catch (_) {
       return 'Tidak bisa terhubung ke server. Periksa sambungan internet.';
+    }
+  }
+
+  /// Akun yang berhasil masuk lewat Google.
+  Stream<Account> get googleSignedIn => googleAuth.signedIn.map(
+    (user) => currentUser = _fromUser(user),
+  );
+
+  /// Menyimpan peran akun yang belum punya peran. Backend memegang peran yang
+  /// berlaku: kalau akun sudah punya peran, peran itu yang dikembalikan.
+  Future<Account> chooseRole(UserRole role) async {
+    final saved = await api.post('/me/role', {
+      'role': role == UserRole.teacher ? 'teacher' : 'student',
+    });
+    try {
+      final user = await googleAuth.saveProfile(
+        name: saved['name'] as String,
+        role: saved['role'] as String,
+      );
+      return currentUser = _fromUser(user);
+    } on AuthException catch (e) {
+      throw ApiException(_authMessage(e.message));
+    } catch (_) {
+      throw const ApiException(
+        'Tidak bisa terhubung ke server. Periksa sambungan internet.',
+      );
     }
   }
 

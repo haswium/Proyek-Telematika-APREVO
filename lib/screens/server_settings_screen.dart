@@ -183,9 +183,7 @@ class AboutAprevoRow extends StatefulWidget {
 }
 
 class _AboutAprevoRowState extends State<AboutAprevoRow> {
-  static const String _about =
-      'APREVO, aplikasi belajar untuk siswa tunanetra. Proyek Telematika, '
-      'Teknik Komputer ITS.';
+  static const String _about = 'APREVO, aplikasi belajar untuk siswa tunanetra.';
 
   /// Lebih longgar dari biasanya, karena TalkBack memakai ketukan dua kali.
   static const Duration _maxGap = Duration(seconds: 5);
