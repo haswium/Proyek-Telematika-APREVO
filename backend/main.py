@@ -1739,6 +1739,10 @@ class GenerateQuizRequest(BaseModel):
     quiz_type: Literal["multiple_choice", "true_false", "text", "ordering"]
 
 
+class GenerateQuestionsRequest(GenerateQuizRequest):
+    test_kind: Literal["pre", "post"]
+
+
 def validate_schedule(data: QuizScheduleRequest):
     for value in (data.available_from, data.deadline_at):
         if value.tzinfo is None:
@@ -1967,12 +1971,8 @@ def require_gemini():
         raise HTTPException(status_code=503, detail=GEMINI_KEY_MISSING_DETAIL) from error
 
 
-@app.post("/teacher/materials/{material_id}/generate-quiz")
-def generate_material_quiz(
-    material_id: str, data: GenerateQuizRequest, auth=Depends(require_teacher)
-):
-    material = get_owned_material(material_id, auth["user_id"])
-    require_gemini()
+def material_plain_text(material_id):
+    """Teks seluruh halaman materi hasil konversi, untuk AI soal."""
     sections_result = (
         supabase_admin.table("material_sections")
         .select("position, content")
@@ -1980,10 +1980,18 @@ def generate_material_quiz(
         .order("position")
         .execute()
     )
-    sections = sections_result.data or []
-    materi = "\n\n".join(
-        plain_text(section.get("content") or "") for section in sections
+    return "\n\n".join(
+        plain_text(section.get("content") or "") for section in sections_result.data or []
     ).strip()
+
+
+@app.post("/teacher/materials/{material_id}/generate-quiz")
+def generate_material_quiz(
+    material_id: str, data: GenerateQuizRequest, auth=Depends(require_teacher)
+):
+    get_owned_material(material_id, auth["user_id"])
+    require_gemini()
+    materi = material_plain_text(material_id)
     if not materi:
         raise HTTPException(
             status_code=422, detail="Materi belum memiliki teks yang dapat digunakan."
@@ -2336,6 +2344,202 @@ def get_image_description_status(material_id: str, auth=Depends(require_teacher)
     """Progres pembuatan deskripsi, misalnya 3 dari 12 gambar selesai."""
     get_owned_material(material_id, auth["user_id"])
     return describe_status(material_id)
+
+
+# Satu panggilan Gemini membuat paling banyak sebanyak ini soal.
+QUESTION_BATCH_SIZE = 10
+# Panggilan gagal berturut-turut sebelum proses menyerah.
+QUESTION_MAX_FAILURES = 2
+
+
+@dataclass
+class QuestionDraftJob:
+    """Pembuatan draf soal satu kuis.
+
+    Hasilnya disimpan di memori proses backend sampai diambil aplikasi. Kalau
+    backend dimulai ulang sebelum diambil, hasilnya hilang dan harus dibuat
+    ulang.
+    """
+
+    job_id: str
+    quiz_type: str
+    total: int
+    questions: list = field(default_factory=list)
+    running: bool = True
+    error: Optional[str] = None
+
+
+QUESTION_JOBS: dict[tuple[str, str], QuestionDraftJob] = {}
+QUESTION_JOBS_LOCK = threading.Lock()
+
+
+def question_failure_message(error: Exception) -> str:
+    if isinstance(error, GeminiKeyMissing):
+        return GEMINI_KEY_MISSING_DETAIL
+    if is_rate_limited(error):
+        return "Batas pemakaian Gemini tercapai. Coba lagi beberapa menit lagi"
+    return "AI gagal membuat soal. Coba lagi"
+
+
+def run_question_job(job: QuestionDraftJob, materi: str):
+    """Dijalankan di latar belakang setelah endpoint menjawab. Soal yang sudah
+    jadi tetap disimpan kalau panggilan berikutnya gagal."""
+    seen = set()
+    failures = 0
+    called = False
+    try:
+        while len(job.questions) < job.total:
+            if called:
+                time.sleep(GEMINI_DELAY_SECONDS)
+            called = True
+            try:
+                result = generate_quiz(
+                    materi=materi,
+                    total_questions=min(
+                        job.total - len(job.questions), QUESTION_BATCH_SIZE
+                    ),
+                    quiz_type=job.quiz_type,
+                    avoid_questions=[q["question"] for q in job.questions],
+                )
+            except Exception as error:
+                logger.exception("Gagal membuat soal dengan Gemini")
+                failures += 1
+                if isinstance(error, GeminiKeyMissing) or failures >= QUESTION_MAX_FAILURES:
+                    job.error = question_failure_message(error)
+                    return
+                if is_rate_limited(error):
+                    time.sleep(GEMINI_RATE_LIMIT_PAUSE_SECONDS)
+                continue
+            added = 0
+            for question in result.questions:
+                key = question.question.strip().casefold()
+                if key not in seen:
+                    seen.add(key)
+                    job.questions.append(question.model_dump())
+                    added += 1
+            # Semua soal kembar: panggilan ini tidak menghasilkan apa-apa.
+            failures = 0 if added else failures + 1
+            if failures >= QUESTION_MAX_FAILURES:
+                job.error = "AI hanya membuat soal yang sama. Coba lagi"
+                return
+    except Exception:
+        logger.exception("Proses pembuatan soal berhenti")
+        job.error = "Proses pembuatan soal berhenti karena kesalahan server. Coba lagi"
+    finally:
+        job.running = False
+
+
+def question_job_status(material_id, test_kind):
+    job = QUESTION_JOBS.get((material_id, test_kind))
+    if job is None:
+        return {
+            "job_id": None,
+            "test_kind": test_kind,
+            "running": False,
+            "total": 0,
+            "done": 0,
+            "quiz_type": None,
+            "questions": [],
+            "error": None,
+        }
+    return {
+        "job_id": job.job_id,
+        "test_kind": test_kind,
+        "running": job.running,
+        "total": job.total,
+        "done": len(job.questions),
+        "quiz_type": job.quiz_type,
+        # Soal baru dikirim setelah selesai, supaya tidak terbaca setengah jadi.
+        "questions": [] if job.running else job.questions,
+        "error": job.error,
+    }
+
+
+def check_question_request(material_id, data: GenerateQuestionsRequest):
+    """Kuis harus sudah punya jadwal, dan satu materi memakai satu jenis soal."""
+    quizzes = quizzes_by_material([material_id])[material_id]
+    if not any(quiz["kind"] == data.test_kind for quiz in quizzes):
+        label = "pre-test" if data.test_kind == "pre" else "post-test"
+        raise HTTPException(
+            status_code=409, detail=f"Atur dulu jadwal {label} materi ini"
+        )
+    saved = (
+        supabase_admin.table("questions")
+        .select("type")
+        .in_("quiz_id", [quiz["id"] for quiz in quizzes])
+        .execute()
+    ).data or []
+    if any(row["type"] != data.quiz_type for row in saved):
+        raise HTTPException(
+            status_code=409, detail="Materi ini sudah memakai jenis soal lain"
+        )
+    for kind in ("pre", "post"):
+        other = QUESTION_JOBS.get((material_id, kind))
+        if other and other.running and other.quiz_type != data.quiz_type:
+            raise HTTPException(
+                status_code=409, detail="Materi ini sedang dibuatkan jenis soal lain"
+            )
+
+
+@app.post("/teacher/materials/{material_id}/generate-questions")
+def start_generate_questions(
+    material_id: str,
+    data: GenerateQuestionsRequest,
+    background_tasks: BackgroundTasks,
+    auth=Depends(require_teacher),
+):
+    """Memulai pembuatan draf soal di latar belakang. Status dan hasilnya dibaca
+    lewat GET di alamat yang sama. Hasil lama kuis ini yang belum diambil diganti."""
+    get_owned_material(material_id, auth["user_id"])
+    require_gemini()
+    check_question_request(material_id, data)
+    materi = material_plain_text(material_id)
+    if not materi:
+        raise HTTPException(
+            status_code=422, detail="Materi belum memiliki teks yang dapat digunakan."
+        )
+    key = (material_id, data.test_kind)
+    with QUESTION_JOBS_LOCK:
+        job = QUESTION_JOBS.get(key)
+        started = job is None or not job.running
+        if started:
+            job = QuestionDraftJob(
+                job_id=str(uuid4()),
+                quiz_type=data.quiz_type,
+                total=data.total_questions,
+            )
+            QUESTION_JOBS[key] = job
+    if started:
+        background_tasks.add_task(run_question_job, job, materi)
+    # Status dibaca sebelum proses berjalan: jawaban selalu "sedang berjalan".
+    return question_job_status(material_id, data.test_kind)
+
+
+@app.get("/teacher/materials/{material_id}/generate-questions")
+def generate_questions_status(
+    material_id: str,
+    test_kind: Literal["pre", "post"],
+    auth=Depends(require_teacher),
+):
+    get_owned_material(material_id, auth["user_id"])
+    return question_job_status(material_id, test_kind)
+
+
+@app.delete("/teacher/materials/{material_id}/generate-questions")
+def clear_generated_questions(
+    material_id: str,
+    test_kind: Literal["pre", "post"],
+    auth=Depends(require_teacher),
+):
+    """Aplikasi sudah mengambil hasilnya sebagai draf."""
+    get_owned_material(material_id, auth["user_id"])
+    key = (material_id, test_kind)
+    with QUESTION_JOBS_LOCK:
+        job = QUESTION_JOBS.get(key)
+        if job is not None and job.running:
+            raise HTTPException(status_code=409, detail="Soal masih dibuat")
+        QUESTION_JOBS.pop(key, None)
+    return {"message": "Hasil dihapus"}
 
 
 @app.post("/teacher/materials/{material_id}/images/{image_id}/describe")

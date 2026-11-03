@@ -210,6 +210,7 @@ def no_gemini(monkeypatch):
     monkeypatch.setattr(main, "GEMINI_DELAY_SECONDS", 0)
     monkeypatch.setattr(main, "GEMINI_RATE_LIMIT_PAUSE_SECONDS", 0)
     monkeypatch.setattr(main, "DESCRIBE_JOBS", {})
+    monkeypatch.setattr(main, "QUESTION_JOBS", {})
 
 
 @pytest.fixture

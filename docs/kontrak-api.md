@@ -146,6 +146,29 @@ Respons: `{"message", "quiz"}`. Error: `400` tenggat tidak setelah waktu buka,
 
 Body `{"available_from", "deadline_at"}`. Respons: `{"message", "quiz"}`.
 
+### POST `/teacher/materials/{material_id}/generate-questions`
+
+Memulai pembuatan draf soal oleh AI di latar belakang, dari teks halaman materi.
+Body: `{"test_kind": "pre", "quiz_type": "multiple_choice", "total_questions": 5}`
+(1 sampai 30). Sampai 10 soal memakai satu panggilan Gemini; lebih dari itu dipecah
+per 10. Kalau proses kuis ini masih berjalan, tidak dimulai proses kedua. Respons:
+status seperti GET di bawah. Error: `403`, `404`, `409` kuis belum punya jadwal
+atau materi sudah memakai jenis soal lain, `422` materi tanpa teks, `503` kunci
+Gemini belum diatur.
+
+### GET `/teacher/materials/{material_id}/generate-questions?test_kind=pre`
+
+Respons: `{"job_id", "test_kind", "running", "total", "done", "quiz_type",
+"questions", "error"}`. `questions` berbentuk sama seperti body `POST
+/quizzes/{quiz_id}/questions` dan baru terisi setelah `running` false. Kalau gagal
+di tengah, `error` terisi dan soal yang sudah jadi tetap dikirim. Hasil disimpan di
+memori backend, jadi hilang kalau backend dimulai ulang.
+
+### DELETE `/teacher/materials/{material_id}/generate-questions?test_kind=pre`
+
+Menghapus hasil setelah diambil aplikasi sebagai draf. Error: `409` proses masih
+berjalan.
+
 ### POST `/quizzes/{quiz_id}/questions`
 
 Hanya guru pemilik kuis. Body `AIOutput`. `explanation` opsional di setiap soal.
