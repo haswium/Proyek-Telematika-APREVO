@@ -83,8 +83,8 @@ Untuk pengembangan dengan backend di laptop, alamatnya diberikan saat menjalanka
 aplikasi:
 
 ```bash
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000       # emulator
-flutter run --dart-define=API_BASE_URL=http://192.168.1.7:8000    # HP, Wi-Fi sama
+flutter run --dart-define-from-file=config/app_env.json --dart-define=API_BASE_URL=http://10.0.2.2:8000       # emulator
+flutter run --dart-define-from-file=config/app_env.json --dart-define=API_BASE_URL=http://192.168.1.7:8000    # HP, Wi-Fi sama
 ```
 
 ### Menu pengembang
@@ -137,20 +137,33 @@ APK tidak terbagikan dengan kunci yang salah.
 
 ## 7. Build APK release
 
-1. Untuk update, naikkan angka setelah `+` pada `version` di `pubspec.yaml`, misalnya
+Alamat dan kunci Supabase tidak ada di kode. Keduanya masuk saat build dari
+`config/app_env.json`, yang tidak di-commit.
+
+1. Kalau `config/app_env.json` belum ada, salin contohnya:
+
+   ```bash
+   cp config/app_env.example.json config/app_env.json
+   ```
+
+   Lalu isi `SUPABASE_URL` dan `SUPABASE_ANON_KEY` dari Supabase > Project Settings >
+   API Keys. Pakai kunci `anon`, jangan pernah kunci `service_role`.
+2. Untuk update, naikkan angka setelah `+` pada `version` di `pubspec.yaml`, misalnya
    dari `1.0.0+1` ke `1.0.1+2`. Android menolak update dengan angka yang sama atau
    lebih kecil.
-2. Jalankan:
+3. Jalankan:
 
    ```bash
    flutter pub get
    flutter analyze
    flutter test
-   flutter build apk --release
+   flutter build apk --release --dart-define-from-file=config/app_env.json
    ```
 
-3. Hasilnya ada di `build/app/outputs/flutter-apk/app-release.apk`.
-4. Pasang dulu di satu HP, lalu cek `docs/uji-talkback.md` bagian 25.
+   Tanpa file itu, atau kalau isinya kosong atau belum benar, build sengaja gagal,
+   supaya tidak ada APK yang tidak bisa dipakai masuk atau daftar.
+4. Hasilnya ada di `build/app/outputs/flutter-apk/app-release.apk`.
+5. Pasang dulu di satu HP, lalu cek `docs/uji-talkback.md` bagian 25.
 
 ## 8. Bagikan ke siswa
 

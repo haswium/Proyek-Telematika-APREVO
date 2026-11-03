@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -66,6 +67,29 @@ tasks.matching { it.name == "packageRelease" }.configureEach {
         }
     }
 }
+
+// APK tanpa kunci Supabase terbuka, tetapi tidak bisa dipakai masuk atau daftar, jadi
+// tidak boleh terbuat. Syaratnya sama dengan SupabaseConfig.isConfigured.
+val dartDefines: Map<String, String> = (findProperty("dart-defines") as String? ?: "")
+    .split(",")
+    .filter { it.isNotEmpty() }
+    .map { String(Base64.getDecoder().decode(it)) }
+    .associate { it.substringBefore("=") to it.substringAfter("=") }
+
+tasks.matching { it.name == "preReleaseBuild" || it.name == "compileFlutterBuildRelease" }
+    .configureEach {
+        doFirst {
+            val url = dartDefines["SUPABASE_URL"].orEmpty()
+            val anonKey = dartDefines["SUPABASE_ANON_KEY"].orEmpty()
+            if (!url.startsWith("https://") || !anonKey.startsWith("eyJ")) {
+                throw GradleException(
+                    "SUPABASE_URL atau SUPABASE_ANON_KEY kosong atau belum benar. Build " +
+                        "release harus memakai --dart-define-from-file=config/app_env.json. " +
+                        "Lihat docs/deploy.md, langkah 7."
+                )
+            }
+        }
+    }
 
 kotlin {
     compilerOptions {

@@ -12,10 +12,11 @@ di kolom **Catatan** kalau berbeda dari yang seharusnya.
 ## Persiapan
 
 1. Pasang aplikasi ke HP: sambungkan HP lewat USB (USB debugging aktif),
-   lalu jalankan `flutter run`.
+   lalu jalankan `flutter run --dart-define-from-file=config/app_env.json`.
+   Tanpa file itu aplikasi tidak bisa masuk atau daftar (lihat `docs/deploy.md`).
    - Kalau ingin daftar materi siswa diambil dari backend, jalankan backend
      dengan `--host 0.0.0.0`, lalu jalankan aplikasi dengan
-     `flutter run --dart-define=API_BASE_URL=http://<IP-laptop>:8000`.
+     `flutter run --dart-define-from-file=config/app_env.json --dart-define=API_BASE_URL=http://<IP-laptop>:8000`.
      HP dan laptop harus satu Wi-Fi. Tanpa itu, aplikasi memakai server
      Render. Alamat server juga bisa diubah di menu pengembang (ketuk
      "Tentang APREVO" 7 kali). Kalau server tidak bisa dihubungi, layar Kelas

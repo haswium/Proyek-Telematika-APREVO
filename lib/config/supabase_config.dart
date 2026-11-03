@@ -1,18 +1,21 @@
 /// Sambungan ke Supabase.
 ///
-/// Yang boleh ditaruh di sini HANYA kunci `anon` (public). Kunci
-/// `service_role` tidak boleh masuk ke aplikasi; itu hanya untuk backend.
+/// Nilainya diberikan saat build lewat
+/// `--dart-define-from-file=config/app_env.json`. File itu tidak di-commit, dan
+/// contohnya ada di `config/app_env.example.json` (lihat `docs/deploy.md`).
+///
+/// Yang boleh diisi HANYA kunci `anon` (public). Kunci `service_role` tidak boleh
+/// masuk ke aplikasi; itu hanya untuk backend.
 class SupabaseConfig {
   SupabaseConfig._();
 
-  static const String url = 'https://jlyvuhcwzshpwgwgfaer.supabase.co';
+  static const String url = String.fromEnvironment('SUPABASE_URL');
 
-  /// Tempel kunci `anon` `public` dari dashboard Supabase
-  /// (Settings > API Keys) di antara tanda kutip ini.
-  static const String anonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpseXZ1aGN3enNocHdnd2dmYWVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1NzU2NjAsImV4cCI6MjEwNjE1MTY2MH0.vVCFETC0nJiYfPtn2rN2eIgVLv73iS8dNhPTFhYMdho';
+  static const String anonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
-  /// `false` selama kunci belum diisi. Aplikasi tetap terbuka, tetapi
-  /// tidak bisa masuk atau daftar.
-  static bool get isConfigured => anonKey.startsWith('eyJ');
+  /// `false` kalau file di atas tidak diberikan. Saat pengembangan aplikasi tetap
+  /// terbuka, tetapi tidak bisa masuk atau daftar. Build release menolak keadaan
+  /// ini, lihat `android/app/build.gradle.kts`.
+  static bool get isConfigured =>
+      url.startsWith('https://') && anonKey.startsWith('eyJ');
 }

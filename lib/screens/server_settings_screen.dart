@@ -219,7 +219,6 @@ class _AboutAprevoRowState extends State<AboutAprevoRow> {
   Widget build(BuildContext context) => ListRow(
     icon: Icons.info_outline,
     title: 'Tentang APREVO',
-    subtitle: 'Proyek Telematika, Teknik Komputer ITS',
     onTap: _tapped,
   );
 }

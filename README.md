@@ -36,13 +36,16 @@ dengan `<application>`):
 
 ## Menyambungkan ke Supabase
 
-Buka `lib/config/supabase_config.dart` dan tempel kunci `anon` `public` dari
-dashboard Supabase (Settings > API Keys) ke `anonKey`. Jangan pernah menaruh
+Salin `config/app_env.example.json` menjadi `config/app_env.json` (tidak
+di-commit), lalu isi alamat proyek dan kunci `anon` `public` dari dashboard
+Supabase (Settings > API Keys). Jalankan aplikasi dengan
+`flutter run --dart-define-from-file=config/app_env.json`. Jangan pernah menaruh
 kunci `service_role` di aplikasi.
 
 - Kunci terisi: masuk dan daftar memakai Supabase Auth. Akun tersimpan, dan
   aplikasi mengingat sesi masuk terakhir.
-- Kunci belum terisi: mode demo dengan akun contoh di bawah.
+- File tidak diberikan: aplikasi terbuka, tetapi tidak bisa masuk atau daftar.
+  Build release menolak keadaan ini.
 
 Yang sudah tersambung baru akun (masuk, daftar, keluar). Materi, soal, dan
 hasil masih data contoh di `lib/data/app_store.dart`.
@@ -101,7 +104,7 @@ dan mengetuk Odi membacakan deskripsi itu dengan suara.
 ```
 lib/
   main.dart
-  config/supabase_config.dart   URL proyek dan kunci anon
+  config/supabase_config.dart   URL proyek dan kunci anon dari saat build
   theme/app_theme.dart          palet empat warna, gaya teks, gaya tombol
   models/models.dart            LessonMaterial, Question, Attempt, Account
   data/app_store.dart           data contoh; titik sambung ke Supabase
