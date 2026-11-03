@@ -2,7 +2,16 @@ import re
 
 import pymupdf
 
-from pdf_sections import page_images, plain_text, split_pdf_bytes
+from pdf_sections import (
+    normalize_content,
+    page_images,
+    plain_text,
+    replace_table,
+    split_pdf_bytes,
+    table_marker,
+    table_row_label,
+    tables_in,
+)
 
 FONT = pymupdf.Font("helv")
 IMAGE_LINE = re.compile(r"^\[\[gambar:xref-\d+\]\]$")
@@ -443,3 +452,93 @@ def test_lanjutan_butir_tanpa_indentasi_tetap_satu_butir():
         "- Siapa pengirimnya?",
         "Paragraf setelah daftar.",
     ]
+
+
+def draw_table(page, x0, y0, widths, rows, row_height=40):
+    """Tabel bergaris. Teksnya ditulis tanpa karakter spasi seperti PDF Canva."""
+    x1 = x0 + sum(widths)
+    y1 = y0 + row_height * len(rows)
+    for i in range(len(rows) + 1):
+        page.draw_line((x0, y0 + i * row_height), (x1, y0 + i * row_height))
+    x = x0
+    for width in [0, *widths]:
+        x += width
+        page.draw_line((x, y0), (x, y1))
+    for r, row in enumerate(rows):
+        x = x0
+        for width, text in zip(widths, row):
+            place_words(page, x + 4, y0 + r * row_height + 16, text, 11, 0.1)
+            x += width
+
+
+DETEKTIF = [
+    ["Masalah", "Penyebab", "Perbaikan"],
+    ["Sprite diam", "1. Warna beda", "Samakan warna"],
+    ["Sprite salah arah", "Blok salah", "Ganti blok"],
+]
+
+
+def test_tabel_bergaris_disimpan_sebagai_tabel_dengan_spasi_utuh():
+    doc = pymupdf.open()
+    page = doc.new_page()
+    place_words(page, 72, 60, "7. Detektif Code:", 18, 0.1)
+    place_words(page, 72, 90, "Cari penyebab masalahnya.", 11, 0.1)
+    draw_table(page, 72, 110, [150, 150, 150], DETEKTIF)
+    place_words(page, 72, 300, "Sudah selesai.", 11, 0.1)
+    section = split_pdf_bytes(doc.tobytes())[0]
+    assert tables_in(section.content) == [
+        {
+            "title": "7. Detektif Code",
+            "columns": DETEKTIF[0],
+            "rows": DETEKTIF[1:],
+        }
+    ]
+    lines = section.content.split("\n")
+    assert lines[0] == "Cari penyebab masalahnya."
+    assert lines[1].startswith("[[tabel:")
+    assert lines[2:] == ["Sudah selesai."]
+
+
+def test_tabel_berisi_gambar_tetap_dibaca_per_baris():
+    doc = pymupdf.open()
+    page = doc.new_page()
+    draw_table(page, 72, 110, [150, 150], [["Blok", "Arti"], ["", "Berjalan"]], 80)
+    image(page, pymupdf.Rect(80, 195, 140, 255), 120)
+    section = split_pdf_bytes(doc.tobytes())[0]
+    assert tables_in(section.content) == []
+    assert "Berjalan" in section.content
+
+
+def test_garis_satu_baris_bukan_tabel():
+    doc = pymupdf.open()
+    page = doc.new_page()
+    draw_table(page, 72, 110, [150, 150], [["Catatan", "Penting"]])
+    assert tables_in(split_pdf_bytes(doc.tobytes())[0].content) == []
+
+
+def test_label_baris_tabel_menyebut_nama_kolom():
+    assert table_row_label(
+        ["Langkah", "Keterangan", "Catatan"],
+        ["Ambil", "1. Buka menu\n2. Pilih blok.", ""],
+        1,
+    ) == "Baris 1. Langkah: Ambil. Keterangan: 1. Buka menu. 2. Pilih blok."
+
+
+def test_penanda_tabel_tidak_dirusak_saat_isi_dirapikan_dan_masuk_ke_ai():
+    table = {"title": "Uji", "columns": ["A", "B"], "rows": [["\u25cf x y", "z"]]}
+    content = f"Pengantar\n{table_marker(table)}"
+    assert normalize_content(content) == content
+    assert plain_text(content).split("\n") == [
+        "Pengantar",
+        "Uji",
+        "Baris 1. A: \u25cf x y. B: z.",
+    ]
+
+
+def test_mengganti_tabel_sesuai_urutan():
+    first = {"title": "Satu", "columns": ["A", "B"], "rows": [["1", "2"]]}
+    second = {"title": "Dua", "columns": ["A", "B"], "rows": [["3", "4"]]}
+    content = f"{table_marker(first)}\nTengah\n{table_marker(second)}"
+    changed = {**second, "title": "Baru"}
+    assert tables_in(replace_table(content, 1, changed)) == [first, changed]
+    assert replace_table(content, 2, changed) is None

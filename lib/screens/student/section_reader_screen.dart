@@ -307,6 +307,9 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
   /// deskripsi juga disembunyikan: materi hanya bisa terbit kalau semua
   /// gambarnya berdeskripsi, jadi ini hanya terjadi di pratinjau guru.
   bool _isHidden(String line) {
+    if (ContentTable.isMarker(line)) {
+      return ContentTable.tryParseLine(line) == null;
+    }
     if (!_imageMarker.hasMatch(line)) return false;
     final image = _image(line);
     return image == null || image.isDecorative || image.description == null;
@@ -385,8 +388,62 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
     );
   }
 
+  /// Tabel: ringkasannya dibacakan sebagai judul saat fokus sampai ke tabel,
+  /// lalu tiap baris satu fokus yang menyebut nama kolomnya. Baris nama kolom
+  /// tidak difokus karena namanya sudah ada di tiap baris.
+  Widget _table(ContentTable table) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          container: true,
+          child: Text(table.summary, style: AppType.titleMedium),
+        ),
+        const SizedBox(height: 10),
+        ExcludeSemantics(
+          child: _tableRow(table.columns, AppColors.lilac, AppType.titleMedium),
+        ),
+        for (var i = 0; i < table.rows.length; i++)
+          Semantics(
+            container: true,
+            label: table.rowLabel(i),
+            excludeSemantics: true,
+            child: _tableRow(
+              table.rows[i],
+              AppColors.white,
+              AppType.bodyMedium,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _tableRow(List<String> cells, Color color, TextStyle style) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final cell in cells)
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color,
+                  border: Border.all(color: AppColors.ink),
+                ),
+                child: Text(cell, style: style),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Satu paragraf, subjudul, atau gambar, masing-masing satu fokus TalkBack.
   Widget _block(String line) {
+    final table = ContentTable.tryParseLine(line);
+    if (table != null) return _table(table);
     if (_imageMarker.hasMatch(line)) {
       final text = 'Gambar: ${_image(line)?.description ?? ''}';
       return Semantics(

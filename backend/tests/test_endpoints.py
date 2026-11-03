@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 
 import main
@@ -235,3 +236,61 @@ def test_isi_halaman_lama_dirapikan_saat_dibaca_siswa(client, login, fake_db):
     assert response.json()["sections"][0]["content"] == (
         "Kamu akan belajar:\n- Membuka modul\n- Mengenal blok"
     )
+
+
+def table_section(fake_db):
+    table = {"title": "Uji", "columns": ["A", "B"], "rows": [["1", "2"]]}
+    fake_db["material_sections"] = [
+        {
+            "id": "s1",
+            "material_id": "m1",
+            "position": 1,
+            "title": "Halaman",
+            "content": f"Pengantar\n[[tabel:{json.dumps(table)}]]",
+        }
+    ]
+
+
+def test_guru_mengedit_isi_tabel(client, login, fake_db):
+    setup_subject(client, login, fake_db)
+    table_section(fake_db)
+    url = "/teacher/materials/m1/sections/s1/tables/0"
+    changed = {"title": " Baru ", "columns": ["A", "B"], "rows": [["1", " dua "]]}
+    response = client.patch(url, json=changed)
+    assert response.status_code == 200, response.text
+    content = client.get("/materials/m1/sections").json()["sections"][0]["content"]
+    assert content.split("\n")[0] == "Pengantar"
+    assert json.loads(content.split("\n")[1][len("[[tabel:") : -2]) == {
+        "title": "Baru",
+        "columns": ["A", "B"],
+        "rows": [["1", "dua"]],
+    }
+
+
+def test_edit_tabel_ditolak_kalau_isinya_tidak_utuh(client, login, fake_db):
+    setup_subject(client, login, fake_db)
+    table_section(fake_db)
+    url = "/teacher/materials/m1/sections/s1/tables"
+    good = {"title": "", "columns": ["A", "B"], "rows": [["1", "2"]]}
+    bad = [
+        {**good, "columns": ["A", " "]},
+        {**good, "rows": [["1"]]},
+        {**good, "rows": [["", " "]]},
+        {**good, "rows": [["x" * 2001, "2"]]},
+    ]
+    for body in bad:
+        assert client.patch(f"{url}/0", json=body).status_code == 400
+    assert client.patch(f"{url}/1", json=good).status_code == 404
+    missing = "/teacher/materials/m1/sections/salah/tables/0"
+    assert client.patch(missing, json=good).status_code == 404
+
+
+def test_guru_lain_tidak_bisa_mengedit_tabel(client, login, fake_db):
+    setup_subject(client, login, fake_db)
+    table_section(fake_db)
+    login("teacher", "Guru Lain")
+    response = client.patch(
+        "/teacher/materials/m1/sections/s1/tables/0",
+        json={"title": "", "columns": ["A", "B"], "rows": [["1", "2"]]},
+    )
+    assert response.status_code in (403, 404)

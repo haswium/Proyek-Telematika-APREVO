@@ -253,6 +253,16 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 18.2 | Tab Hasil | Nama kelas sebagai judul, lalu kartu tiap materi | | |
 | 18.3 | Kartu materi | Judul sebagai judul, nilai pre-test dan post-test, lalu kalimat perbandingan | | |
 
+## 19. Tabel di materi
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 19.1 | Siswa, geser ke tabel | "Tabel: [judul], 3 kolom, 2 baris" dibacakan sebagai judul, sebelum isi tabel | | |
+| 19.2 | Geser ke baris berikutnya | "Baris 1. [kolom]: [isi]. [kolom]: [isi]." dalam satu fokus | | |
+| 19.3 | Gestur lompat antar judul | Fokus bisa berhenti di judul tabel | | |
+| 19.4 | Guru, buka "Tabel" di Kelola materi | Tiap kolom isian menyebut baris dan nama kolomnya | | |
+| 19.5 | Guru, ubah sel lalu "Simpan tabel" | "Tabel disimpan." dibacakan, dan isinya berubah di layar baca | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

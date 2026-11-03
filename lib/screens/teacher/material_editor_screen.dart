@@ -10,6 +10,7 @@ import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import '../student/section_reader_screen.dart';
 import 'material_images_screen.dart';
+import 'material_tables_screen.dart';
 import 'question_form_screen.dart';
 import 'quiz_schedule_screen.dart';
 import 'results_screen.dart';
@@ -336,6 +337,23 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
               'Gambar dan deskripsi materi ${m.title}. Periksa deskripsi AI '
               'sebelum terbit',
           onTap: () => _openImages(m),
+        ),
+        ListRow(
+          icon: Icons.table_chart_outlined,
+          title: 'Tabel',
+          subtitle: 'Periksa isi tabel dari PDF sebelum terbit',
+          semanticLabel:
+              'Tabel materi ${m.title}. Periksa isi tabel dari PDF sebelum '
+              'terbit',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MaterialTablesScreen(
+                materialId: m.id,
+                materialTitle: m.title,
+              ),
+            ),
+          ),
         ),
         ListRow(
           icon: Icons.insights_outlined,

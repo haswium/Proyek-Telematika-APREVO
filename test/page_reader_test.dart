@@ -306,6 +306,80 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('tabel: ringkasan dibacakan dulu, tiap baris satu fokus yang '
+      'menyebut nama kolom', (tester) async {
+    tallScreen(tester);
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      testApp(
+        SectionReaderScreen(
+          materialTitle: 'ScratchJR',
+          sections: [
+            MaterialSection(
+              id: 's9',
+              position: 9,
+              title: '7. Detektif Code',
+              content:
+                  'Pengantar tabel.\n'
+                  '[[tabel:{"title": "7. Detektif Code", '
+                  '"columns": ["Masalah", "Penyebab", "Perbaikan"], '
+                  '"rows": [["Sprite diam", "1. Warna beda\\n2. Belum '
+                  'tersambung", "Samakan warna."], ["Salah arah", "", '
+                  '"Ganti blok"]]}]]\n'
+                  'Sudah selesai.',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final summary = find.bySemanticsLabel(
+      'Tabel: 7. Detektif Code, 3 kolom, 2 baris',
+    );
+    final first = find.bySemanticsLabel(
+      'Baris 1. Masalah: Sprite diam. Penyebab: 1. Warna beda. 2. Belum '
+      'tersambung. Perbaikan: Samakan warna.',
+    );
+    final second = find.bySemanticsLabel(
+      'Baris 2. Masalah: Salah arah. Perbaikan: Ganti blok.',
+    );
+    expect(summary, findsOneWidget);
+    expect(first, findsOneWidget);
+    expect(second, findsOneWidget);
+    expect(tester.getSemantics(summary).flagsCollection.isHeader, isTrue);
+    double top(Finder f) => tester.getTopLeft(f).dy;
+    expect(top(summary), lessThan(top(first)));
+    expect(top(first), lessThan(top(second)));
+    // Tabel tampil sebagai tabel, dan nama kolom tidak difokus sendiri.
+    expect(find.text('Perbaikan'), findsOneWidget);
+    expect(find.bySemanticsLabel('Perbaikan'), findsNothing);
+    expect(find.textContaining('[[tabel'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('penanda tabel yang rusak tidak dibacakan', (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(
+      testApp(
+        SectionReaderScreen(
+          materialTitle: 'ScratchJR',
+          sections: [
+            MaterialSection(
+              id: 's',
+              position: 1,
+              title: 'Hal',
+              content: 'Isi.\n[[tabel:{"title": 1}]]',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Isi.'), findsOneWidget);
+    expect(find.textContaining('tabel'), findsNothing);
+  });
+
   test('label butir menyebut nomor asli hanya kalau berbeda', () {
     expect(listItemLabel(0, 2, null, 'Satu'), 'Butir 1 dari 2: Satu');
     expect(listItemLabel(1, 2, '2.', 'Dua'), 'Butir 2 dari 2: Dua');

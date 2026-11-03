@@ -283,6 +283,20 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Menyimpan isi tabel ke-[index] di satu halaman.
+  Future<void> updateTable(
+    String materialId,
+    String sectionId,
+    int index,
+    ContentTable table,
+  ) async {
+    await api.patch(
+      '/teacher/materials/$materialId/sections/$sectionId/tables/$index',
+      {'title': table.title, 'columns': table.columns, 'rows': table.rows},
+    );
+    notifyListeners();
+  }
+
   Future<void> setPublished(String materialId, bool value) async {
     await api.patch('/teacher/materials/$materialId', {'is_published': value});
     notifyListeners();
