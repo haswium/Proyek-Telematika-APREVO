@@ -1,29 +1,39 @@
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
-import '../../services/speech.dart';
+import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
+import 'review_screen.dart';
 
-/// Hasil satu tes: skor bintang dan apresiasi dari Odi.
+/// Hasil satu tes: skor bintang, apresiasi dari Odi, lalu tombol untuk
+/// melihat ulang jawaban dan (setelah tenggat) pembahasan.
 class ResultScreen extends StatefulWidget {
   const ResultScreen({
     super.key,
+    required this.attemptId,
     required this.materialTitle,
     required this.kind,
     required this.score,
     required this.total,
     required this.studentName,
+    this.deadlineAt,
+    this.discussionAvailable = false,
     this.preTest,
   });
 
+  final String attemptId;
   final String materialTitle;
   final TestKind kind;
   final int score;
   final int total;
   final String studentName;
+
+  /// Tenggat kuis. Pembahasan terbuka setelah waktu ini.
+  final DateTime? deadlineAt;
+  final bool discussionAvailable;
 
   /// Hasil pre-test siswa, untuk dibandingkan saat post-test selesai.
   final Attempt? preTest;
@@ -62,7 +72,7 @@ class _ResultScreenState extends State<ResultScreen> {
 
   String get _nextStep {
     if (widget.kind == TestKind.pre) {
-      return 'Langkah berikutnya: dengarkan materinya, lalu kerjakan '
+      return 'Langkah berikutnya: baca materinya, lalu kerjakan '
           'post-test.';
     }
     final pre = widget.preTest;
@@ -74,35 +84,39 @@ class _ResultScreenState extends State<ResultScreen> {
           'Sekarang nilaimu naik!';
     }
     if (after == before) {
-      return 'Nilaimu sama dengan pre-test. Coba dengarkan materinya '
+      return 'Nilaimu sama dengan pre-test. Coba baca materinya '
           'sekali lagi.';
     }
-    return 'Nilai pre-test kamu lebih tinggi. Dengarkan lagi materinya, '
+    return 'Nilai pre-test kamu lebih tinggi. Baca lagi materinya, '
         'lalu ulangi post-test.';
+  }
+
+  /// Kapan jawaban benar dan pembahasan bisa dilihat.
+  String get _discussionNote {
+    if (widget.discussionAvailable) {
+      return 'Pembahasan sudah bisa dibuka.';
+    }
+    final deadline = widget.deadlineAt;
+    if (deadline == null) {
+      return 'Pembahasan terbuka setelah tenggat kuis lewat.';
+    }
+    return 'Jawaban benar dan pembahasan terbuka setelah '
+        '${formatDateTime(deadline)}.';
   }
 
   String get _summary =>
       '${widget.kind.label} ${widget.materialTitle} selesai. '
       'Kamu benar ${widget.score} dari ${widget.total} soal, '
-      '$_stars dari 3 bintang. $_praise $_nextStep';
+      '$_stars dari 3 bintang. $_praise $_nextStep $_discussionNote';
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      // Kalau TalkBack menyala, liveRegion di bawah yang membacakan.
-      // Kalau tidak, Odi membacakannya sendiri.
-      if (!MediaQuery.of(context).accessibleNavigation) {
-        Speech.speak(_summary);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    Speech.stop();
-    super.dispose();
+  void _openReview(bool withKey) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ReviewScreen(attemptId: widget.attemptId, withKey: withKey),
+      ),
+    );
   }
 
   @override
@@ -171,16 +185,29 @@ class _ResultScreenState extends State<ResultScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.volume_up),
-              label: const Text('Dengarkan hasil'),
-              onPressed: () => Speech.speak(_summary),
-            ),
             const SizedBox(height: 12),
+            // Sudah ikut dibacakan di ringkasan di atas.
+            ExcludeSemantics(
+              child: Text(_discussionNote, style: AppType.bodyMedium),
+            ),
+            const SizedBox(height: 20),
             PrimaryButton(
-              label: 'Kembali ke langkah belajar',
-              icon: Icons.arrow_back,
+              label: 'Lihat jawabanku',
+              icon: Icons.fact_check_outlined,
+              onPressed: () => _openReview(false),
+            ),
+            if (widget.discussionAvailable) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.lightbulb_outline),
+                label: const Text('Buka pembahasan'),
+                onPressed: () => _openReview(true),
+              ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Kembali ke langkah belajar'),
               onPressed: () => Navigator.pop(context),
             ),
           ],

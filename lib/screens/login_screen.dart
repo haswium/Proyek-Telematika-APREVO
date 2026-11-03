@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playful.dart';
 import 'auth_flow.dart';
 import 'register_screen.dart';
+import 'server_settings_screen.dart';
 
 /// Layar masuk. Satu form untuk guru dan siswa; perannya diambil dari akun.
 class LoginScreen extends StatefulWidget {
@@ -36,7 +36,6 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -66,12 +65,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// Fitur yang butuh Supabase Auth dan belum tersambung.
   void _notYet(String feature) {
-    final message = '$feature akan aktif setelah aplikasi tersambung ke '
+    final message =
+        '$feature akan aktif setelah aplikasi tersambung ke '
         'Supabase.';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-    Speech.feedback(context, message);
   }
 
   @override
@@ -154,12 +153,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton(
                     onPressed: () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const RegisterScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
                     ),
                     child: const Text('Belum punya akun? Daftar sekarang'),
                   ),
+                  const SizedBox(height: 12),
+                  const ServerAddressRow(),
                 ],
               ),
             ),

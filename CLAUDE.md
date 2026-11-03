@@ -18,6 +18,11 @@ flutter run -d chrome
 
 # backend, dijalankan dari folder backend/
 .venv\Scripts\python.exe -m uvicorn main:app --reload
+# supaya bisa diakses dari HP di Wi-Fi yang sama
+.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# alamat backend saat build (bisa juga diubah di layar "Alamat server")
+flutter run --dart-define=API_BASE_URL=http://192.168.1.7:8000
 ```
 
 Selalu jalankan `flutter analyze` setelah mengubah kode Dart, dan perbaiki
@@ -25,21 +30,39 @@ semua error sebelum menganggap tugas selesai.
 
 ## Struktur frontend
 
-- `lib/main.dart`: inisialisasi Supabase (kalau kunci terisi), lalu `SplashScreen`.
+- `lib/main.dart`: memuat `Settings`, inisialisasi Supabase (kalau kunci
+  terisi), lalu `SplashScreen`.
 - `lib/config/supabase_config.dart`: URL proyek dan kunci anon. Kalau kunci
-  belum diisi, aplikasi berjalan dalam mode demo.
+  belum diisi, aplikasi tidak bisa masuk atau daftar.
+- `lib/config/api_config.dart`: alamat backend bawaan (`API_BASE_URL`,
+  `10.0.2.2:8000` di Android, `localhost:8000` di web) dan `normalize`.
+- `lib/services/settings.dart`: alamat server dan status onboarding yang
+  disimpan di perangkat (`shared_preferences`).
+- `lib/services/api_client.dart`: `ApiClient` (http + token Supabase, ulang
+  sekali setelah 401) dan `ApiException` dengan pesan bahasa Indonesia.
+- `lib/services/time_format.dart`: `formatDateTime` (bahasa Indonesia) dan
+  `isoWithOffset` (waktu berzona untuk backend).
 - `lib/theme/app_theme.dart`: `AppColors`, `AppType`, gaya tombol, `kTouchTarget`.
-- `lib/models/models.dart`: `LessonMaterial`, `Question`, `GameType`, `TestKind`,
-  `Attempt`, `Account`, `starsFor`.
+- `lib/models/models.dart`: model dari respons backend (`Subject`,
+  `LessonMaterial`, `QuizInfo`, `MaterialSection`, `StudentQuestion`,
+  `ReviewItem`, `SubjectResults`, dll), `Question` (soal guru), `starsFor`.
 - `lib/data/app_store.dart`: `AppStore` (ChangeNotifier, singleton `store`).
-  Akun memakai Supabase Auth. Materi, soal, dan hasil MASIH data contoh di
-  memori, belum tersambung ke tabel Supabase.
+  Akun memakai Supabase Auth, data lain lewat backend sesuai
+  `docs/kontrak-api.md`. Setelah data berubah, `notifyListeners` membuat
+  layar yang terbuka memuat ulang.
 - `lib/services/speech.dart`: `Speech.speak` (TTS id-ID), `Speech.announce`
   (pengumuman screen reader).
-- `lib/widgets/`: `common.dart` (PrimaryButton, AppCard, ListRow, dll),
+- `lib/widgets/`: `load_view.dart` (`LoadView`: pesan memuat diumumkan,
+  error di `ErrorCard` + tombol Coba lagi), `common.dart` (PrimaryButton,
+  AppCard, ListRow, dll),
   `playful.dart` (PurpleScaffold, animasi), `mascot.dart` (maskot Odi),
   `nav_bar.dart` (menu bawah).
-- `lib/screens/`: splash, welcome, login, register, `student/`, `teacher/`.
+- `lib/screens/`: splash, welcome, login, register, `server_settings_screen`,
+  `student/` (beranda, materi, `section_reader_screen`, kuis, hasil,
+  `review_screen`), `teacher/` (mata pelajaran, unggah PDF, editor materi,
+  `quiz_schedule_screen`, `results_screen`).
+- `test/fake_server.dart`: server tiruan (`MockClient`) untuk tes. Tes tidak
+  pernah menghubungi backend atau Supabase.
 
 ## Konsep aplikasi (keputusan terbaru)
 
@@ -90,6 +113,8 @@ semua error sebelum menganggap tugas selesai.
 - Hiasan (logo, ikon status, animasi) disembunyikan dari screen reader.
 - Animasi berhenti kalau `MediaQuery.disableAnimations` aktif.
 - Kalau TalkBack mati, umpan balik penting dibacakan lewat `Speech.speak`.
+- Layar yang memuat data dari backend memakai `LoadView`, supaya pesan
+  memuat dan error selalu dibacakan.
 
 ## Keamanan
 
@@ -101,9 +126,13 @@ semua error sebelum menganggap tugas selesai.
 
 ## Belum dikerjakan
 
-- Menyambungkan materi, soal, dan hasil ke tabel Supabase. Struktur tabel
-  perlu disepakati dengan backend dulu (misalnya pembeda pre-test dan
-  post-test, kolom penjelasan, dan skor).
 - AI pembuat soal (`generateQuestions` di `app_store.dart` masih tiruan).
-- Unggah PDF materi.
 - Pengujian dengan TalkBack di perangkat Android.
+- Butuh endpoint backend dulu:
+  - Ubah dan hapus soal yang sudah tersimpan. Sekarang soal disusun sebagai
+    draf di aplikasi lalu dikirim sekaligus, setelah itu hanya bisa dilihat.
+  - Materi yang diketik tanpa PDF. Sekarang materi hanya dari unggah PDF.
+  - Jenis soal per materi. Sekarang diambil dari soal pertama.
+  - Deskripsi gambar per soal. Yang dibacakan baru `image_description` per
+    sub-bab.
+  - Daftar anggota mata pelajaran. Tab Siswa guru disusun dari data hasil.

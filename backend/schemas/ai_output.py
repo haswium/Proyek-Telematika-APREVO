@@ -17,9 +17,7 @@ class MultipleChoiceQuestion(BaseModel):
     def validate_options(self):
         if len(self.options) < 2:
             raise ValueError("Pilihan ganda harus memiliki minimal 2 opsi.")
-        option_texts = [
-            option.text.strip().casefold() for option in self.options
-        ]
+        option_texts = [option.text.strip().casefold() for option in self.options]
         if any(not text for text in option_texts):
             raise ValueError("Teks opsi tidak boleh kosong.")
         if len(option_texts) != len(set(option_texts)):
@@ -40,6 +38,7 @@ class TrueFalseQuestion(BaseModel):
 
 class TextAnswer(BaseModel):
     answer: str
+
 
 class TextQuestion(BaseModel):
     type: Literal["text"]
@@ -84,3 +83,10 @@ Question = Annotated[
 
 class AIOutput(BaseModel):
     questions: list[Question]
+
+    @model_validator(mode="after")
+    def validate_single_question_type(self):
+        types = {question.type for question in self.questions}
+        if len(types) > 1:
+            raise ValueError("Satu kuis hanya boleh menggunakan satu tipe soal.")
+        return self

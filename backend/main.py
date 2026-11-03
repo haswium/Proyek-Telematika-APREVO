@@ -1,8 +1,20 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
 import os
+import threading
+import time
+from dataclasses import dataclass, field
 from supabase import create_client, ClientOptions
 from postgrest.exceptions import APIError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -16,18 +28,50 @@ from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
 import logging
-from pdf_sections import split_pdf_bytes
+from pdf_sections import image_keys, page_images, plain_text, split_pdf_bytes
+from ai_client import GeminiKeyMissing, gemini_client
+from ai_quiz import generate_quiz
+from PIL import UnidentifiedImageError
+from ai_image import describe_image
+import mimetypes
 
 print("DEBUG: MAIN.PY TERLOAD", flush=True)
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin = create_client(SUPABASE_URL, os.getenv("SUPABASE_SERVICE_KEY"))
+class ThreadLocalSupabase:
+    """Klien Supabase tersendiri untuk setiap thread.
+
+    Klien Supabase memakai satu koneksi HTTP/2 (httpx) yang tidak aman dipakai
+    bersamaan oleh beberapa thread. Endpoint sinkron FastAPI berjalan di
+    thread pool, dan deskripsi gambar berjalan di latar belakang, jadi satu
+    klien bersama sesekali gagal dengan RemoteProtocolError ("Server
+    disconnected") saat polling bertabrakan dengan penulisan. Dengan klien per
+    thread, setiap thread memakai koneksinya sendiri.
+    """
+
+    def __init__(self, key):
+        self._key = key
+        self._local = threading.local()
+
+    def _client(self):
+        client = getattr(self._local, "client", None)
+        if client is None:
+            client = create_client(SUPABASE_URL, self._key)
+            self._local.client = client
+        return client
+
+    def __getattr__(self, name):
+        return getattr(self._client(), name)
+
+
+supabase = ThreadLocalSupabase(SUPABASE_KEY)
+supabase_admin = ThreadLocalSupabase(os.getenv("SUPABASE_SERVICE_KEY"))
 TEST_LOGIN_EMAIL = os.getenv("TEST_LOGIN_EMAIL")
 TEST_LOGIN_PASSWORD = os.getenv("TEST_LOGIN_PASSWORD")
 ENABLE_DEBUG_ENDPOINTS = os.getenv("ENABLE_DEBUG_ENDPOINTS") == "1"
@@ -46,6 +90,39 @@ EXTRA_CORS_ORIGINS = [
 ]
 
 app = FastAPI()
+
+SERVER_ERROR_DETAIL = (
+    "Server mengalami kesalahan saat memproses permintaan. Coba lagi nanti, "
+    "atau hubungi pengelola server kalau terus terjadi."
+)
+
+
+# Dipasang sebelum CORSMiddleware sehingga berada DI DALAM CORS: error yang
+# tidak tertangkap tetap dijawab 500 dengan header CORS. Tanpa ini, browser
+# membuang respons 500 dan aplikasi web mengira server tidak bisa dihubungi.
+@app.middleware("http")
+async def server_error_json(request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as error:
+        logger.exception(server_error_log(request, error))
+        return JSONResponse(status_code=500, content={"detail": SERVER_ERROR_DETAIL})
+
+
+def server_error_log(request, error):
+    """Satu baris yang mudah dicari di log: cari "SERVER_ERROR". Endpoint
+    ditulis sebagai pola rute supaya error di materi berbeda terkumpul."""
+    route = request.scope.get("route")
+    endpoint = getattr(route, "path", None) or request.url.path
+    kind = type(error)
+    message = " ".join(str(error).split())[:500] or "-"
+    return (
+        f"SERVER_ERROR endpoint={request.method} {endpoint} "
+        f"path={request.url.path} "
+        f"error={kind.__module__}.{kind.__qualname__} "
+        f"pesan={message}"
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -229,7 +306,7 @@ def is_subject_member(subject_id, student_id):
 
 
 def student_can_access_material(material, student_id):
-    """Akses lewat keanggotaan mata pelajaran, atau material_access lama."""
+    """Akses lewat keanggotaan kelas, atau material_access lama."""
     if is_subject_member(material.get("subject_id"), student_id):
         return True
     access_response = (
@@ -275,9 +352,7 @@ def check_post_test_unlocked(quiz, student_id):
     if quiz.get("kind") == "post" and not has_submitted_pre_test(
         quiz["material_id"], student_id
     ):
-        raise HTTPException(
-            status_code=403, detail="Kerjakan pre-test terlebih dahulu"
-        )
+        raise HTTPException(status_code=403, detail="Kerjakan pre-test terlebih dahulu")
 
 
 def get_owned_subject(subject_id, teacher_id):
@@ -293,14 +368,14 @@ def get_owned_subject(subject_id, teacher_id):
     )
     subject = subject_response.data
     if subject is None:
-        raise HTTPException(status_code=404, detail="Mata pelajaran tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     return subject
 
 
 def get_owned_material(material_id, teacher_id):
     material_response = (
         supabase_admin.table("materials")
-        .select("id, title, subject_id, teacher_id, is_published, created_at")
+        .select("id, title, subject_id, teacher_id, is_published, created_at, file_url")
         .eq("id", material_id)
         .eq("teacher_id", teacher_id)
         .maybe_single()
@@ -1506,11 +1581,13 @@ async def upload_material_pdf(
     if subject_id is not None:
         get_owned_subject(subject_id, teacher_id)
 
-    if file.content_type != "application/pdf":
+    # content_type dari klien tidak dipercaya: HP sering mengirim PDF sebagai
+    # application/octet-stream. Yang diperiksa ekstensi dan isi file.
+    if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File harus berformat PDF.")
     file_bytes = await file.read()
     if not file_bytes.startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="Isi file bukan pdf yang valid.")
+        raise HTTPException(status_code=400, detail="Isi file bukan PDF yang valid.")
     max_size = 20 * 1024 * 1024
     if len(file_bytes) > max_size:
         raise HTTPException(status_code=413, detail="Ukuran PDF maksimal 20 MB.")
@@ -1539,6 +1616,7 @@ async def upload_material_pdf(
         )
 
     material = None
+    image_paths = []
     try:
         result = (
             supabase_admin.table("materials")
@@ -1561,10 +1639,20 @@ async def upload_material_pdf(
         saved_sections = (
             supabase_admin.table("material_sections").insert(section_rows).execute()
         ).data or []
+        # Gambar disimpan sekarang (belum dideskripsikan), supaya daftar
+        # gambar dan syarat terbit langsung lengkap. Deskripsi AI dibuat lewat
+        # endpoint generate-image-description, yang dipanggil aplikasi
+        # setelah unggah selesai.
+        with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
+            store_page_images(pdf, material["id"], teacher_id, set(), image_paths)
     except Exception as e:
         print("ERROR SIMPAN MATERI:", repr(e))
         if material is not None:
             try:
+                # Tabel lama material_images tidak memakai on delete cascade.
+                supabase_admin.table("material_images").delete().eq(
+                    "material_id", material["id"]
+                ).execute()
                 supabase_admin.table("materials").delete().eq(
                     "id", material["id"]
                 ).execute()
@@ -1572,6 +1660,8 @@ async def upload_material_pdf(
                 pass
         try:
             supabase_admin.storage.from_("materials-pdf").remove([file_path])
+            if image_paths:
+                supabase_admin.storage.from_("material-images").remove(image_paths)
         except Exception:
             pass
         raise HTTPException(
@@ -1637,6 +1727,11 @@ class QuizCreateRequest(QuizScheduleRequest):
     attempt_limit: Optional[int] = Field(default=None, ge=1)
 
 
+class GenerateQuizRequest(BaseModel):
+    total_questions: int = Field(ge=1, le=30)
+    quiz_type: Literal["multiple_choice", "true_false", "text", "ordering"]
+
+
 def validate_schedule(data: QuizScheduleRequest):
     for value in (data.available_from, data.deadline_at):
         if value.tzinfo is None:
@@ -1688,7 +1783,7 @@ def section_counts(material_ids):
 def create_subject(data: SubjectCreateRequest, auth=Depends(require_teacher)):
     name = data.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Nama mata pelajaran wajib diisi")
+        raise HTTPException(status_code=400, detail="Nama kelas wajib diisi")
     for _ in range(5):
         try:
             response = (
@@ -1702,7 +1797,7 @@ def create_subject(data: SubjectCreateRequest, auth=Depends(require_teacher)):
                 )
                 .execute()
             )
-            return {"message": "Mata pelajaran berhasil dibuat", "subject": response.data[0]}
+            return {"message": "Kelas berhasil dibuat", "subject": response.data[0]}
         except APIError as error:
             # 23505: kode akses sudah dipakai, coba kode lain.
             if error.code != "23505":
@@ -1791,6 +1886,19 @@ def update_material(
     changes = data.model_dump(exclude_none=True)
     if not changes:
         raise HTTPException(status_code=400, detail="Tidak ada perubahan")
+    if changes.get("is_published"):
+        pages = undescribed_image_pages(material_id)
+        if pages:
+            known = sorted({page for page in pages if page})
+            where = f" (halaman {', '.join(map(str, known))})" if known else ""
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Materi belum bisa diterbitkan: {len(pages)} gambar{where} "
+                    "belum punya deskripsi atau tanda dekoratif. Lengkapi di "
+                    "menu Gambar dan deskripsi"
+                ),
+            )
     response = (
         supabase_admin.table("materials")
         .update(changes)
@@ -1833,6 +1941,479 @@ def create_quiz(
             )
         raise
     return {"message": "Kuis berhasil dibuat", "quiz": response.data[0]}
+
+
+GEMINI_KEY_MISSING_DETAIL = (
+    "Fitur AI belum aktif karena GEMINI_API_KEY belum diatur di backend/.env. "
+    "Hubungi pengelola server."
+)
+
+
+def require_gemini():
+    """Endpoint AI menolak dengan 503 kalau kunci Gemini belum diatur."""
+    try:
+        gemini_client()
+    except GeminiKeyMissing as error:
+        raise HTTPException(status_code=503, detail=GEMINI_KEY_MISSING_DETAIL) from error
+
+
+@app.post("/teacher/materials/{material_id}/generate-quiz")
+def generate_material_quiz(
+    material_id: str, data: GenerateQuizRequest, auth=Depends(require_teacher)
+):
+    material = get_owned_material(material_id, auth["user_id"])
+    require_gemini()
+    sections_result = (
+        supabase_admin.table("material_sections")
+        .select("position, content")
+        .eq("material_id", material_id)
+        .order("position")
+        .execute()
+    )
+    sections = sections_result.data or []
+    materi = "\n\n".join(
+        plain_text(section.get("content") or "") for section in sections
+    ).strip()
+    if not materi:
+        raise HTTPException(
+            status_code=422, detail="Materi belum memiliki teks yang dapat digunakan."
+        )
+    try:
+        result = generate_quiz(
+            materi=materi,
+            total_questions=data.total_questions,
+            quiz_type=data.quiz_type,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Gagal menghasilkan kuis dengan Gemini")
+        raise HTTPException(
+            status_code=502, detail="Gagal menghasilkan kuis. Silakan coba lagi."
+        ) from error
+    return {
+        "material_id": material_id,
+        "total_questions": len(result.questions),
+        "quiz_type": data.quiz_type,
+        "questions": [question.model_dump() for question in result.questions],
+    }
+
+
+# Format yang disimpan apa adanya. Format lain (JPEG 2000, JBIG2, TIFF, dll.)
+# diubah ke PNG supaya bisa dibuka Pillow dan dikirim ke Gemini.
+IMAGE_MIME_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "jpe": "image/jpeg",
+    "jfif": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+}
+IMAGE_PREVIEW_SECONDS = 60 * 60
+
+
+def image_file(pdf, xref):
+    """Berkas gambar dari PDF: (bytes, ekstensi, content type)."""
+    extracted = pdf.extract_image(xref)
+    extension = (extracted.get("ext") or "").lower().lstrip(".")
+    if extension in IMAGE_MIME_TYPES:
+        return extracted["image"], extension, IMAGE_MIME_TYPES[extension]
+    pixmap = pymupdf.Pixmap(pdf, xref)
+    if pixmap.colorspace is not None and pixmap.colorspace.n > 3:
+        pixmap = pymupdf.Pixmap(pymupdf.csRGB, pixmap)
+    return pixmap.tobytes("png"), "png", "image/png"
+
+
+def store_page_images(pdf, material_id, teacher_id, known_keys, uploaded_paths):
+    """Menyimpan gambar PDF yang belum punya baris di material_images.
+
+    Gambar baru belum punya deskripsi. Ikon kecil dan latar penuh langsung
+    ditandai dekoratif sehingga tidak perlu dideskripsikan.
+    """
+    for page_number, page in enumerate(pdf, start=1):
+        for image in page_images(page, page_number):
+            if image.key in known_keys:
+                continue
+            known_keys.add(image.key)
+            data, extension, content_type = image_file(pdf, image.xref)
+            image_path = (
+                f"{teacher_id}/{material_id}/images/"
+                f"page-{page_number}-{image.key}.{extension}"
+            )
+            supabase_admin.storage.from_("material-images").upload(
+                path=image_path,
+                file=data,
+                file_options={"content-type": content_type, "upsert": "true"},
+            )
+            uploaded_paths.append(image_path)
+            supabase_admin.table("material_images").insert(
+                {
+                    "material_id": material_id,
+                    "image_key": image.key,
+                    "page_number": page_number,
+                    "image_url": image_path,
+                    "description": None,
+                    "is_decorative": image.decorative,
+                    "audio_url": None,
+                }
+            ).execute()
+
+
+def material_image_rows(material_id):
+    response = (
+        supabase_admin.table("material_images")
+        .select("id, image_key, page_number, image_url, description, is_decorative")
+        .eq("material_id", material_id)
+        .execute()
+    )
+    rows = [row for row in (response.data or []) if row.get("image_key")]
+    return sorted(rows, key=lambda row: (row.get("page_number") or 0, row["image_key"]))
+
+
+def needs_description(row):
+    return not row.get("is_decorative") and not (row.get("description") or "").strip()
+
+
+def public_image(row):
+    return {
+        "id": row["id"],
+        "image_key": row["image_key"],
+        "page_number": row.get("page_number"),
+        "description": row.get("description"),
+        "is_decorative": bool(row.get("is_decorative")),
+        "needs_description": needs_description(row),
+    }
+
+
+def material_content_image_keys(material_id):
+    """Kunci gambar yang dirujuk isi halaman materi."""
+    response = (
+        supabase_admin.table("material_sections")
+        .select("content")
+        .eq("material_id", material_id)
+        .execute()
+    )
+    keys = []
+    for section in response.data or []:
+        for key in image_keys(section.get("content") or ""):
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def ordered_image_rows(material_id):
+    """Gambar materi menurut urutan baca: urutan penanda di isi halaman,
+    lalu gambar yang tidak dirujuk menurut halamannya."""
+    order = {key: i for i, key in enumerate(material_content_image_keys(material_id))}
+    return sorted(
+        material_image_rows(material_id),
+        key=lambda row: (order.get(row["image_key"], len(order)), row.get("page_number") or 0),
+    )
+
+
+def undescribed_image_pages(material_id):
+    """Halaman yang masih punya gambar tanpa deskripsi dan bukan dekoratif.
+    Gambar yang belum punya baris sama sekali juga dihitung."""
+    rows = {row["image_key"]: row for row in material_image_rows(material_id)}
+    pages = []
+    for key in material_content_image_keys(material_id):
+        row = rows.get(key)
+        if row is None or needs_description(row):
+            pages.append((row or {}).get("page_number"))
+    return pages
+
+
+# Jeda antar panggilan Gemini. Versi gratis membatasi jumlah permintaan per
+# menit, jadi gambar dideskripsikan satu per satu dengan jeda.
+GEMINI_DELAY_SECONDS = float(os.getenv("GEMINI_DELAY_SECONDS") or "4")
+# Jeda tambahan setelah Gemini menjawab "batas pemakaian tercapai".
+GEMINI_RATE_LIMIT_PAUSE_SECONDS = float(
+    os.getenv("GEMINI_RATE_LIMIT_PAUSE_SECONDS") or "30"
+)
+
+
+@dataclass
+class DescribeJob:
+    """Progres pembuatan deskripsi gambar satu materi.
+
+    Disimpan di memori proses backend. Kalau backend dimulai ulang, progresnya
+    hilang, tetapi deskripsi yang sudah dibuat tetap tersimpan di database
+    dan gambar sisanya bisa diproses lagi.
+    """
+
+    total: int = 0
+    done: int = 0
+    running: bool = True
+    error: Optional[str] = None
+    # image_id -> pesan kegagalan, untuk dicoba ulang satu per satu.
+    failed: dict = field(default_factory=dict)
+
+
+DESCRIBE_JOBS: dict[str, DescribeJob] = {}
+DESCRIBE_JOBS_LOCK = threading.Lock()
+
+
+def is_rate_limited(error: Exception) -> bool:
+    text = str(error)
+    return "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower()
+
+
+def describe_failure_message(error: Exception) -> str:
+    if isinstance(error, GeminiKeyMissing):
+        return GEMINI_KEY_MISSING_DETAIL
+    if is_rate_limited(error):
+        return "Batas pemakaian Gemini tercapai. Coba lagi beberapa menit lagi"
+    return "AI gagal mendeskripsikan gambar ini. Coba lagi"
+
+
+def describe_one(row):
+    """Mendeskripsikan satu gambar dan menyimpannya. Melempar error asli
+    kalau gagal, supaya pemanggil bisa menilai jenis kegagalannya."""
+    image_bytes = supabase_admin.storage.from_("material-images").download(
+        row["image_url"]
+    )
+    description = describe_image(image_bytes).strip()
+    if not description:
+        raise ValueError("Deskripsi kosong")
+    # Hanya mengisi yang masih kosong: kalau guru menulis deskripsi selama
+    # Gemini bekerja, tulisan guru yang dipertahankan.
+    response = (
+        supabase_admin.table("material_images")
+        .update({"description": description})
+        .eq("id", row["id"])
+        .is_("description", "null")
+        .execute()
+    )
+    if response.data:
+        return response.data[0]
+    return fresh_image_row(row["id"]) or {**row, "description": description}
+
+
+def fresh_image_row(image_id):
+    """Keadaan terbaru satu gambar, karena guru bisa mengubahnya selama
+    proses deskripsi berjalan."""
+    response = (
+        supabase_admin.table("material_images")
+        .select("id, image_key, page_number, image_url, description, is_decorative")
+        .eq("id", image_id)
+        .execute()
+    )
+    return (response.data or [None])[0]
+
+
+def prepare_image_rows(material, teacher_id):
+    """Materi lama yang gambarnya belum tersimpan diproses dari PDF-nya."""
+    material_id = material["id"]
+    known_keys = {row["image_key"] for row in material_image_rows(material_id)}
+    missing = set(material_content_image_keys(material_id)) - known_keys
+    if missing and material.get("file_url"):
+        pdf_bytes = supabase_admin.storage.from_("materials-pdf").download(
+            material["file_url"]
+        )
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            store_page_images(pdf, material_id, teacher_id, known_keys, [])
+
+
+def run_describe_job(job: DescribeJob, material, teacher_id):
+    """Dijalankan di latar belakang setelah endpoint menjawab."""
+    try:
+        prepare_image_rows(material, teacher_id)
+        rows = [
+            row for row in ordered_image_rows(material["id"]) if needs_description(row)
+        ]
+        job.total = len(rows)
+        called = False
+        for row in rows:
+            # Guru mungkin sudah menulis deskripsi atau menandai dekoratif
+            # sejak proses dimulai; gambar itu tidak perlu Gemini lagi.
+            current = fresh_image_row(row["id"])
+            if current is None or not needs_description(current):
+                job.done += 1
+                continue
+            if called:
+                time.sleep(GEMINI_DELAY_SECONDS)
+            called = True
+            try:
+                describe_one(current)
+                job.done += 1
+            except Exception as error:
+                logger.exception("Gagal mendeskripsikan %s", row["image_key"])
+                job.failed[str(row["id"])] = describe_failure_message(error)
+                # Gambar lain tetap diproses; setelah kena batas pemakaian,
+                # tunggu lebih lama sebelum lanjut.
+                if is_rate_limited(error):
+                    time.sleep(GEMINI_RATE_LIMIT_PAUSE_SECONDS)
+    except Exception:
+        logger.exception("Proses deskripsi gambar materi %s berhenti", material["id"])
+        job.error = "Proses deskripsi berhenti karena kesalahan server. Coba lagi"
+    finally:
+        job.running = False
+
+
+def describe_status(material_id):
+    rows = {str(row["id"]): row for row in material_image_rows(material_id)}
+    job = DESCRIBE_JOBS.get(material_id)
+    failed = []
+    if job is not None:
+        for image_id, message in job.failed.items():
+            row = rows.get(image_id)
+            # Gambar yang sudah berhasil dicoba ulang tidak lagi gagal.
+            if row is not None and needs_description(row):
+                failed.append(
+                    {
+                        "image_id": image_id,
+                        "page_number": row.get("page_number"),
+                        "message": message,
+                    }
+                )
+    return {
+        "material_id": material_id,
+        "running": bool(job and job.running),
+        "total": job.total if job else 0,
+        "done": job.done if job else 0,
+        "failed": failed,
+        "error": job.error if job else None,
+        "pending": sum(needs_description(row) for row in rows.values()),
+    }
+
+
+@app.post(
+    "/teacher/materials/{material_id}/generate-image-description",
+    status_code=202,
+)
+def generate_material_image_description(
+    material_id: str,
+    background_tasks: BackgroundTasks,
+    auth=Depends(require_teacher),
+):
+    """Memulai pembuatan deskripsi gambar di latar belakang.
+
+    Langsung menjawab dengan status awal. Progresnya dibaca lewat
+    GET .../image-description. Gambar yang sudah berdeskripsi atau dekoratif
+    dilewati, jadi aman dipanggil ulang.
+    """
+    material = get_owned_material(material_id, auth["user_id"])
+    require_gemini()
+    # Diperiksa dan dibuat di bawah kunci: dua klik yang hampir bersamaan
+    # tidak boleh memulai dua proses untuk materi yang sama.
+    with DESCRIBE_JOBS_LOCK:
+        job = DESCRIBE_JOBS.get(material_id)
+        start_new = job is None or not job.running
+        if start_new:
+            job = DescribeJob()
+            DESCRIBE_JOBS[material_id] = job
+    if start_new:
+        pending = [row for row in material_image_rows(material_id) if needs_description(row)]
+        job.total = len(pending)
+        background_tasks.add_task(run_describe_job, job, material, auth["user_id"])
+    return describe_status(material_id)
+
+
+@app.get("/teacher/materials/{material_id}/image-description")
+def get_image_description_status(material_id: str, auth=Depends(require_teacher)):
+    """Progres pembuatan deskripsi, misalnya 3 dari 12 gambar selesai."""
+    get_owned_material(material_id, auth["user_id"])
+    return describe_status(material_id)
+
+
+@app.post("/teacher/materials/{material_id}/images/{image_id}/describe")
+def describe_single_image(material_id: str, image_id: str, auth=Depends(require_teacher)):
+    """Mencoba ulang deskripsi satu gambar. Cukup satu panggilan Gemini,
+    jadi dijawab langsung tanpa proses latar belakang."""
+    get_owned_material(material_id, auth["user_id"])
+    require_gemini()
+    job = DESCRIBE_JOBS.get(material_id)
+    if job is not None and job.running:
+        raise HTTPException(
+            status_code=409,
+            detail="Deskripsi gambar lain sedang dibuat. Tunggu sampai selesai",
+        )
+    row = next(
+        (r for r in material_image_rows(material_id) if str(r["id"]) == image_id),
+        None,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    try:
+        saved = describe_one(row)
+    except Exception as error:
+        logger.exception("Gagal mendeskripsikan ulang %s", row["image_key"])
+        message = describe_failure_message(error)
+        if job is not None:
+            job.failed[image_id] = message
+        status = 429 if is_rate_limited(error) else 502
+        raise HTTPException(status_code=status, detail=message) from error
+    if job is not None:
+        job.failed.pop(image_id, None)
+    return {"message": "Deskripsi gambar dibuat", "image": public_image(saved)}
+
+
+@app.get("/teacher/materials/{material_id}/images")
+def list_material_images(material_id: str, auth=Depends(require_teacher)):
+    """Gambar materi untuk diperiksa guru, dengan tautan pratinjau sementara."""
+    get_owned_material(material_id, auth["user_id"])
+    images = []
+    for row in ordered_image_rows(material_id):
+        preview_url = None
+        try:
+            signed = supabase_admin.storage.from_("material-images").create_signed_url(
+                row["image_url"], IMAGE_PREVIEW_SECONDS
+            )
+            preview_url = signed.get("signedURL") or signed.get("signedUrl")
+        except Exception as error:
+            print("Gagal membuat tautan pratinjau gambar:", repr(error))
+        images.append({**public_image(row), "preview_url": preview_url})
+    return {"material_id": material_id, "images": images}
+
+
+class MaterialImageUpdateRequest(BaseModel):
+    description: Optional[str] = Field(default=None, max_length=2000)
+    is_decorative: Optional[bool] = None
+
+
+@app.patch("/teacher/materials/{material_id}/images/{image_id}")
+def update_material_image(
+    material_id: str,
+    image_id: str,
+    data: MaterialImageUpdateRequest,
+    auth=Depends(require_teacher),
+):
+    """Guru memperbaiki deskripsi AI atau menandai gambar dekoratif."""
+    material = get_owned_material(material_id, auth["user_id"])
+    changes = {}
+    if data.description is not None:
+        changes["description"] = data.description.strip() or None
+    if data.is_decorative is not None:
+        changes["is_decorative"] = data.is_decorative
+    if not changes:
+        raise HTTPException(status_code=400, detail="Tidak ada perubahan.")
+    current = next(
+        (row for row in material_image_rows(material_id) if str(row["id"]) == image_id),
+        None,
+    )
+    if current is None:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    # Siswa tidak boleh menemui gambar tanpa deskripsi di materi yang terbit.
+    if material.get("is_published") and needs_description({**current, **changes}):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Materi sudah terbit, jadi gambar ini harus punya deskripsi "
+                "atau ditandai dekoratif"
+            ),
+        )
+    response = (
+        supabase_admin.table("material_images")
+        .update(changes)
+        .eq("id", image_id)
+        .eq("material_id", material_id)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    return {"message": "Gambar disimpan", "image": public_image(response.data[0])}
 
 
 @app.patch("/teacher/quizzes/{quiz_id}/schedule")
@@ -1895,7 +2476,9 @@ def get_subject_results(subject_id: str, auth=Depends(require_teacher)):
     if quiz_ids and student_ids:
         attempts_response = (
             supabase_admin.table("quiz_attempts")
-            .select("id, quiz_id, student_id, correct_count, total_questions, submitted_at")
+            .select(
+                "id, quiz_id, student_id, correct_count, total_questions, submitted_at"
+            )
             .in_("quiz_id", quiz_ids)
             .in_("student_id", student_ids)
             .not_.is_("submitted_at", "null")
@@ -1982,9 +2565,9 @@ def join_subject(data: JoinSubjectRequest, auth=Depends(require_student)):
         ).execute()
     return {
         "message": (
-            "Kamu sudah bergabung di mata pelajaran ini"
+            "Kamu sudah bergabung di kelas ini"
             if already_joined
-            else "Berhasil bergabung ke mata pelajaran"
+            else "Berhasil bergabung ke kelas"
         ),
         "already_joined": already_joined,
         "subject": {"id": subject["id"], "name": subject["name"]},
@@ -2021,7 +2604,9 @@ def list_student_subjects(auth=Depends(require_student)):
             .in_("id", teacher_ids)
             .execute()
         )
-        teacher_names = {row["id"]: row["name"] for row in (teachers_response.data or [])}
+        teacher_names = {
+            row["id"]: row["name"] for row in (teachers_response.data or [])
+        }
     material_counts = {subject["id"]: 0 for subject in subjects}
     if subjects:
         materials_response = (
@@ -2055,7 +2640,7 @@ def list_student_subject_materials(subject_id: str, auth=Depends(require_student
     student_id = auth["user_id"]
     if not is_subject_member(subject_id, student_id):
         raise HTTPException(
-            status_code=403, detail="Kamu belum bergabung di mata pelajaran ini"
+            status_code=403, detail="Kamu belum bergabung di kelas ini"
         )
     subject_response = (
         supabase_admin.table("subjects")
@@ -2068,7 +2653,7 @@ def list_student_subject_materials(subject_id: str, auth=Depends(require_student
     )
     subject = subject_response.data
     if subject is None:
-        raise HTTPException(status_code=404, detail="Mata pelajaran tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     materials_response = (
         supabase_admin.table("materials")
         .select("id, title, created_at")
@@ -2184,4 +2769,6 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
     return {
         "material": {"id": material["id"], "title": material["title"]},
         "sections": sections_response.data or [],
+        # Deskripsi untuk penanda [[gambar:...]] di isi halaman.
+        "images": [public_image(row) for row in material_image_rows(material_id)],
     }

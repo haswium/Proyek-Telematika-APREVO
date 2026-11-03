@@ -5,6 +5,10 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'playful.dart';
 
+/// Rute layar daftar materi (siswa dan guru). Tombol "Selesai" di halaman
+/// terakhir materi kembali ke rute ini.
+const RouteSettings kMaterialListRoute = RouteSettings(name: 'daftar-materi');
+
 AppBar aprevoAppBar(
   String title, {
   PreferredSizeWidget? bottom,
@@ -41,8 +45,7 @@ IconData gameIcon(GameType type) {
 
 /// Kode akses dieja per huruf untuk TalkBack, supaya "KXPRTA" tidak
 /// dibaca sebagai satu kata: "K X P R T A".
-String spellCode(String code) =>
-    code.replaceAll('-', '').split('').join(' ');
+String spellCode(String code) => code.replaceAll('-', '').split('').join(' ');
 
 /// Kolom kode akses: huruf kecil otomatis jadi kapital, karakter selain
 /// huruf A-Z dibuang, dan panjangnya paling banyak [kAccessCodeLength].
@@ -204,14 +207,14 @@ class ListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = semanticLabel ??
-        (subtitle == null ? title : '$title. $subtitle');
+    final label =
+        semanticLabel ?? (subtitle == null ? title : '$title. $subtitle');
 
     // Warna kotak ikon bergantian supaya daftar terasa ceria. Tetap sama
     // untuk judul yang sama.
     const tiles = [AppColors.lilac, AppColors.highlight, AppColors.soft];
-    final tile = tiles[title.codeUnits.fold<int>(0, (a, b) => a + b) %
-        tiles.length];
+    final tile =
+        tiles[title.codeUnits.fold<int>(0, (a, b) => a + b) % tiles.length];
 
     final content = Row(
       children: [
@@ -522,7 +525,10 @@ class CodeBox extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
+            // container: kode dan tombol Salin menjadi node sendiri, tidak
+            // tergabung dengan judul di sekitarnya.
             child: Semantics(
+              container: true,
               label: 'Kode akses: ${spellCode(code)}',
               excludeSemantics: true,
               child: Text(
@@ -537,6 +543,7 @@ class CodeBox extends StatelessWidget {
             ),
           ),
           Semantics(
+            container: true,
             label: 'Salin kode akses',
             button: true,
             onTap: () => _copy(context),

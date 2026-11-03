@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import 'common.dart';
 import 'playful.dart';
@@ -62,15 +61,11 @@ class Mascot extends StatelessWidget {
 
     if (decorative) return ExcludeSemantics(child: picture);
 
-    void speak() => Speech.speak(description);
     return Semantics(
       label: description,
       image: true,
-      button: true,
-      onTap: speak,
-      onTapHint: 'mendengar deskripsi Odi',
       excludeSemantics: true,
-      child: GestureDetector(onTap: speak, child: picture),
+      child: picture,
     );
   }
 }
@@ -221,7 +216,11 @@ class _OdiPainter extends CustomPainter {
       fill.color = AppColors.ink;
       canvas.drawCircle(pupil, s * 0.038, fill);
       fill.color = AppColors.white;
-      canvas.drawCircle(pupil + Offset(-s * 0.012, -s * 0.012), s * 0.012, fill);
+      canvas.drawCircle(
+        pupil + Offset(-s * 0.012, -s * 0.012),
+        s * 0.012,
+        fill,
+      );
     }
 
     // Mulut.

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../models/models.dart';
-import '../services/speech.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playful.dart';
@@ -40,7 +39,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _error = message;
       _errorSerial++;
     });
-    Speech.feedback(context, message);
   }
 
   Future<void> _submit() async {
@@ -110,8 +108,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           role: UserRole.student,
                           icon: Icons.headphones,
                           selected: _role == UserRole.student,
-                          onTap: () =>
-                              setState(() => _role = UserRole.student),
+                          onTap: () => setState(() => _role = UserRole.student),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -120,8 +117,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           role: UserRole.teacher,
                           icon: Icons.school_outlined,
                           selected: _role == UserRole.teacher,
-                          onTap: () =>
-                              setState(() => _role = UserRole.teacher),
+                          onTap: () => setState(() => _role = UserRole.teacher),
                         ),
                       ),
                     ],
@@ -218,10 +214,7 @@ class _RoleCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: selected ? AppColors.accent : AppColors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppColors.ink,
-                width: 2,
-              ),
+              border: Border.all(color: AppColors.ink, width: 2),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,

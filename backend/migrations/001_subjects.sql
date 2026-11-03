@@ -1,4 +1,4 @@
--- Mata pelajaran milik guru, dengan satu kode akses 6 huruf kapital.
+-- Kelas milik guru, dengan satu kode akses 6 huruf kapital.
 
 create table if not exists public.subjects (
   id uuid primary key default gen_random_uuid(),

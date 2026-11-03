@@ -5,10 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'data/app_store.dart';
 import 'screens/splash_screen.dart';
+import 'services/settings.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Alamat server dan status layar sambutan yang tersimpan di perangkat.
+  await Settings.load();
   if (SupabaseConfig.isConfigured) {
     await Supabase.initialize(
       url: SupabaseConfig.url,
