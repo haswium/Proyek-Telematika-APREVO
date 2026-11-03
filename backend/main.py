@@ -35,6 +35,9 @@ from pdf_sections import (
     page_images,
     plain_text,
     replace_table,
+    plain_words,
+    search_content,
+    search_snippet,
     split_pdf_bytes,
 )
 from ai_client import GeminiKeyMissing, gemini_client
@@ -3175,8 +3178,8 @@ def list_student_subject_materials(subject_id: str, auth=Depends(require_student
     return {"subject": subject, "materials": result}
 
 
-@app.get("/materials/{material_id}/sections")
-def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
+def get_readable_material(material_id, auth):
+    """Materi yang boleh dibaca: milik guru ini, atau terbit dan bisa diakses siswa."""
     material_response = (
         supabase_admin.table("materials")
         .select("id, title, subject_id, teacher_id, is_published")
@@ -3202,6 +3205,12 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
             raise HTTPException(
                 status_code=403, detail="Anda tidak memiliki akses ke materi ini"
             )
+    return material
+
+
+@app.get("/materials/{material_id}/sections")
+def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
+    material = get_readable_material(material_id, auth)
     sections_response = (
         supabase_admin.table("material_sections")
         .select(
@@ -3222,3 +3231,60 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
         # Deskripsi untuk penanda [[gambar:...]] di isi halaman.
         "images": [public_image(row) for row in material_image_rows(material_id)],
     }
+
+
+SEARCH_MIN_LENGTH = 2
+SEARCH_MAX_LENGTH = 100
+
+
+@app.get("/materials/{material_id}/search")
+def search_material(material_id: str, q: str = "", auth=Depends(get_current_profile)):
+    """Halaman yang memuat kata `q`. Satu hasil per halaman, di blok pertama yang
+    cocok. Judul halaman hanya dipakai kalau isinya tidak cocok."""
+    get_readable_material(material_id, auth)
+    query = plain_words(q)
+    needle = query.lower()
+    if not SEARCH_MIN_LENGTH <= len(needle) <= SEARCH_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Kata pencarian harus {SEARCH_MIN_LENGTH} sampai "
+                f"{SEARCH_MAX_LENGTH} huruf"
+            ),
+        )
+    sections_response = (
+        supabase_admin.table("material_sections")
+        .select("id, position, title, content")
+        .eq("material_id", material_id)
+        .order("position")
+        .execute()
+    )
+    descriptions = {
+        row["image_key"]: row.get("description")
+        for row in material_image_rows(material_id)
+        if not row.get("is_decorative")
+    }
+    results = []
+    # Nomor mengikuti urutan layar baca, dan `line` menunjuk baris di isi yang
+    # sama dengan jawaban GET .../sections.
+    for page_index, section in enumerate(sections_response.data or []):
+        title = section.get("title") or ""
+        found = search_content(
+            normalize_content(section.get("content") or ""), descriptions, needle
+        )
+        if found is None and needle in plain_words(title).lower():
+            found = {
+                "line": None,
+                "row": None,
+                "snippet": search_snippet(title, needle),
+            }
+        if found is not None:
+            results.append(
+                {
+                    "section_id": section["id"],
+                    "page_index": page_index,
+                    "title": title,
+                    **found,
+                }
+            )
+    return {"query": query, "results": results}

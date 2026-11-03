@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
+import '../../widgets/search_box.dart';
 import 'subject_detail_screen.dart';
 
 /// Beranda guru: kartu sambutan, tombol buat kelas, lalu kartu tiap kelas
@@ -49,8 +50,12 @@ class TeacherHomeScreen extends StatelessWidget {
         child: LoadView<List<Subject>>(
           loadingMessage: 'Memuat kelasmu.',
           load: store.teacherSubjects,
-          builder: (context, subjects, _) {
-            return ListView(
+          builder: (context, subjects, _) => FilteredList<Subject>(
+            items: subjects,
+            textOf: (subject) => subject.name,
+            label: 'Cari kelas',
+            noun: 'kelas',
+            builder: (context, visible, searchBox) => ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 HeroCard(
@@ -100,23 +105,27 @@ class TeacherHomeScreen extends StatelessWidget {
                     key: ValueKey(subject.id),
                     subject: subject,
                   ),
-                SectionTitle('Daftar kelas (${subjects.length})'),
+                ?searchBox,
+                SectionTitle(
+                  'Daftar kelas (${countLabel(visible.length, subjects.length)})',
+                ),
                 if (subjects.isEmpty)
                   const EmptyState(message: 'Belum ada kelas.'),
-                for (var i = 0; i < subjects.length; i++)
+                for (var i = 0; i < visible.length; i++)
                   Padding(
+                    key: ValueKey(visible[i].id),
                     padding: const EdgeInsets.only(bottom: 14),
                     child: FadeSlideIn(
                       delay: Duration(milliseconds: 60 * (i > 5 ? 5 : i)),
                       child: _SubjectCard(
-                        subject: subjects[i],
-                        onOpen: () => _open(context, subjects[i]),
+                        subject: visible[i],
+                        onOpen: () => _open(context, visible[i]),
                       ),
                     ),
                   ),
               ],
-            );
-          },
+            ),
+          ),
         ),
       ),
     );

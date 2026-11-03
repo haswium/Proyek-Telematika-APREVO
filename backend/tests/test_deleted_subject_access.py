@@ -32,6 +32,7 @@ STUDENT_CASES = [
     ("GET", "/student/subjects/{subject}/members", None),
     ("POST", "/student/subjects/join", {"code": "{code}"}),
     ("GET", "/materials/m1/sections", None),
+    ("GET", "/materials/m1/search?q=daun", None),
     ("GET", "/student/quizzes/pre", None),
     ("POST", "/quizzes/pre/attempts", None),
     (
@@ -50,6 +51,7 @@ TEACHER_CASES = [
     ("DELETE", "/teacher/subjects/{subject}/members/{student}", None),
     ("GET", "/teacher/subjects/{subject}/delete-summary", None),
     ("GET", "/materials/m1/sections", None),
+    ("GET", "/materials/m1/search?q=daun", None),
     ("PATCH", "/teacher/materials/m1", {"title": "Baru"}),
     ("POST", "/teacher/materials/m1/quizzes", {"kind": "post", **SCHEDULE}),
     (
@@ -170,7 +172,7 @@ def test_daftar_kasus_mencakup_semua_endpoint_kelas():
 
 def matches(path, url):
     path_parts = path.split("/")
-    url_parts = url.split("/")
+    url_parts = url.split("?")[0].split("/")
     return len(path_parts) == len(url_parts) and all(
         pattern.startswith("{") or pattern == part
         for pattern, part in zip(path_parts, url_parts)

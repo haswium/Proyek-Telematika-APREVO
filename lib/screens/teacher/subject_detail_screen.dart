@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
+import '../../widgets/search_box.dart';
 import 'material_editor_screen.dart';
 import 'material_images_screen.dart';
 import 'new_material_screen.dart';
@@ -78,87 +79,101 @@ class SubjectDetailScreen extends StatelessWidget {
           load: () => store.teacherMaterials(subject.id),
           builder: (context, materials, _) {
             final published = materials.where((m) => m.published).length;
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                HeroCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Pill(
-                        '$published dari ${materials.length} materi publik',
-                        color: const Color(0x33FFFFFF),
-                        textColor: AppColors.white,
-                      ),
-                      const SizedBox(height: 12),
-                      Semantics(
-                        header: true,
-                        child: Text(
-                          subject.name,
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.white,
+            return FilteredList<LessonMaterial>(
+              items: materials,
+              textOf: (material) => material.title,
+              label: 'Cari materi',
+              noun: 'materi',
+              builder: (context, visible, searchBox) => ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  HeroCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Pill(
+                          '$published dari ${materials.length} materi publik',
+                          color: const Color(0x33FFFFFF),
+                          textColor: AppColors.white,
+                        ),
+                        const SizedBox(height: 12),
+                        Semantics(
+                          header: true,
+                          child: Text(
+                            subject.name,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.white,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Bagikan kode ini ke siswa. Siswa hanya melihat '
-                        'materi yang sudah dipublikasikan.',
-                        style: TextStyle(color: AppColors.white, fontSize: 15),
-                      ),
-                      const SizedBox(height: 12),
-                      CodeBox(code: subject.accessCode, onDark: true),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                PrimaryButton(
-                  label: 'Unggah Materi PDF',
-                  icon: Icons.add_circle_outline,
-                  onPressed: () => _createMaterial(context),
-                ),
-                const SizedBox(height: 16),
-                ListRow(
-                  icon: Icons.groups_outlined,
-                  title: 'Anggota kelas',
-                  subtitle: 'Daftar siswa dan jumlahnya',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SubjectMembersScreen(subject: subject),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Bagikan kode ini ke siswa. Siswa hanya melihat '
+                          'materi yang sudah dipublikasikan.',
+                          style: TextStyle(
+                            color: AppColors.white,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        CodeBox(code: subject.accessCode, onDark: true),
+                      ],
                     ),
                   ),
-                ),
-                SectionTitle('Daftar materi (${materials.length})'),
-                if (materials.isEmpty)
-                  const EmptyState(message: 'Belum ada materi di kelas ini.'),
-                for (var i = 0; i < materials.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: FadeSlideIn(
-                      delay: Duration(milliseconds: 60 * (i > 5 ? 5 : i)),
-                      child: _MaterialCard(
-                        material: materials[i],
-                        onOpen: () => _open(context, materials[i]),
+                  const SizedBox(height: 16),
+                  PrimaryButton(
+                    label: 'Unggah Materi PDF',
+                    icon: Icons.add_circle_outline,
+                    onPressed: () => _createMaterial(context),
+                  ),
+                  const SizedBox(height: 16),
+                  ListRow(
+                    icon: Icons.groups_outlined,
+                    title: 'Anggota kelas',
+                    subtitle: 'Daftar siswa dan jumlahnya',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SubjectMembersScreen(subject: subject),
                       ),
                     ),
                   ),
-                if (materials.isNotEmpty)
-                  Text(
-                    'Ketuk "Kelola materi" untuk mengatur jadwal, soal, dan '
-                    'publikasi.',
-                    style: AppType.bodySmall,
+                  const SizedBox(height: 8),
+                  ?searchBox,
+                  SectionTitle(
+                    'Daftar materi (${countLabel(visible.length, materials.length)})',
                   ),
-                // Paling bawah dan berjarak, supaya tidak tertekan tanpa sengaja.
-                const SizedBox(height: 64),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Hapus kelas'),
-                  onPressed: () => _deleteSubject(context),
-                ),
-              ],
+                  if (materials.isEmpty)
+                    const EmptyState(message: 'Belum ada materi di kelas ini.'),
+                  for (var i = 0; i < visible.length; i++)
+                    Padding(
+                      key: ValueKey(visible[i].id),
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: FadeSlideIn(
+                        delay: Duration(milliseconds: 60 * (i > 5 ? 5 : i)),
+                        child: _MaterialCard(
+                          material: visible[i],
+                          onOpen: () => _open(context, visible[i]),
+                        ),
+                      ),
+                    ),
+                  if (materials.isNotEmpty)
+                    Text(
+                      'Ketuk "Kelola materi" untuk mengatur jadwal, soal, dan '
+                      'publikasi.',
+                      style: AppType.bodySmall,
+                    ),
+                  // Paling bawah dan berjarak, supaya tidak tertekan tanpa sengaja.
+                  const SizedBox(height: 64),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Hapus kelas'),
+                    onPressed: () => _deleteSubject(context),
+                  ),
+                ],
+              ),
             );
           },
         ),

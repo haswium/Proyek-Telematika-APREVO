@@ -7,6 +7,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
+import '../../widgets/search_box.dart';
 import 'classmates_screen.dart';
 import 'student_space_screen.dart';
 
@@ -53,70 +54,83 @@ class StudentSubjectScreen extends StatelessWidget {
         child: LoadView<List<LessonMaterial>>(
           loadingMessage: 'Memuat materi ${subject.name}.',
           load: () => store.studentMaterials(subject.id),
-          builder: (context, materials, _) => ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              HeroCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Semantics(
-                      header: true,
-                      child: Text(
-                        subject.name,
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.white,
-                          height: 1.2,
+          builder: (context, materials, _) => FilteredList<LessonMaterial>(
+            items: materials,
+            textOf: (material) => material.title,
+            label: 'Cari materi',
+            noun: 'materi',
+            builder: (context, visible, searchBox) => ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                HeroCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          subject.name,
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.white,
+                            height: 1.2,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${materials.length} materi siap dipelajari',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: AppColors.white,
+                      const SizedBox(height: 6),
+                      Text(
+                        '${materials.length} materi siap dipelajari',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: AppColors.white,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              // Kalau kosong, cukup EmptyState di bawah supaya TalkBack
-              // tidak membacakan pesan yang sama dua kali.
-              if (materials.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const MascotBubble(
-                  text:
-                      'Pilih materi yang mau kamu pelajari. Kita mulai '
-                      'dari pre-test, ya.',
-                ),
-              ],
-              const SizedBox(height: 16),
-              ListRow(
-                icon: Icons.groups_outlined,
-                title: 'Anggota kelas',
-                subtitle: 'Guru dan teman sekelasmu',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ClassmatesScreen(subject: subject),
+                    ],
                   ),
                 ),
-              ),
-              SectionTitle('Daftar materi (${materials.length})'),
-              if (materials.isEmpty)
-                const EmptyState(message: 'Guru belum mempublikasikan materi.'),
-              for (final m in materials)
+                // Kalau kosong, cukup EmptyState di bawah supaya TalkBack
+                // tidak membacakan pesan yang sama dua kali.
+                if (materials.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const MascotBubble(
+                    text:
+                        'Pilih materi yang mau kamu pelajari. Kita mulai '
+                        'dari pre-test, ya.',
+                  ),
+                ],
+                const SizedBox(height: 16),
                 ListRow(
-                  icon: Icons.headphones_outlined,
-                  title: m.title,
-                  subtitle: materialProgress(m),
-                  semanticLabel: 'Materi ${m.title}. ${materialProgress(m)}',
-                  onTap: () => _open(context, m),
+                  icon: Icons.groups_outlined,
+                  title: 'Anggota kelas',
+                  subtitle: 'Guru dan teman sekelasmu',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ClassmatesScreen(subject: subject),
+                    ),
+                  ),
                 ),
-            ],
+                const SizedBox(height: 8),
+                ?searchBox,
+                SectionTitle(
+                  'Daftar materi (${countLabel(visible.length, materials.length)})',
+                ),
+                if (materials.isEmpty)
+                  const EmptyState(
+                    message: 'Guru belum mempublikasikan materi.',
+                  ),
+                for (final m in visible)
+                  ListRow(
+                    key: ValueKey(m.id),
+                    icon: Icons.headphones_outlined,
+                    title: m.title,
+                    subtitle: materialProgress(m),
+                    semanticLabel: 'Materi ${m.title}. ${materialProgress(m)}',
+                    onTap: () => _open(context, m),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
