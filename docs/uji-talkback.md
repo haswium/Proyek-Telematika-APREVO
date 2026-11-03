@@ -271,6 +271,36 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 20.2 | Buka "Kelola materi" di materi yang sama | Peringatan yang sama dibacakan sebelum isi lain | | |
 | 20.3 | Lengkapi semua gambar, lalu kembali | Peringatan hilang dari kedua layar | | |
 
+## 22. Anggota kelas
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 22.1 | Guru, buka "Anggota kelas" | "Anggota kelas [nama kelas]: [n] siswa" sekali saja saat layar dibuka | | |
+| 22.2 | Fokus ke baris siswa | "Andi, [email], bergabung 3 November 2026" dalam satu fokus | | |
+| 22.3 | Fokus berikutnya | Tombol "Keluarkan Andi" | | |
+| 22.4 | Ketuk dua kali tombol itu | Dialog terbuka, menyebut siswa bisa bergabung lagi dan nilainya tetap tersimpan | | |
+| 22.5 | Pilih "Batal" | Dialog tertutup, siswa tetap ada | | |
+| 22.6 | Ulangi, pilih "Ya, keluarkan" | "Andi dikeluarkan dari kelas. Sisa [n] siswa." dibacakan, baris Andi hilang | | |
+| 22.7 | Siswa, buka "Anggota kelas" | "Anggota kelas [nama kelas]: [n] siswa", lalu nama guru | | |
+| 22.8 | Fokus ke daftar teman | Hanya nama, satu fokus per baris, tanpa email. Baris sendiri: "[nama], ini kamu" | | |
+| 22.9 | Siswa yang dikeluarkan membuka kelas itu lagi | Pesan bahwa dia belum bergabung, bukan layar kosong | | |
+
+## 23. Hapus kelas
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 23.1 | Guru, halaman kelas, geser sampai habis | "Hapus kelas" adalah tombol terakhir, terpisah dari menu lain | | |
+| 23.2 | Ketuk dua kali "Hapus kelas" | Dialog terbuka. Terdengar "Kelas [nama] akan dihapus permanen beserta [n] materi, [n] kuis, nilai, dan [n] anggota. Tindakan ini tidak bisa dibatalkan." | | |
+| 23.3 | Perhatikan fokus awal di dialog | Fokus TalkBack ada di tombol "Batal", bukan "Ya, hapus kelas". **Wajib dicek di HP**, tes otomatis hanya memeriksa fokus input | | |
+| 23.4 | Pilih "Batal" | Dialog tertutup, kelas tetap ada | | |
+| 23.5 | Ulangi, pilih "Ya, hapus kelas" | Kembali ke daftar kelas, terdengar "Kelas [nama] dihapus", kelas hilang dari daftar | | |
+| 23.6 | Siswa membuka kelas itu dari layar yang masih terbuka, atau menarik ulang | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda". Tidak ada tombol "Coba lagi" | | |
+| 23.7 | Siswa memasukkan kode akses kelas itu | "Kelas ini sudah dihapus guru." dibacakan | | |
+| 23.8 | Siswa sedang membaca materi, guru menghapus kelasnya, siswa menekan "Halaman berikutnya" | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda". Tanpa menekan apa pun, pesan muncul paling lama 30 detik | | |
+| 23.9 | Siswa sedang mengerjakan kuis, guru menghapus kelasnya, siswa mengirim jawaban | Pesan yang sama, bukan "Jawaban belum terkirim" | | |
+| 23.10 | Penghapusan gagal di tengah (matikan server saat menghapus), lalu buka daftar kelas | Terdengar "Penghapusan kelas [nama] belum selesai", lalu tombol "Lanjutkan hapus kelas [nama]" | | |
+| 23.11 | Ketuk dua kali tombol itu | "Kelas [nama] dihapus" dibacakan, kartunya hilang | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

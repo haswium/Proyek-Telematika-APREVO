@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../services/announce.dart';
+import '../services/api_client.dart';
 import '../theme/app_theme.dart';
 import 'common.dart';
 
@@ -59,6 +60,9 @@ class _LoadViewState<T> extends State<LoadView<T>> {
   T? _data;
   bool _hasData = false;
   bool _loading = false;
+
+  /// Isi layar sudah tidak ada lagi (HTTP 410), misalnya kelas dihapus guru.
+  String? _gone;
 
   /// Store berubah saat sedang memuat: muat sekali lagi setelahnya.
   bool _again = false;
@@ -116,27 +120,41 @@ class _LoadViewState<T> extends State<LoadView<T>> {
         _error = null;
         _loading = false;
       });
-    } catch (e) {
+    } on ApiException catch (e) {
       if (!mounted || serial != _serial) return;
-      _failures++;
-      if (_hasData && _failures < widget.failuresBeforeError) {
-        // Gangguan sesaat: data lama tetap tampil, coba lagi diam-diam.
-        setState(() => _loading = false);
-        _retryTimer?.cancel();
-        _retryTimer = Timer(widget.retryDelay, () {
-          if (mounted) _load(announceLoading: false);
-        });
-      } else {
-        final message = e.toString();
+      if (e.statusCode == 410) {
         setState(() {
-          _error = message;
+          _gone = e.message;
           _loading = false;
         });
+      } else {
+        _onFailure(e);
       }
+    } catch (e) {
+      if (!mounted || serial != _serial) return;
+      _onFailure(e);
     }
     if (_again && mounted) {
       _again = false;
       _load(announceLoading: false);
+    }
+  }
+
+  void _onFailure(Object e) {
+    _failures++;
+    if (_hasData && _failures < widget.failuresBeforeError) {
+      // Gangguan sesaat: data lama tetap tampil, coba lagi diam-diam.
+      setState(() => _loading = false);
+      _retryTimer?.cancel();
+      _retryTimer = Timer(widget.retryDelay, () {
+        if (mounted) _load(announceLoading: false);
+      });
+    } else {
+      final message = e.toString();
+      setState(() {
+        _error = message;
+        _loading = false;
+      });
     }
   }
 
@@ -165,6 +183,10 @@ class _LoadViewState<T> extends State<LoadView<T>> {
 
   @override
   Widget build(BuildContext context) {
+    final gone = _gone;
+    if (gone != null) {
+      return _wrap(goneNotice(context, gone));
+    }
     if (_error != null) {
       return _wrap([
         ErrorCard(key: ErrorCard.keyFor(_serial), message: _error!),
@@ -183,6 +205,75 @@ class _LoadViewState<T> extends State<LoadView<T>> {
       context,
       _data as T,
       () => _load(announceLoading: false),
+    );
+  }
+}
+
+/// Isi layar yang sudah tidak ada, misalnya kelas dihapus guru. Bukan gangguan
+/// yang bisa dicoba lagi, jadi tanpa tombol "Coba lagi".
+List<Widget> goneNotice(BuildContext context, String message) => [
+  Semantics(
+    container: true,
+    liveRegion: true,
+    child: AppCard(
+      color: AppColors.highlight,
+      child: Text(message, style: AppType.titleMedium),
+    ),
+  ),
+  const SizedBox(height: 16),
+  PrimaryButton(
+    label: 'Kembali ke beranda',
+    icon: Icons.arrow_back,
+    onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
+  ),
+];
+
+/// Seberapa sering kelas diperiksa selama layar baca atau kuis terbuka.
+const Duration kSubjectCheckInterval = Duration(seconds: 30);
+
+/// Mengganti isi layar dengan pesan kalau kelas yang dibuka siswa dihapus guru.
+/// Layar baca tidak meminta data lagi setelah halamannya termuat, jadi kelasnya
+/// diperiksa berkala. Di layar guru tidak ada yang diperiksa.
+class SubjectGoneGuard extends StatefulWidget {
+  const SubjectGoneGuard({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<SubjectGoneGuard> createState() => _SubjectGoneGuardState();
+}
+
+class _SubjectGoneGuardState extends State<SubjectGoneGuard> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    store.addListener(_onStoreChanged);
+    _timer = Timer.periodic(
+      kSubjectCheckInterval,
+      (_) => store.checkOpenSubject(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    store.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gone = store.openSubjectGone;
+    if (gone == null) return widget.child;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: goneNotice(context, gone),
     );
   }
 }

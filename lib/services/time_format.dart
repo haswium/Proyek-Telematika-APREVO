@@ -35,6 +35,12 @@ String formatDate(DateTime time) {
   return '${_days[t.weekday - 1]}, ${t.day} ${_months[t.month - 1]} ${t.year}';
 }
 
+/// "3 November 2026"
+String formatShortDate(DateTime time) {
+  final t = time.toLocal();
+  return '${t.day} ${_months[t.month - 1]} ${t.year}';
+}
+
 /// "21.00"
 String formatClock(DateTime time) {
   final t = time.toLocal();

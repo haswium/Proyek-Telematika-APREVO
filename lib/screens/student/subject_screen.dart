@@ -7,6 +7,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
+import 'classmates_screen.dart';
 import 'student_space_screen.dart';
 
 /// Kemajuan siswa di satu materi, dalam satu kalimat.
@@ -92,7 +93,18 @@ class StudentSubjectScreen extends StatelessWidget {
                       'dari pre-test, ya.',
                 ),
               ],
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
+              ListRow(
+                icon: Icons.groups_outlined,
+                title: 'Anggota kelas',
+                subtitle: 'Guru dan teman sekelasmu',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ClassmatesScreen(subject: subject),
+                  ),
+                ),
+              ),
               SectionTitle('Daftar materi (${materials.length})'),
               if (materials.isEmpty)
                 const EmptyState(message: 'Guru belum mempublikasikan materi.'),

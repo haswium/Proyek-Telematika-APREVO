@@ -24,6 +24,7 @@ import secrets
 import string
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
@@ -312,6 +313,80 @@ def is_subject_member(subject_id, student_id):
     return bool(response.data)
 
 
+SUBJECT_DELETED_DETAIL = "Kelas ini sudah dihapus guru"
+
+
+def deleted_subject_ids(subject_ids):
+    """Yang `deleted_at`-nya terisi. Ini yang menentukan, bukan baris anggota:
+    baris itu baru terhapus beberapa saat setelah `deleted_at` diisi."""
+    ids = list({subject_id for subject_id in subject_ids if subject_id})
+    if not ids:
+        return set()
+    response = (
+        supabase_admin.table("subjects")
+        .select("id")
+        .in_("id", ids)
+        .not_.is_("deleted_at", "null")
+        .execute()
+    )
+    return {row["id"] for row in (response.data or [])}
+
+
+def subject_is_deleted(subject_id):
+    return bool(deleted_subject_ids([subject_id]))
+
+
+def quiz_subject_is_deleted(quiz_id):
+    quiz = (
+        supabase_admin.table("quizzes")
+        .select("material_id")
+        .eq("id", quiz_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if quiz is None:
+        return False
+    material = (
+        supabase_admin.table("materials")
+        .select("subject_id")
+        .eq("id", quiz["material_id"])
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    return material is not None and subject_is_deleted(material.get("subject_id"))
+
+
+def reject_deleted_quiz_subject(quiz_id):
+    """Untuk siswa: 410 supaya layar kuis tahu alasannya. Guru mendapat 404,
+    sama seperti `get_owned_subject`."""
+    if quiz_subject_is_deleted(quiz_id):
+        raise HTTPException(status_code=410, detail=SUBJECT_DELETED_DETAIL)
+
+
+def get_member_subject(subject_id, student_id):
+    """Kelas yang boleh dibuka siswa. Kelas yang dihapus guru dijawab 410, bukan
+    403: keanggotaannya ikut terhapus, tetapi siswa perlu tahu alasannya."""
+    subject = (
+        supabase_admin.table("subjects")
+        .select("id, name, teacher_id, deleted_at")
+        .eq("id", subject_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if subject is not None and subject.get("deleted_at"):
+        raise HTTPException(status_code=410, detail=SUBJECT_DELETED_DETAIL)
+    if not is_subject_member(subject_id, student_id):
+        raise HTTPException(
+            status_code=403, detail="Kamu belum bergabung di kelas ini"
+        )
+    if subject is None:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    return subject
+
+
 def student_can_access_material(material, student_id):
     """Akses lewat keanggotaan kelas, atau material_access lama."""
     if is_subject_member(material.get("subject_id"), student_id):
@@ -390,7 +465,7 @@ def get_owned_material(material_id, teacher_id):
         or EMPTY_RESPONSE
     )
     material = material_response.data
-    if material is None:
+    if material is None or subject_is_deleted(material.get("subject_id")):
         raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
     return material
 
@@ -501,7 +576,7 @@ def save_ai_output(quiz_id: str, data: AIOutput, auth=Depends(get_current_user))
         or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
-    if quiz is None:
+    if quiz is None or quiz_subject_is_deleted(quiz_id):
         raise HTTPException(status_code=404, detail="Quiz tidak ditemukan")
     if quiz["teacher_id"] != user.id:
         raise HTTPException(status_code=403, detail="Anda bukan pemilik quiz ini")
@@ -591,7 +666,7 @@ def get_quiz(quiz_id: str, auth=Depends(get_current_user)):
         or EMPTY_RESPONSE
     )
     quiz = quiz_response.data
-    if quiz is None:
+    if quiz is None or quiz_subject_is_deleted(quiz_id):
         raise HTTPException(status_code=404, detail="Quiz tidak ditemukan")
     questions_response = (
         supabase_admin.table("questions")
@@ -666,7 +741,7 @@ def get_student_materials(auth=Depends(get_current_user)):
     if material_ids:
         materials_response = (
             supabase_admin.table("materials")
-            .select("id, title, is_published")
+            .select("id, title, is_published, subject_id")
             .in_("id", material_ids)
             .eq("is_published", True)
             .execute()
@@ -675,7 +750,7 @@ def get_student_materials(auth=Depends(get_current_user)):
     if subject_ids:
         subject_materials_response = (
             supabase_admin.table("materials")
-            .select("id, title, is_published")
+            .select("id, title, is_published, subject_id")
             .in_("subject_id", subject_ids)
             .eq("is_published", True)
             .execute()
@@ -686,7 +761,14 @@ def get_student_materials(auth=Depends(get_current_user)):
             for material in (subject_materials_response.data or [])
             if material["id"] not in known_ids
         )
-    return {"materials": materials}
+    deleted = deleted_subject_ids(material.get("subject_id") for material in materials)
+    return {
+        "materials": [
+            {key: material[key] for key in ("id", "title", "is_published")}
+            for material in materials
+            if material.get("subject_id") not in deleted
+        ]
+    }
 
 
 @app.get("/student/quizzes/{quiz_id}")
@@ -722,6 +804,7 @@ def get_student_quiz(quiz_id: str, auth=Depends(get_current_user)):
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
         raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    reject_deleted_quiz_subject(quiz_id)
     material_id = quiz["material_id"]
 
     material_response = (
@@ -821,6 +904,7 @@ def start_quiz_attempt(quiz_id: str, auth=Depends(get_current_user)):
     quiz = quiz_response.data
     if quiz is None or quiz["deleted_at"] is not None:
         raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
+    reject_deleted_quiz_subject(quiz_id)
     check_quiz_schedule(quiz)
     material_id = quiz["material_id"]
     material_response = (
@@ -916,6 +1000,7 @@ def autosave_quiz_answer(
     attempt = attempt_response.data
     if attempt is None:
         raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan")
+    reject_deleted_quiz_subject(attempt["quiz_id"])
     if attempt["submitted_at"] is not None:
         raise HTTPException(status_code=409, detail="Percobaan kuis sudah selesai")
     quiz_response = (
@@ -1148,6 +1233,7 @@ def submit_quiz_answers(attempt_id: str, auth=Depends(get_current_user)):
             raise HTTPException(
                 status_code=404, detail="Percobaan kuis tidak ditemukan"
             )
+        reject_deleted_quiz_subject(attempt["quiz_id"])
         if attempt["submitted_at"] is not None:
             raise HTTPException(
                 status_code=409, detail="Percobaan kuis sudah dikumpulkan"
@@ -1485,6 +1571,7 @@ def get_student_attempt(attempt_id, student_id):
     attempt = attempt_response.data
     if attempt is None:
         raise HTTPException(status_code=404, detail="Percobaan kuis tidak ditemukan.")
+    reject_deleted_quiz_subject(attempt["quiz_id"])
     return attempt
 
 
@@ -1843,6 +1930,14 @@ def list_teacher_subjects(auth=Depends(require_teacher)):
         )
         for row in materials_response.data or []:
             material_counts[row["subject_id"]] += 1
+    deleted = (
+        supabase_admin.table("subjects")
+        .select("id, name")
+        .eq("teacher_id", auth["user_id"])
+        .not_.is_("deleted_at", "null")
+        .execute()
+    ).data or []
+    leftovers = subjects_with_leftovers([row["id"] for row in deleted])
     return {
         "subjects": [
             {
@@ -1851,7 +1946,9 @@ def list_teacher_subjects(auth=Depends(require_teacher)):
                 "material_count": material_counts[subject["id"]],
             }
             for subject in subjects
-        ]
+        ],
+        # Penghapusan yang berhenti di tengah, untuk dilanjutkan guru.
+        "unfinished_deletions": [row for row in deleted if row["id"] in leftovers],
     }
 
 
@@ -2483,58 +2580,13 @@ def update_material_table(
     return {"message": "Tabel disimpan", "table": table}
 
 
-class MaterialTableUpdateRequest(BaseModel):
-    title: str = Field(default="", max_length=200)
-    columns: list[str]
-    rows: list[list[str]]
-
-
-@app.patch("/teacher/materials/{material_id}/sections/{section_id}/tables/{table_index}")
-def update_material_table(
-    material_id: str,
-    section_id: str,
-    table_index: int,
-    data: MaterialTableUpdateRequest,
-    auth=Depends(require_teacher),
-):
-    """Guru memperbaiki isi tabel hasil PDF."""
-    get_owned_material(material_id, auth["user_id"])
-    columns = [name.strip() for name in data.columns]
-    rows = [[cell.strip() for cell in row] for row in data.rows]
-    if len(columns) < 2 or not all(columns):
-        raise HTTPException(status_code=400, detail="Semua kolom tabel harus punya nama.")
-    if any(len(row) != len(columns) for row in rows):
-        raise HTTPException(
-            status_code=400, detail="Jumlah sel tiap baris harus sama dengan jumlah kolom."
-        )
-    if not any(any(row) for row in rows):
-        raise HTTPException(status_code=400, detail="Tabel harus punya isi.")
-    if any(len(cell) > 2000 for cell in [*columns, *(c for row in rows for c in row)]):
-        raise HTTPException(status_code=400, detail="Isi sel tabel terlalu panjang.")
-    sections = (
-        supabase_admin.table("material_sections")
-        .select("id, content")
-        .eq("material_id", material_id)
-        .execute()
-    ).data or []
-    section = next((row for row in sections if str(row["id"]) == section_id), None)
-    if section is None:
-        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
-    table = {"title": data.title.strip(), "columns": columns, "rows": rows}
-    content = replace_table(section.get("content") or "", table_index, table)
-    if content is None:
-        raise HTTPException(status_code=404, detail="Tabel tidak ditemukan")
-    supabase_admin.table("material_sections").update({"content": content}).eq(
-        "id", section["id"]
-    ).execute()
-    return {"message": "Tabel disimpan", "table": table}
-
-
 @app.patch("/teacher/quizzes/{quiz_id}/schedule")
 def update_quiz_schedule(
     quiz_id: str, data: QuizScheduleRequest, auth=Depends(require_teacher)
 ):
     validate_schedule(data)
+    if quiz_subject_is_deleted(quiz_id):
+        raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
     response = (
         supabase_admin.table("quizzes")
         .update(
@@ -2551,6 +2603,270 @@ def update_quiz_schedule(
     if not response.data:
         raise HTTPException(status_code=404, detail="Kuis tidak ditemukan")
     return {"message": "Jadwal kuis berhasil diperbarui", "quiz": response.data[0]}
+
+
+def subject_member_rows(subject_id):
+    """Anggota kelas beserta namanya, urut nama."""
+    members = (
+        supabase_admin.table("subject_students")
+        .select("student_id, joined_at")
+        .eq("subject_id", subject_id)
+        .execute()
+    ).data or []
+    if not members:
+        return []
+    users = (
+        supabase_admin.table("users")
+        .select("id, name")
+        .in_("id", [row["student_id"] for row in members])
+        .execute()
+    ).data or []
+    names = {row["id"]: row["name"] for row in users}
+    rows = [
+        {
+            "id": row["student_id"],
+            "name": names.get(row["student_id"], "Tanpa nama"),
+            "joined_at": row.get("joined_at"),
+        }
+        for row in members
+    ]
+    return sorted(rows, key=lambda row: row["name"].casefold())
+
+
+def student_email(student_id):
+    """Email ada di Supabase Auth, bukan di tabel users. Kalau gagal diambil,
+    daftar anggota tetap tampil tanpa email siswa itu."""
+    try:
+        return supabase_admin.auth.admin.get_user_by_id(student_id).user.email
+    except Exception:
+        logger.exception("Gagal mengambil email siswa %s", student_id)
+        return None
+
+
+@app.get("/teacher/subjects/{subject_id}/members")
+def list_subject_members(subject_id: str, auth=Depends(require_teacher)):
+    subject = get_owned_subject(subject_id, auth["user_id"])
+    rows = subject_member_rows(subject_id)
+    # Satu permintaan per siswa: dibuat bersamaan supaya kelas besar tidak lama.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        emails = list(pool.map(student_email, [row["id"] for row in rows]))
+    return {
+        "subject": {"id": subject["id"], "name": subject["name"]},
+        "student_count": len(rows),
+        "students": [{**row, "email": email} for row, email in zip(rows, emails)],
+    }
+
+
+@app.delete("/teacher/subjects/{subject_id}/members/{student_id}")
+def remove_subject_member(
+    subject_id: str, student_id: str, auth=Depends(require_teacher)
+):
+    """Mengeluarkan siswa dari kelas. Nilainya tetap tersimpan, dan muncul lagi
+    kalau siswa bergabung kembali dengan kode akses."""
+    get_owned_subject(subject_id, auth["user_id"])
+    if not is_subject_member(subject_id, student_id):
+        raise HTTPException(status_code=404, detail="Siswa bukan anggota kelas ini")
+    materials = (
+        supabase_admin.table("materials")
+        .select("id")
+        .eq("subject_id", subject_id)
+        .execute()
+    ).data or []
+    # material_access lama juga memberi akses, jadi ikut dicabut.
+    if materials:
+        supabase_admin.table("material_access").delete().eq(
+            "student_id", student_id
+        ).in_("material_id", [row["id"] for row in materials]).execute()
+    supabase_admin.table("subject_students").delete().eq("subject_id", subject_id).eq(
+        "student_id", student_id
+    ).execute()
+    return {
+        "message": "Siswa dikeluarkan dari kelas",
+        "student_count": len(subject_member_rows(subject_id)),
+    }
+
+
+# Isi satu materi dalam urutan aman untuk foreign key: anak dihapus sebelum
+# induknya, dan jawaban sebelum soal yang dirujuknya. Bentuk tiap baris:
+# (tabel, kolom yang menunjuk ke induk, anak-anaknya). material_images dan
+# materials tidak ada di sini: keduanya menyimpan alamat berkas Storage, jadi
+# dihapus paling akhir.
+MATERIAL_CHILD_TABLES = (
+    ("material_access", "material_id", ()),
+    (
+        "quizzes",
+        "material_id",
+        (
+            (
+                "quiz_attempts",
+                "quiz_id",
+                (
+                    (
+                        "answers",
+                        "attempt_id",
+                        (
+                            ("answer_options", "answer_id", ()),
+                            ("answer_boolean", "answer_id", ()),
+                            ("answer_text", "answer_id", ()),
+                            ("answer_order_items", "answer_id", ()),
+                        ),
+                    ),
+                ),
+            ),
+            (
+                "questions",
+                "quiz_id",
+                (
+                    ("question_options", "question_id", ()),
+                    ("question_answers", "question_id", ()),
+                    ("question_items", "question_id", ()),
+                ),
+            ),
+        ),
+    ),
+    ("material_sections", "material_id", ()),
+)
+# Alamat permintaan punya batas panjang, dan select dibatasi 1000 baris.
+DELETE_CHUNK_SIZE = 100
+DELETE_PAGE_SIZE = 500
+
+
+def chunks(values, size=DELETE_CHUNK_SIZE):
+    return [values[i : i + size] for i in range(0, len(values), size)]
+
+
+def delete_rows(table, column, values, children):
+    """Menghapus baris yang `column`-nya ada di `values`, anak-anaknya lebih
+    dulu. Baris tanpa anak dihapus langsung, karena sebagian tabel jawaban
+    tidak punya kolom id."""
+    for chunk in chunks(values):
+        if not children:
+            supabase_admin.table(table).delete().in_(column, chunk).execute()
+            continue
+        while True:
+            rows = (
+                supabase_admin.table(table)
+                .select("id")
+                .in_(column, chunk)
+                .limit(DELETE_PAGE_SIZE)
+                .execute()
+            ).data or []
+            if not rows:
+                break
+            ids = [row["id"] for row in rows]
+            for child_table, child_column, grandchildren in children:
+                delete_rows(child_table, child_column, ids, grandchildren)
+            supabase_admin.table(table).delete().in_("id", ids).execute()
+
+
+def subject_material_rows(subject_id):
+    return (
+        supabase_admin.table("materials")
+        .select("id, file_url")
+        .eq("subject_id", subject_id)
+        .execute()
+    ).data or []
+
+
+def remove_from_storage(bucket, paths):
+    for chunk in chunks(paths):
+        supabase_admin.storage.from_(bucket).remove(chunk)
+
+
+@app.get("/teacher/subjects/{subject_id}/delete-summary")
+def subject_delete_summary(subject_id: str, auth=Depends(require_teacher)):
+    """Apa saja yang ikut terhapus, untuk dialog konfirmasi guru."""
+    get_owned_subject(subject_id, auth["user_id"])
+    material_ids = [row["id"] for row in subject_material_rows(subject_id)]
+    quizzes = quizzes_by_material(material_ids)
+    return {
+        "material_count": len(material_ids),
+        "quiz_count": sum(len(group) for group in quizzes.values()),
+        "student_count": len(subject_member_rows(subject_id)),
+    }
+
+
+def subjects_with_leftovers(subject_ids):
+    """Kelas terhapus yang isinya belum habis. Baris materials dan anggota
+    hanya tersisa kalau penghapusan berhenti di tengah."""
+    if not subject_ids:
+        return set()
+    left = set()
+    for table in ("materials", "subject_students"):
+        rows = (
+            supabase_admin.table(table)
+            .select("subject_id")
+            .in_("subject_id", subject_ids)
+            .execute()
+        ).data or []
+        left |= {row["subject_id"] for row in rows}
+    return left
+
+
+@app.delete("/teacher/subjects/{subject_id}")
+def delete_subject(subject_id: str, auth=Depends(require_teacher)):
+    """Menghapus kelas beserta seluruh isinya, dan melanjutkan penghapusan yang
+    berhenti di tengah.
+
+    Urutannya: tandai `deleted_at` supaya kelas langsung hilang dari guru dan
+    siswa, hapus data, hapus berkas Storage, lalu hapus material_images dan
+    materials. Dua tabel itu terakhir karena hanya di sanalah alamat berkas
+    tersimpan: kalau Storage gagal, alamatnya masih ada untuk diulang. Baris kelas
+    tetap ada, tanpa isi apa pun, supaya siswa yang membuka kelas ini mendapat
+    penjelasan.
+    """
+    subject = (
+        supabase_admin.table("subjects")
+        .select("id, name, teacher_id, deleted_at")
+        .eq("id", subject_id)
+        .eq("teacher_id", auth["user_id"])
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if subject is None or (
+        subject.get("deleted_at") and subject_id not in subjects_with_leftovers([subject_id])
+    ):
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    try:
+        if not subject.get("deleted_at"):
+            supabase_admin.table("subjects").update(
+                {"deleted_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", subject_id).execute()
+        # Anggota lebih dulu supaya siswa langsung kehilangan akses.
+        supabase_admin.table("subject_students").delete().eq(
+            "subject_id", subject_id
+        ).execute()
+        materials = subject_material_rows(subject_id)
+        material_ids = [row["id"] for row in materials]
+        for table, column, children in MATERIAL_CHILD_TABLES:
+            delete_rows(table, column, material_ids, children)
+        remove_from_storage(
+            "material-images",
+            [
+                row["image_url"]
+                for material_id in material_ids
+                for row in material_image_rows(material_id)
+                if row.get("image_url")
+            ],
+        )
+        remove_from_storage(
+            "materials-pdf",
+            [row["file_url"] for row in materials if row.get("file_url")],
+        )
+        delete_rows("material_images", "material_id", material_ids, ())
+        delete_rows("materials", "id", material_ids, ())
+    except Exception as error:
+        logger.exception("Gagal menghapus kelas %s", subject_id)
+        raise HTTPException(
+            status_code=500, detail="Kelas belum terhapus sepenuhnya. Coba lagi"
+        ) from error
+    for material_id in material_ids:
+        DESCRIBE_JOBS.pop(material_id, None)
+    return {
+        "message": "Kelas dihapus",
+        "subject": {"id": subject["id"], "name": subject["name"]},
+    }
 
 
 @app.get("/teacher/subjects/{subject_id}/results")
@@ -2660,9 +2976,8 @@ def join_subject(data: JoinSubjectRequest, auth=Depends(require_student)):
         raise HTTPException(status_code=400, detail="Kode akses harus 6 huruf")
     subject_response = (
         supabase_admin.table("subjects")
-        .select("id, name, teacher_id")
+        .select("id, name, teacher_id, deleted_at")
         .eq("access_code", code)
-        .is_("deleted_at", "null")
         .maybe_single()
         .execute()
         or EMPTY_RESPONSE
@@ -2670,6 +2985,8 @@ def join_subject(data: JoinSubjectRequest, auth=Depends(require_student)):
     subject = subject_response.data
     if subject is None:
         raise HTTPException(status_code=404, detail="Kode akses tidak ditemukan")
+    if subject.get("deleted_at"):
+        raise HTTPException(status_code=410, detail=SUBJECT_DELETED_DETAIL)
     already_joined = is_subject_member(subject["id"], auth["user_id"])
     if not already_joined:
         supabase_admin.table("subject_students").upsert(
@@ -2749,25 +3066,36 @@ def list_student_subjects(auth=Depends(require_student)):
     }
 
 
-@app.get("/student/subjects/{subject_id}/materials")
-def list_student_subject_materials(subject_id: str, auth=Depends(require_student)):
+@app.get("/student/subjects/{subject_id}/members")
+def list_subject_classmates(subject_id: str, auth=Depends(require_student)):
+    """Nama guru dan nama teman sekelas. Sengaja tanpa id, email, dan tanggal
+    bergabung: siswa hanya perlu tahu namanya."""
     student_id = auth["user_id"]
-    if not is_subject_member(subject_id, student_id):
-        raise HTTPException(
-            status_code=403, detail="Kamu belum bergabung di kelas ini"
-        )
-    subject_response = (
-        supabase_admin.table("subjects")
-        .select("id, name")
-        .eq("id", subject_id)
-        .is_("deleted_at", "null")
+    subject = get_member_subject(subject_id, student_id)
+    teacher = (
+        supabase_admin.table("users")
+        .select("name")
+        .eq("id", subject["teacher_id"])
         .maybe_single()
         .execute()
         or EMPTY_RESPONSE
-    )
-    subject = subject_response.data
-    if subject is None:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    ).data
+    rows = subject_member_rows(subject_id)
+    return {
+        "subject": {"id": subject["id"], "name": subject["name"]},
+        "teacher_name": (teacher or {}).get("name"),
+        "student_count": len(rows),
+        "classmates": [
+            {"name": row["name"], "is_me": str(row["id"]) == str(student_id)}
+            for row in rows
+        ],
+    }
+
+
+@app.get("/student/subjects/{subject_id}/materials")
+def list_student_subject_materials(subject_id: str, auth=Depends(require_student)):
+    student_id = auth["user_id"]
+    subject = get_member_subject(subject_id, student_id)
     materials_response = (
         supabase_admin.table("materials")
         .select("id, title, created_at")
@@ -2861,9 +3189,13 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
     if material is None:
         raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
     if auth["profile"]["role"] == "teacher":
-        if material["teacher_id"] != auth["user_id"]:
+        if material["teacher_id"] != auth["user_id"] or subject_is_deleted(
+            material.get("subject_id")
+        ):
             raise HTTPException(status_code=404, detail="Materi tidak ditemukan")
     else:
+        if subject_is_deleted(material.get("subject_id")):
+            raise HTTPException(status_code=410, detail=SUBJECT_DELETED_DETAIL)
         if not material["is_published"]:
             raise HTTPException(status_code=403, detail="Materi belum dipublikasikan")
         if not student_can_access_material(material, auth["user_id"]):

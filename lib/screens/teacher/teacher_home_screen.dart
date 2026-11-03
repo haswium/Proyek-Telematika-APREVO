@@ -95,6 +95,11 @@ class TeacherHomeScreen extends StatelessWidget {
                   onPressed: () => _createSubject(context),
                 ),
                 const SizedBox(height: 8),
+                for (final subject in store.unfinishedDeletions)
+                  _UnfinishedDeletionCard(
+                    key: ValueKey(subject.id),
+                    subject: subject,
+                  ),
                 SectionTitle('Daftar kelas (${subjects.length})'),
                 if (subjects.isEmpty)
                   const EmptyState(message: 'Belum ada kelas.'),
@@ -207,6 +212,76 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
           child: Text(_busy ? 'Membuat...' : 'Buat'),
         ),
       ],
+    );
+  }
+}
+
+/// Penghapusan kelas yang berhenti di tengah. Sudah dikonfirmasi guru, jadi
+/// melanjutkannya tidak perlu dialog lagi.
+class _UnfinishedDeletionCard extends StatefulWidget {
+  const _UnfinishedDeletionCard({super.key, required this.subject});
+
+  final Subject subject;
+
+  @override
+  State<_UnfinishedDeletionCard> createState() =>
+      _UnfinishedDeletionCardState();
+}
+
+class _UnfinishedDeletionCardState extends State<_UnfinishedDeletionCard> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _resume() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final name = widget.subject.name;
+    try {
+      await store.deleteSubject(widget.subject.id);
+      announce('Kelas $name dihapus');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.subject.name;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: AppCard(
+        color: AppColors.highlight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              container: true,
+              child: Text(
+                'Penghapusan kelas $name belum selesai',
+                style: AppType.titleMedium,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.delete_outline),
+              label: Text('Lanjutkan hapus kelas $name'),
+              onPressed: _busy ? null : _resume,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Semantics(
+                container: true,
+                liveRegion: true,
+                child: Text(_error!, style: AppType.bodyMedium),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

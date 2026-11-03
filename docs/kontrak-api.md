@@ -17,6 +17,15 @@ Perbarui dokumen ini setiap kali endpoint berubah.
 - CORS mengizinkan `localhost`, `127.0.0.1`, dan IP jaringan lokal (`10.x`,
   `172.16-31.x`, `192.168.x`) di port mana pun, ditambah `CORS_ORIGINS` di `.env`.
 
+### Kelas yang dihapus
+
+Begitu `subjects.deleted_at` terisi, semua endpoint kelas, materi, kuis, percobaan,
+dan anggota menolak, walau baris anggota dan isi kelas belum terhapus. Siswa
+mendapat `410 "Kelas ini sudah dihapus guru"`, guru mendapat `404`. Daftar
+`GET /student/subjects`, `GET /student/materials`, dan `GET /teacher/subjects`
+tidak lagi memuat isi kelas itu. Yang tetap terbuka hanya
+`DELETE /teacher/subjects/{subject_id}`, untuk melanjutkan penghapusan.
+
 ### Jadwal kuis
 
 Tiap kuis punya `available_from` (waktu buka) dan `deadline_at` (waktu tutup).
@@ -84,6 +93,9 @@ Respons: `{"message", "subject": {id, name, access_code, teacher_id, created_at}
 
 Respons: `{"subjects": [{id, name, access_code, created_at, student_count,
 material_count}]}`.
+
+`GET /teacher/subjects` juga berisi `unfinished_deletions`: `[{id, name}]`, kelas
+yang penghapusannya berhenti di tengah.
 
 ### GET `/teacher/subjects/{subject_id}/materials`
 
@@ -199,20 +211,61 @@ di aplikasi dengan `starsFor`.
 
 ## Siswa
 
+### GET `/teacher/subjects/{subject_id}/members`
+
+Hanya guru pemilik. Respons: `{"subject": {id, name}, "student_count", "students":
+[{id, name, email, joined_at}]}`, urut nama. `email` diambil dari Supabase Auth dan
+`null` kalau gagal diambil. Error: `404` kelas tidak ditemukan atau bukan milik guru.
+
+### DELETE `/teacher/subjects/{subject_id}/members/{student_id}`
+
+Hanya guru pemilik. Mengeluarkan siswa dan mencabut `material_access` siswa itu
+untuk materi kelas ini. Nilainya tetap tersimpan. Siswa bisa bergabung lagi dengan
+kode akses, dan nilainya muncul lagi. Respons: `{"message", "student_count"}`.
+Error: `404` kelas tidak ditemukan, bukan milik guru, atau siswa bukan anggota.
+
+### GET `/teacher/subjects/{subject_id}/delete-summary`
+
+Hanya guru pemilik. Isi yang ikut terhapus, untuk dialog konfirmasi. Respons:
+`{"material_count", "quiz_count", "student_count"}`. Error: `404` kelas tidak
+ditemukan atau bukan milik guru.
+
+### DELETE `/teacher/subjects/{subject_id}`
+
+Hanya guru pemilik. Menghapus permanen materi, halaman, gambar, kuis, soal, hasil,
+jawaban, anggota, serta berkas di Storage `materials-pdf` dan `material-images`.
+Urutannya: isi `deleted_at`, hapus data, hapus berkas, lalu hapus `material_images`
+dan `materials` yang menyimpan alamat berkas. Baris kelas tetap ada dengan
+`deleted_at` terisi, hanya berisi nama dan kode akses, supaya siswa mendapat
+penjelasan dan kode aksesnya tidak dipakai ulang. Respons: `{"message", "subject":
+{id, name}}`. Error: `404` kelas tidak ditemukan, bukan milik guru, atau sudah
+terhapus habis; `500` berhenti di tengah. Setelah `500`, kelas masuk
+`unfinished_deletions` di `GET /teacher/subjects`, dan memanggil endpoint ini lagi
+melanjutkan sisanya.
+
 ### POST `/student/subjects/join`
 
 Body `{"code": "KXPRTA"}`. Huruf kecil, spasi, dan strip diabaikan. Bergabung
 ulang tidak error. Respons: `{"message", "already_joined", "subject": {id,
-name}}`. Error: `400` format kode salah, `404` kode tidak ditemukan.
+name}}`. Error: `400` format kode salah, `404` kode tidak ditemukan, `410` kelas
+sudah dihapus guru.
 
 ### GET `/student/subjects`
 
 Respons: `{"subjects": [{id, name, teacher_name, material_count, joined_at}]}`.
 `material_count` hanya menghitung materi yang dipublikasikan.
 
+### GET `/student/subjects/{subject_id}/members`
+
+Hanya anggota. Respons: `{"subject": {id, name}, "teacher_name", "student_count",
+"classmates": [{name, is_me}]}`, urut nama, tanpa id, email, dan tanggal bergabung.
+Error: `403` belum bergabung, `404` kelas tidak ditemukan, `410` kelas sudah dihapus
+guru (`"Kelas ini sudah dihapus guru"`).
+
 ### GET `/student/subjects/{subject_id}/materials`
 
-Hanya anggota. Materi yang dipublikasikan beserta status kuis:
+Hanya anggota. `410` kalau kelas sudah dihapus guru. Materi yang dipublikasikan
+beserta status kuis:
 
 ```json
 {

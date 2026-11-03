@@ -150,6 +150,7 @@ class AppStore extends ChangeNotifier {
 
   void signOut() {
     currentUser = null;
+    forgetOpenSubject();
     if (online) Supabase.instance.client.auth.signOut();
   }
 
@@ -157,7 +158,9 @@ class AppStore extends ChangeNotifier {
 
   /// Halaman satu materi, urut dari `position`, beserta gambarnya.
   Future<MaterialPages> sections(String materialId) async {
-    final data = await api.get('/materials/$materialId/sections');
+    final data = await _watchingSubject(
+      () => api.get('/materials/$materialId/sections'),
+    );
     return MaterialPages(
       sections: [
         for (final s in data['sections'] as List? ?? const [])
@@ -174,8 +177,56 @@ class AppStore extends ChangeNotifier {
 
   // ---- Guru.
 
+  Future<SubjectDeleteSummary> subjectDeleteSummary(String subjectId) async =>
+      SubjectDeleteSummary.fromJson(
+        await api.get('/teacher/subjects/$subjectId/delete-summary'),
+      );
+
+  /// Menghapus kelas beserta seluruh isinya.
+  ///
+  /// Juga melanjutkan penghapusan yang berhenti di tengah. Kalau gagal, kelasnya
+  /// mungkin sudah hilang dari daftar, jadi layar tetap perlu memuat ulang.
+  Future<void> deleteSubject(String subjectId) async {
+    try {
+      await api.delete('/teacher/subjects/$subjectId');
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  /// Daftar anggota kelas untuk guru pemilik.
+  Future<List<SubjectMember>> subjectMembers(String subjectId) async {
+    final data = await api.get('/teacher/subjects/$subjectId/members');
+    return [
+      for (final s in data['students'] as List? ?? const [])
+        SubjectMember.fromJson(s as Map<String, dynamic>),
+    ];
+  }
+
+  /// Mengeluarkan siswa dari kelas. Mengembalikan jumlah siswa yang tersisa.
+  Future<int> removeSubjectMember(String subjectId, String studentId) async {
+    final data = await api.delete(
+      '/teacher/subjects/$subjectId/members/$studentId',
+    );
+    notifyListeners();
+    return (data['student_count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Nama guru dan teman sekelas untuk siswa.
+  Future<ClassmateList> classmates(String subjectId) async =>
+      ClassmateList.fromJson(
+        await api.get('/student/subjects/$subjectId/members'),
+      );
+
+  /// Kelas yang penghapusannya berhenti di tengah. Diperbarui [teacherSubjects].
+  List<Subject> unfinishedDeletions = const [];
+
   Future<List<Subject>> teacherSubjects() async {
     final data = await api.get('/teacher/subjects');
+    unfinishedDeletions = [
+      for (final s in data['unfinished_deletions'] as List? ?? const [])
+        Subject.fromJson(s as Map<String, dynamic>),
+    ];
     return [
       for (final s in data['subjects'] as List? ?? const [])
         Subject.fromJson(s as Map<String, dynamic>),
@@ -465,7 +516,9 @@ class AppStore extends ChangeNotifier {
     String subjectId,
     String materialId,
   ) async {
-    final materials = await studentMaterials(subjectId);
+    if (_openSubjectId != subjectId) openSubjectGone = null;
+    _openSubjectId = subjectId;
+    final materials = await _watchingSubject(() => studentMaterials(subjectId));
     for (final m in materials) {
       if (m.id == materialId) return m;
     }
@@ -474,6 +527,62 @@ class AppStore extends ChangeNotifier {
       'menjadi draf.',
       statusCode: 404,
     );
+  }
+
+  // ---- Kelas yang dihapus saat layarnya terbuka.
+
+  /// Kelas dari materi yang sedang dibuka siswa. Setelah kelas dihapus, baris
+  /// materi dan kuisnya ikut hilang, jadi server hanya bisa menjawab "tidak
+  /// ditemukan". Hanya aplikasi yang tahu materi itu milik kelas mana.
+  String? _openSubjectId;
+
+  /// Pesan dari server kalau kelas yang sedang dibuka sudah dihapus guru.
+  String? openSubjectGone;
+
+  /// Dipanggil saat keluar akun, dan di akhir setiap tes.
+  void forgetOpenSubject() {
+    _openSubjectId = null;
+    openSubjectGone = null;
+  }
+
+  /// Memeriksa kelas yang sedang dibuka. Mengembalikan pengecualian dari server
+  /// kalau kelasnya sudah dihapus. Gangguan lain diabaikan.
+  Future<ApiException?> checkOpenSubject() async {
+    final id = _openSubjectId;
+    if (id == null) return null;
+    try {
+      await api.get('/student/subjects/$id/materials');
+    } on ApiException catch (e) {
+      if (e.statusCode == 410) {
+        _markSubjectGone(e);
+        return e;
+      }
+    }
+    return null;
+  }
+
+  void _markSubjectGone(ApiException e) {
+    if (openSubjectGone == e.message) return;
+    openSubjectGone = e.message;
+    notifyListeners();
+  }
+
+  /// Permintaan materi atau kuis. Kalau server menjawab "tidak ditemukan" atau
+  /// "tidak berhak", periksa apakah kelasnya sudah dihapus, supaya siswa
+  /// mendapat alasan yang sebenarnya.
+  Future<T> _watchingSubject<T>(Future<T> Function() request) async {
+    try {
+      return await request();
+    } on ApiException catch (e) {
+      if (e.statusCode == 410) {
+        _markSubjectGone(e);
+        rethrow;
+      }
+      if (e.statusCode != 403 && e.statusCode != 404) rethrow;
+      final gone = await checkOpenSubject();
+      if (gone != null) throw gone;
+      rethrow;
+    }
   }
 
   /// Semua kelas siswa beserta materinya, untuk tab Progres.
@@ -490,8 +599,12 @@ class AppStore extends ChangeNotifier {
   /// Mengambil soal lalu memulai percobaan. Kalau ada percobaan yang belum
   /// dikumpulkan, backend mengembalikan percobaan itu.
   Future<QuizSession> startQuiz(String quizId) async {
-    final quiz = await api.get('/student/quizzes/$quizId');
-    final attempt = await api.post('/quizzes/$quizId/attempts');
+    final quiz = await _watchingSubject(
+      () => api.get('/student/quizzes/$quizId'),
+    );
+    final attempt = await _watchingSubject(
+      () => api.post('/quizzes/$quizId/attempts'),
+    );
     final info = quiz['quiz'] as Map<String, dynamic>? ?? const {};
     final row = attempt['attempt'] as Map<String, dynamic>? ?? const {};
     return QuizSession(
@@ -513,15 +626,19 @@ class AppStore extends ChangeNotifier {
     String questionId,
     StudentAnswer answer,
   ) async {
-    final data = await api.put(
-      '/student/attempts/$attemptId/answers/$questionId',
-      answer.toJson(questionId),
+    final data = await _watchingSubject(
+      () => api.put(
+        '/student/attempts/$attemptId/answers/$questionId',
+        answer.toJson(questionId),
+      ),
     );
     return data['is_correct'] == true;
   }
 
   Future<SubmitResult> submitAttempt(String attemptId) async {
-    final data = await api.post('/student/attempts/$attemptId/submit');
+    final data = await _watchingSubject(
+      () => api.post('/student/attempts/$attemptId/submit'),
+    );
     notifyListeners();
     return SubmitResult(
       attemptId: attemptId,
@@ -538,7 +655,9 @@ class AppStore extends ChangeNotifier {
     required bool withKey,
   }) async {
     final path = withKey ? 'discussion' : 'result';
-    final data = await api.get('/student/attempts/$attemptId/$path');
+    final data = await _watchingSubject(
+      () => api.get('/student/attempts/$attemptId/$path'),
+    );
     return AttemptReview.fromJson(data, withKey: withKey);
   }
 }
