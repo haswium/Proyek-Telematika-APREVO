@@ -385,6 +385,7 @@ class LessonMaterial {
     required this.title,
     this.published = true,
     this.sectionCount = 0,
+    this.hiddenImages = 0,
     this.quizzes = const [],
   });
 
@@ -394,6 +395,7 @@ class LessonMaterial {
     // Daftar materi siswa hanya berisi materi yang dipublikasikan.
     published: json['is_published'] != false,
     sectionCount: _int(json['section_count']),
+    hiddenImages: _int(json['hidden_image_count']),
     quizzes: [for (final q in _list(json['quizzes'])) QuizInfo.fromJson(q)],
   );
 
@@ -401,6 +403,10 @@ class LessonMaterial {
   final String title;
   final bool published;
   final int sectionCount;
+
+  /// Gambar yang disembunyikan dari siswa karena belum punya deskripsi.
+  /// Hanya dikirim untuk guru, dan hanya untuk materi yang sudah terbit.
+  final int hiddenImages;
   final List<QuizInfo> quizzes;
 
   QuizInfo? quiz(TestKind kind) {

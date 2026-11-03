@@ -1875,6 +1875,9 @@ def list_teacher_subject_materials(subject_id: str, auth=Depends(require_teacher
             {
                 **material,
                 "section_count": counts.get(material["id"], 0),
+                "hidden_image_count": (
+                    hidden_image_count(material["id"]) if material["is_published"] else 0
+                ),
                 "quizzes": [
                     {**quiz, "status": quiz_status(quiz)}
                     for quiz in quizzes.get(material["id"], [])
@@ -2129,6 +2132,17 @@ def undescribed_image_pages(material_id):
     known = {row["image_key"] for row in rows}
     pages += [None for key in material_content_image_keys(material_id) if key not in known]
     return pages
+
+
+def hidden_image_count(material_id):
+    """Gambar di isi halaman yang disembunyikan dari siswa karena belum punya
+    deskripsi. Terjadi di materi yang terbit sebelum syarat terbit berlaku."""
+    rows = {row["image_key"]: row for row in material_image_rows(material_id)}
+    return sum(
+        1
+        for key in material_content_image_keys(material_id)
+        if key not in rows or needs_description(rows[key])
+    )
 
 
 # Jeda antar panggilan Gemini. Versi gratis membatasi jumlah permintaan per

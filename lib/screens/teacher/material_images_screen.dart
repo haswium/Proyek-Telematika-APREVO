@@ -556,8 +556,8 @@ class PendingImagesCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Materi baru bisa terbit setelah gambar ini diberi deskripsi '
-            'atau ditandai dekoratif.',
+            'Materi baru bisa terbit, dan gambar baru sampai ke siswa, setelah '
+            'gambar ini diberi deskripsi atau ditandai dekoratif.',
             style: AppType.bodyMedium,
           ),
           const SizedBox(height: 8),
@@ -569,6 +569,60 @@ class PendingImagesCard extends StatelessWidget {
               child: Text(pending[i], style: AppType.bodyMedium),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Peringatan untuk guru: materi sudah terbit, tetapi ada gambar yang
+/// disembunyikan dari siswa karena belum punya deskripsi.
+class HiddenImagesWarning extends StatelessWidget {
+  const HiddenImagesWarning({super.key, required this.material});
+
+  final LessonMaterial material;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: AppColors.highlight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            container: true,
+            child: Text(
+              '${material.hiddenImages} gambar di materi ini belum '
+              'dideskripsikan dan disembunyikan dari siswa',
+              style: AppType.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Bisa ada beberapa kartu di satu layar; sebut judulnya supaya
+          // TalkBack tidak membaca tombol yang sama berulang.
+          Semantics(
+            label: 'Lengkapi gambar materi ${material.title}',
+            button: true,
+            excludeSemantics: true,
+            onTap: () => _open(context),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.image_outlined),
+              label: const Text('Lengkapi gambar'),
+              onPressed: () => _open(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _open(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MaterialImagesScreen(
+          materialId: material.id,
+          materialTitle: material.title,
+        ),
       ),
     );
   }

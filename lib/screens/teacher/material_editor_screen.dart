@@ -260,6 +260,10 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        if (m.hiddenImages > 0) ...[
+          HiddenImagesWarning(material: m),
+          const SizedBox(height: 16),
+        ],
         HeroCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,7 +403,7 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
         ),
         for (final kind in TestKind.values) ..._testSection(data, kind, type),
         const SizedBox(height: 16),
-        if (data.pendingImages > 0) ...[
+        if (!m.published && data.pendingImages > 0) ...[
           PendingImagesCard(images: data.images),
           const SizedBox(height: 12),
           OutlinedButton.icon(

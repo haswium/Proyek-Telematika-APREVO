@@ -121,6 +121,10 @@ Error: `400` bukan PDF (`"File harus berformat PDF."` atau `"Isi file bukan
 PDF yang valid."`) atau tidak bisa diproses, `403` bukan guru, `404`
 kelas tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 
+Daftar materi guru (`GET /teacher/subjects/{subject_id}/materials`) juga
+berisi `hidden_image_count`: jumlah gambar yang disembunyikan dari siswa di
+materi yang sudah terbit karena belum punya deskripsi. Draf selalu `0`.
+
 ### PATCH `/teacher/materials/{material_id}`
 
 Body (isi salah satu atau keduanya): `{"title": "...", "is_published": true}`.
