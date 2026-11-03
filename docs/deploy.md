@@ -61,10 +61,10 @@ Variabel baru setelahnya ditambahkan sendiri di dashboard.
 Ganti alamatnya dengan alamat layananmu:
 
 ```bash
-curl https://aprevo-backend.onrender.com/health
+curl https://proyek-telematika-aprevo.onrender.com/health
 # {"status":"ok"}
 
-curl -i https://aprevo-backend.onrender.com/test-supabase
+curl -i https://proyek-telematika-aprevo.onrender.com/test-supabase
 # HTTP 404: endpoint debug mati
 ```
 
@@ -76,7 +76,7 @@ Di `lib/config/api_config.dart`, ganti `productionBaseUrl` dengan alamat dari
 langkah 2:
 
 ```dart
-static const String productionBaseUrl = 'https://aprevo-backend.onrender.com';
+static const String productionBaseUrl = 'https://proyek-telematika-aprevo.onrender.com';
 ```
 
 Untuk pengembangan dengan backend di laptop, alamatnya diberikan saat menjalankan

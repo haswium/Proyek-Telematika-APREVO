@@ -10,7 +10,7 @@ class ApiConfig {
 
   /// Alamat backend di Render. Ganti dengan alamat yang tampil di dashboard
   /// setelah layanannya dibuat (lihat `docs/deploy.md`).
-  static const String productionBaseUrl = 'https://aprevo-backend.onrender.com';
+  static const String productionBaseUrl = 'https://proyek-telematika-aprevo.onrender.com';
 
   static const String _fromDefine = String.fromEnvironment('API_BASE_URL');
 
