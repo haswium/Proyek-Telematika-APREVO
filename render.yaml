@@ -1,0 +1,28 @@
+# Backend APREVO di Render. Langkah lengkapnya ada di docs/deploy.md.
+# Repo ini publik: jangan menulis nilai rahasia di sini. Variabel dengan
+# `sync: false` diisi di dashboard Render.
+services:
+  - type: web
+    name: aprevo-backend
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Bawaan Render lebih baru dari versi yang sudah diuji.
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: ENABLE_DEBUG_ENDPOINTS
+        value: "0"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

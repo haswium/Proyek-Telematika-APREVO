@@ -82,7 +82,15 @@ supabase = ThreadLocalSupabase(SUPABASE_KEY)
 supabase_admin = ThreadLocalSupabase(os.getenv("SUPABASE_SERVICE_KEY"))
 TEST_LOGIN_EMAIL = os.getenv("TEST_LOGIN_EMAIL")
 TEST_LOGIN_PASSWORD = os.getenv("TEST_LOGIN_PASSWORD")
-ENABLE_DEBUG_ENDPOINTS = os.getenv("ENABLE_DEBUG_ENDPOINTS") == "1"
+
+
+def debug_endpoints_enabled():
+    """Render selalu mengisi RENDER. Di sana endpoint debug tetap mati, walau
+    variabelnya diisi 1 di dashboard."""
+    return os.getenv("ENABLE_DEBUG_ENDPOINTS") == "1" and not os.getenv("RENDER")
+
+
+ENABLE_DEBUG_ENDPOINTS = debug_endpoints_enabled()
 
 # localhost dan IP jaringan lokal (10.x, 172.16-31.x, 192.168.x) di port mana pun.
 LOCAL_ORIGIN_REGEX = (
@@ -213,6 +221,13 @@ security = HTTPBearer()
 @app.get("/")
 def root():
     return {"message": "Hello World"}
+
+
+@app.get("/health")
+def health():
+    """Untuk health check Render dan membangunkan server. Tanpa database, supaya
+    gangguan Supabase tidak membuat Render memulai ulang layanan."""
+    return {"status": "ok"}
 
 
 @app.get("/test-supabase", dependencies=[Depends(require_debug)])

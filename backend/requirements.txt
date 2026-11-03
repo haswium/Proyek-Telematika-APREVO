@@ -1,6 +1,7 @@
 fastapi==0.142.2
 uvicorn==0.54.0
 supabase==2.32.0
+postgrest==2.32.0
 python-dotenv==1.2.4
 python-multipart==0.0.32
 pymupdf==2.0
