@@ -16,8 +16,9 @@ di kolom **Catatan** kalau berbeda dari yang seharusnya.
    - Kalau ingin daftar materi siswa diambil dari backend, jalankan backend
      dengan `--host 0.0.0.0`, lalu jalankan aplikasi dengan
      `flutter run --dart-define=API_BASE_URL=http://<IP-laptop>:8000`.
-     HP dan laptop harus satu Wi-Fi. Alamat server juga bisa diubah di
-     layar "Alamat server". Kalau backend tidak dijalankan, layar Kelas
+     HP dan laptop harus satu Wi-Fi. Tanpa itu, aplikasi memakai server
+     Render. Alamat server juga bisa diubah di menu pengembang (ketuk
+     "Tentang APREVO" 7 kali). Kalau server tidak bisa dihubungi, layar Kelas
      akan menampilkan pesan gagal; itu juga perlu diuji.
 2. Siapkan dua akun: satu **siswa** dan satu **guru**. Kalau belum ada,
    buat lewat layar Daftar saat pengujian.
@@ -337,6 +338,23 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 24.16 | Tombol kembali dari layar baca | Kembali ke hasil pencarian, kata pencarian masih ada | | |
 | 24.17 | Matikan server, lalu cari kata | Pesan error dibacakan, ada tombol "Coba lagi" | | |
 | 24.18 | Guru menghapus kelas, siswa mencari isi materi | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda" | | |
+
+## 25. Server Render dan APK release
+
+Uji dengan APK release (`docs/deploy.md`), bukan `flutter run`.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 25.1 | Pasang APK di HP, buka, lalu masuk | Tidak ada alamat yang perlu diisi. Tidak ada baris "Alamat server" di layar Masuk dan Profil | | |
+| 25.2 | Biarkan server tidak dipakai lebih dari 15 menit, tutup aplikasi, lalu buka dan masuk | Sekitar 5 detik setelah layar menunggu server, terdengar "Menghubungkan ke server, mohon tunggu", dan spanduk kuning tampil di atas. Tidak langsung error. **Wajib dicek di HP**, tes otomatis memakai server tiruan | | |
+| 25.3 | Tunggu sampai server bangun | Terdengar "Server tersambung", spanduk hilang, isi layar tampil. Catat lama tunggunya | | |
+| 25.4 | Perhatikan fokus selama 25.2 dan 25.3 | Fokus TalkBack tidak melompat. Yang sedang diketik tidak hilang | | |
+| 25.5 | Pakai aplikasi seperti biasa setelah server bangun, termasuk pindah materi dan kirim jawaban kuis | Spanduk tidak muncul lagi | | |
+| 25.6 | Mode pesawat, lalu buka kelas | "Tidak bisa terhubung ke server. Periksa internet HP, lalu coba lagi." dibacakan, ada tombol "Coba lagi". Tidak menyebut laptop atau alamat server | | |
+| 25.7 | Saat server tidur, kirim jawaban kuis dengan jawaban yang baru | Jawaban tercatat satu kali, terlihat dari hasil kuis | | |
+| 25.8 | Guru: unggah PDF sebesar mungkin sampai 20 MB saat server sudah bangun | Berhasil tanpa spanduk. Cek menu Logs di Render: layanan tidak restart | | |
+| 25.9 | Ketuk dua kali "Tentang APREVO" | Terdengar penjelasan singkat APREVO | | |
+| 25.10 | Lanjutkan sampai 7 kali | Dari ketukan ke-4 terdengar "Ketuk 3 kali lagi untuk membuka menu pengembang". Ketukan ke-7 membuka "Menu pengembang" | | |
 
 ## Tanpa TalkBack
 

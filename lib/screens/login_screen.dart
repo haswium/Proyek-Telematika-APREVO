@@ -158,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Text('Belum punya akun? Daftar sekarang'),
                   ),
                   const SizedBox(height: 12),
-                  const ServerAddressRow(),
+                  const AboutAprevoRow(),
                 ],
               ),
             ),

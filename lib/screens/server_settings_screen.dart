@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../config/api_config.dart';
 import '../data/app_store.dart';
+import '../services/announce.dart';
 import '../services/settings.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playful.dart';
 
-/// Mengatur alamat backend. Dari HP, isi IP laptop yang menjalankan
-/// backend, misalnya 192.168.1.7. Port 8000 ditambahkan sendiri.
+/// Menu pengembang: mengatur alamat backend. Siswa tidak memerlukannya, jadi
+/// hanya terbuka lewat [AboutAprevoRow].
 class ServerSettingsScreen extends StatefulWidget {
   const ServerSettingsScreen({super.key});
 
@@ -46,8 +47,8 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
     if (url == null) {
       _setStatus(
         _Kind.error,
-        'Alamat server belum benar. Contoh: 192.168.1.7 atau '
-        'http://192.168.1.7:8000',
+        'Alamat server belum benar. Contoh: https://aprevo.onrender.com atau '
+        '192.168.1.7',
       );
     }
     return url;
@@ -85,15 +86,15 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return PurpleScaffold(
-      appBar: aprevoAppBar('Alamat server'),
+      appBar: aprevoAppBar('Menu pengembang'),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
             Text(
-              'Alamat backend APREVO. Kalau memakai HP, isi alamat IP '
-              'laptop yang menjalankan backend, misalnya 192.168.1.7. HP '
-              'dan laptop harus memakai Wi-Fi yang sama.',
+              'Alamat backend APREVO. APK release hanya bisa memakai alamat '
+              'https. Alamat http, misalnya IP laptop, hanya jalan di build '
+              'debug.',
               style: AppType.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -107,7 +108,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
               style: AppType.bodyLarge,
               decoration: fieldDecoration(
                 'Alamat server',
-                hint: 'Contoh: 192.168.1.7',
+                hint: 'Contoh: https://aprevo.onrender.com',
               ),
               onSubmitted: (_) => _save(),
             ),
@@ -169,27 +170,56 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
   }
 }
 
-/// Baris "Alamat server" untuk layar Masuk dan tab Profil.
-class ServerAddressRow extends StatelessWidget {
-  const ServerAddressRow({super.key});
+/// Ketukan pada [AboutAprevoRow] yang membuka menu pengembang.
+const int kDeveloperMenuTaps = 7;
+
+/// Baris "Tentang APREVO" di layar Masuk dan tab Profil. Mengetuknya
+/// [kDeveloperMenuTaps] kali berturut-turut membuka menu pengembang.
+class AboutAprevoRow extends StatefulWidget {
+  const AboutAprevoRow({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return StatefulBuilder(
-      builder: (context, setState) => ListRow(
-        icon: Icons.dns_outlined,
-        title: 'Alamat server',
-        subtitle: Settings.baseUrl,
-        semanticLabel: 'Alamat server: ${Settings.baseUrl}. Ketuk untuk ubah',
-        onTap: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ServerSettingsScreen()),
-          );
-          // Tampilkan alamat terbaru setelah kembali.
-          setState(() {});
-        },
-      ),
+  State<AboutAprevoRow> createState() => _AboutAprevoRowState();
+}
+
+class _AboutAprevoRowState extends State<AboutAprevoRow> {
+  static const String _about =
+      'APREVO, aplikasi belajar untuk siswa tunanetra. Proyek Telematika, '
+      'Teknik Komputer ITS.';
+
+  /// Lebih longgar dari biasanya, karena TalkBack memakai ketukan dua kali.
+  static const Duration _maxGap = Duration(seconds: 5);
+
+  int _taps = 0;
+  DateTime? _lastTap;
+
+  void _tapped() {
+    final now = DateTime.now();
+    final last = _lastTap;
+    if (last == null || now.difference(last) > _maxGap) _taps = 0;
+    _lastTap = now;
+    _taps++;
+    final left = kDeveloperMenuTaps - _taps;
+    if (left > 0) {
+      announce(
+        left > 3
+            ? _about
+            : 'Ketuk $left kali lagi untuk membuka menu pengembang',
+      );
+      return;
+    }
+    _taps = 0;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ServerSettingsScreen()),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => ListRow(
+    icon: Icons.info_outline,
+    title: 'Tentang APREVO',
+    subtitle: 'Proyek Telematika, Teknik Komputer ITS',
+    onTap: _tapped,
+  );
 }

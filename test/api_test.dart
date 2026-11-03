@@ -110,7 +110,7 @@ void main() {
       );
     });
 
-    test('server mati: pesan menyebut alamatnya', () async {
+    test('server mati: pesan menyuruh memeriksa internet', () async {
       final api = ApiClient(
         client: MockClient((_) async => throw http.ClientException('mati')),
         baseUrl: () => fakeBaseUrl,
@@ -121,7 +121,7 @@ void main() {
           isA<ApiException>().having(
             (e) => e.message,
             'message',
-            startsWith('Tidak bisa terhubung ke server di $fakeBaseUrl.'),
+            ApiClient.unreachableMessage,
           ),
         ),
       );

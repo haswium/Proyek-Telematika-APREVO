@@ -1,7 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Kunci APK release, tidak di-commit. Cara membuatnya ada di docs/deploy.md.
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties().apply {
+    if (keyPropertiesFile.exists()) keyPropertiesFile.inputStream().use { load(it) }
 }
 
 android {
@@ -29,11 +37,32 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (keyPropertiesFile.exists()) {
+            create("release") {
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(keyProperties.getProperty("storeFile"))
+                storePassword = keyProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
+}
+
+// Update hanya bisa dipasang kalau kuncinya sama, jadi APK untuk siswa tidak boleh
+// terbuat dengan kunci lain.
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    doFirst {
+        if (!keyPropertiesFile.exists()) {
+            throw GradleException(
+                "android/key.properties belum ada. Lihat docs/deploy.md, langkah 6."
+            )
         }
     }
 }

@@ -67,10 +67,16 @@ post-test.
 Isian singkat dinilai setelah dinormalisasi: spasi di awal/akhir dibuang,
 huruf kecil, spasi ganda dijadikan satu.
 
+### GET `/health`
+
+Tanpa login dan tanpa database. Respons: `{"status": "ok"}`. Dipakai health check
+Render, dan aplikasi memanggilnya saat dibuka untuk membangunkan server.
+
 ## Endpoint pengembangan
 
 `/test-auth`, `/test-supabase`, `/debug-auth`, `/debug-policy`, dan `/test-login` hanya aktif
-kalau `ENABLE_DEBUG_ENDPOINTS=1`. Selain itu `404`.
+kalau `ENABLE_DEBUG_ENDPOINTS=1`. Selain itu `404`. Di Render selalu `404`, walau
+nilainya `1`.
 
 | Metode | Path             | Auth | Keterangan |
 |--------|------------------|------|------------|

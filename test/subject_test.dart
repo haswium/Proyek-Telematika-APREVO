@@ -5,6 +5,7 @@ import 'package:aprevo/data/app_store.dart';
 import 'package:aprevo/models/models.dart';
 import 'package:aprevo/screens/student/join_screen.dart';
 import 'package:aprevo/screens/teacher/teacher_home_screen.dart';
+import 'package:aprevo/services/api_client.dart';
 import 'package:aprevo/widgets/common.dart';
 
 import 'fake_server.dart';
@@ -155,11 +156,7 @@ void main() {
       );
       expect(find.bySemanticsLabel('Memuat kelasmu.'), findsOneWidget);
       await tester.pumpAndSettle();
-      expectLive(
-        tester,
-        'Tidak bisa terhubung ke server di $fakeBaseUrl. Pastikan backend '
-        'menyala, lalu HP dan laptop memakai Wi-Fi yang sama.',
-      );
+      expectLive(tester, ApiClient.unreachableMessage);
 
       // Server menyala lagi: "Coba lagi" memuat ulang.
       _studentServer().install();

@@ -53,3 +53,8 @@ app.*.map.json
 
 # Instruksi lokal, tidak di-commit.
 CLAUDE.md
+
+# Kunci APK release. Lihat docs/deploy.md.
+key.properties
+*.jks
+*.keystore
