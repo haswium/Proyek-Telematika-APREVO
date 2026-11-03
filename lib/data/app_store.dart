@@ -188,6 +188,21 @@ class AppStore extends ChangeNotifier {
     );
   }
 
+  /// Halaman materi yang memuat [query].
+  Future<List<ContentSearchHit>> searchMaterial(
+    String materialId,
+    String query,
+  ) async {
+    final q = Uri.encodeQueryComponent(query);
+    final data = await _watchingSubject(
+      () => api.get('/materials/$materialId/search?q=$q'),
+    );
+    return [
+      for (final hit in data['results'] as List? ?? const [])
+        ContentSearchHit.fromJson(hit as Map<String, dynamic>),
+    ];
+  }
+
   static List<PageImage> _images(Map<String, dynamic> data) => [
     for (final i in data['images'] as List? ?? const [])
       PageImage.fromJson(i as Map<String, dynamic>),

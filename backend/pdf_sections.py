@@ -694,6 +694,90 @@ def plain_text(content: str) -> str:
     return "\n".join(line for line in lines if line.strip())
 
 
+def plain_words(text: str) -> str:
+    return " ".join(text.split())
+
+
+def search_snippet(text: str, needle: str, width: int = 120) -> str:
+    """Potongan `text` di sekitar `needle`, terpotong di batas kata."""
+    text = plain_words(text)
+    if len(text) <= width:
+        return text
+    at = max(text.lower().find(needle), 0)
+    start = max(0, at - 40)
+    end = min(len(text), start + width)
+    start = max(0, end - width)
+    space = text.find(" ", start, at)
+    if start > 0 and space != -1:
+        start = space + 1
+    space = text.rfind(" ", at + len(needle), end)
+    if end < len(text) and space != -1:
+        end = space
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text) else ""
+    return f"{prefix}{text[start:end].strip()}{suffix}"
+
+
+def search_table(data: dict, needle: str) -> tuple[int | None, str] | None:
+    """Tempat `needle` di tabel: (baris, teks yang dibacakan). Baris None berarti
+    judul tabel. Nama kolom dibacakan di tiap baris, jadi menunjuk baris pertama."""
+    rows = data.get("rows") or []
+    columns = data.get("columns") or []
+    title = data.get("title") or ""
+    if needle in plain_words(title).lower():
+        return None, title
+    for index, row in enumerate(rows):
+        if any(needle in plain_words(cell).lower() for cell in row):
+            return index, table_row_label(columns, row, index + 1)
+    if rows and any(needle in plain_words(name).lower() for name in columns):
+        return 0, table_row_label(columns, rows[0], 1)
+    return None
+
+
+def search_content(
+    content: str, image_descriptions: dict[str, str], needle: str
+) -> dict | None:
+    """Blok pertama yang memuat `needle` (huruf kecil).
+
+    Yang dicari sama dengan yang dibacakan di layar baca: JSON tabel dan penanda
+    gambar tidak ikut, gambar dekoratif atau tanpa deskripsi juga tidak.
+    `line` menunjuk baris di `content`, `row` baris tabel di dalamnya.
+    """
+    for line, raw in enumerate(content.split("\n")):
+        text = raw.strip()
+        if not text:
+            continue
+        image = IMAGE_MARKER_RE.match(text)
+        if image:
+            description = image_descriptions.get(image.group(1)) or ""
+            if needle in plain_words(description).lower():
+                snippet = search_snippet(description, needle)
+                return {"line": line, "row": None, "snippet": f"Gambar: {snippet}"}
+            continue
+        table = TABLE_MARKER_RE.match(text)
+        if table:
+            try:
+                found = search_table(json.loads(table.group(1)), needle)
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if found is not None:
+                row, spoken = found
+                return {
+                    "line": line,
+                    "row": row,
+                    "snippet": search_snippet(spoken, needle),
+                }
+            continue
+        shown = text.removeprefix(SUBHEADING_PREFIX).removeprefix("- ")
+        if needle in plain_words(shown).lower():
+            return {
+                "line": line,
+                "row": None,
+                "snippet": search_snippet(shown, needle),
+            }
+    return None
+
+
 def table_block(table: PageTable, title: str) -> Block:
     data = {"title": title.rstrip(" :"), "columns": table.columns, "rows": table.rows}
     return Block("table", table_marker(data), 0.0, table.order)

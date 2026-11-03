@@ -657,6 +657,47 @@ class ContentTable {
   }
 }
 
+/// Satu hasil `GET /materials/{id}/search`: halaman yang memuat kata yang
+/// dicari, dan blok tempat kata itu ada. [line] menunjuk baris di isi halaman,
+/// [row] baris tabel di dalamnya. [line] null berarti yang cocok judul halaman.
+class ContentSearchHit {
+  const ContentSearchHit({
+    required this.sectionId,
+    required this.pageIndex,
+    required this.title,
+    required this.snippet,
+    this.line,
+    this.row,
+  });
+
+  factory ContentSearchHit.fromJson(Map<String, dynamic> json) {
+    final line = json['line'];
+    final row = json['row'];
+    return ContentSearchHit(
+      sectionId: _str(json['section_id']),
+      pageIndex: _int(json['page_index']),
+      title: _str(json['title']),
+      snippet: _str(json['snippet']),
+      line: line is num ? line.toInt() : null,
+      row: row is num ? row.toInt() : null,
+    );
+  }
+
+  final String sectionId;
+  final int pageIndex;
+  final String title;
+  final String snippet;
+  final int? line;
+  final int? row;
+
+  /// "Halaman 3, Fotosintesis: ...cuplikan teks..."
+  String get label {
+    final page = 'Halaman ${pageIndex + 1}';
+    final name = title.trim();
+    return name.isEmpty ? '$page: $snippet' : '$page, $name: $snippet';
+  }
+}
+
 class MaterialSection {
   MaterialSection({
     required this.id,

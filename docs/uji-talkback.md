@@ -315,6 +315,29 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 23.10 | Penghapusan gagal di tengah (matikan server saat menghapus), lalu buka daftar kelas | Terdengar "Penghapusan kelas [nama] belum selesai", lalu tombol "Lanjutkan hapus kelas [nama]" | | |
 | 23.11 | Ketuk dua kali tombol itu | "Kelas [nama] dihapus" dibacakan, kartunya hilang | | |
 
+## 24. Pencarian
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 24.1 | Guru, daftar kelas, fokus ke kolom pencarian | Terdengar "Cari kelas", kolom edit | | |
+| 24.2 | Ketik sebagian nama kelas, lalu berhenti | Tidak ada pengumuman selama mengetik. Sekitar 0,5 detik setelah berhenti terdengar "2 kelas ditemukan" | | |
+| 24.3 | Ketik kata yang tidak ada | "Tidak ada kelas yang cocok" | | |
+| 24.4 | Ganti kata dengan kata lain yang jumlah hasilnya sama | Jumlahnya tetap dibacakan ulang. **Wajib dicek di HP** | | |
+| 24.5 | Geser ke "Hapus pencarian", ketuk dua kali | "Pencarian dihapus", fokus kembali ke kolom, semua kelas tampil lagi | | |
+| 24.6 | Siswa, daftar kelas, ulangi 24.1 sampai 24.5 | Sama seperti guru | | |
+| 24.7 | Guru dan siswa, isi kelas, cari materi | Label "Cari materi", "3 materi ditemukan" atau "Tidak ada materi yang cocok". Tiap hasil satu fokus utuh | | |
+| 24.8 | Guru dan siswa, anggota kelas, cari siswa | Label "Cari siswa", "2 siswa ditemukan" atau "Tidak ada siswa yang cocok" | | |
+| 24.9 | Siswa, daftar halaman, cari kata di isi materi | Label "Cari isi materi", lalu "3 halaman ditemukan". Tiap hasil dibacakan utuh: "Halaman 3, Fotosintesis: ...cuplikan...". Perhatikan cara TalkBack membacakan tanda "..." | | |
+| 24.10 | Ketik satu huruf saja | "Ketik minimal 2 huruf" | | |
+| 24.11 | Buka hasil yang katanya ada di paragraf tengah halaman | Fokus TalkBack langsung ke paragraf itu, bukan ke judul halaman, dan layar tergulir ke sana. Terdengar "Halaman 3, hasil pencarian: ...". **Wajib dicek di HP**, tes otomatis hanya memeriksa permintaan fokusnya. Catat kalau fokus tidak pindah, atau kalau pengumuman terpotong atau terdengar dua kali | | |
+| 24.12 | Buka hasil yang katanya ada di butir daftar | Fokus ke butir itu | | |
+| 24.13 | Buka hasil yang katanya ada di sel tabel | Fokus ke baris tabel yang memuat sel itu, dibacakan dengan nama kolomnya | | |
+| 24.14 | Cari kata yang ada di deskripsi gambar, lalu buka | Hasil diawali "Gambar:", fokus ke kartu gambar itu | | |
+| 24.15 | Dari hasil itu, tekan "Halaman berikutnya" | Fokus ke judul halaman baru, terdengar "Halaman 4 dari 10: ...". Bukan pengumuman hasil pencarian | | |
+| 24.16 | Tombol kembali dari layar baca | Kembali ke hasil pencarian, kata pencarian masih ada | | |
+| 24.17 | Matikan server, lalu cari kata | Pesan error dibacakan, ada tombol "Coba lagi" | | |
+| 24.18 | Guru menghapus kelas, siswa mencari isi materi | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda" | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

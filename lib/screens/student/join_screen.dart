@@ -9,6 +9,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import '../../widgets/mascot.dart';
+import '../../widgets/search_box.dart';
 import 'subject_screen.dart';
 
 /// Beranda siswa: memasukkan kode akses kelas, dan daftar kelas yang sudah
@@ -157,25 +158,36 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               padding: EdgeInsets.zero,
               loadingMessage: 'Memuat kelasmu.',
               load: store.studentSubjects,
-              builder: (context, subjects, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SectionTitle('Kelas yang kamu ikuti (${subjects.length})'),
-                  if (subjects.isEmpty)
-                    const EmptyState(
-                      message:
-                          'Belum ada kelas. Masukkan kode dari '
-                          'gurumu di atas.',
+              builder: (context, subjects, _) => FilteredList<Subject>(
+                items: subjects,
+                textOf: (subject) => subject.name,
+                label: 'Cari kelas',
+                noun: 'kelas',
+                builder: (context, visible, searchBox) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ?searchBox,
+                    SectionTitle(
+                      'Kelas yang kamu ikuti '
+                      '(${countLabel(visible.length, subjects.length)})',
                     ),
-                  for (final s in subjects)
-                    ListRow(
-                      icon: Icons.folder_outlined,
-                      title: s.name,
-                      subtitle: _summary(s),
-                      semanticLabel: 'Kelas ${s.name}. ${_summary(s)}.',
-                      onTap: () => _open(s),
-                    ),
-                ],
+                    if (subjects.isEmpty)
+                      const EmptyState(
+                        message:
+                            'Belum ada kelas. Masukkan kode dari '
+                            'gurumu di atas.',
+                      ),
+                    for (final s in visible)
+                      ListRow(
+                        key: ValueKey(s.id),
+                        icon: Icons.folder_outlined,
+                        title: s.name,
+                        subtitle: _summary(s),
+                        semanticLabel: 'Kelas ${s.name}. ${_summary(s)}.',
+                        onTap: () => _open(s),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],

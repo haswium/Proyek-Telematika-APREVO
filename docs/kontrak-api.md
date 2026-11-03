@@ -314,6 +314,41 @@ gambar diisi.
 Baris `[[tabel:{json}]]` di `content` adalah tabel, dengan kunci `title`,
 `columns`, dan `rows`. Baris pertama tabel di PDF menjadi `columns`.
 
+### GET `/materials/{material_id}/search?q=<kata>`
+
+Mencari kata di isi materi. Hak aksesnya sama dengan
+`GET /materials/{material_id}/sections`. Huruf besar dan kecil tidak dibedakan.
+`q` harus 2 sampai 100 huruf, selain itu `400`. Respons:
+
+```json
+{
+  "query": "fotosintesis",
+  "results": [
+    {
+      "section_id": "...",
+      "page_index": 2,
+      "title": "Fotosintesis",
+      "line": 4,
+      "row": null,
+      "snippet": "...daun memakai cahaya untuk fotosintesis di siang..."
+    }
+  ]
+}
+```
+
+Satu hasil per halaman, di blok pertama yang memuat kata itu. Yang dicari sama
+dengan yang dibacakan layar baca: teks, butir, sel dan judul tabel, serta deskripsi
+gambar yang tidak dekoratif. JSON tabel dan penanda gambar tidak ikut. Judul halaman
+hanya dipakai kalau isinya tidak cocok.
+
+- `page_index`: urutan halaman di layar baca, mulai 0, bukan nomor halaman PDF.
+- `line`: nomor baris (mulai 0) di `content` dari `GET .../sections`. `null` kalau
+  yang cocok hanya judul halaman.
+- `row`: baris tabel (mulai 0) kalau yang cocok ada di dalam tabel. `null` untuk
+  blok lain dan judul tabel. Nama kolom yang cocok menunjuk baris pertama.
+- `snippet`: cuplikan sekitar 120 huruf, diawali `Gambar: ` kalau dari deskripsi
+  gambar.
+
 ### PATCH `/teacher/materials/{material_id}/sections/{section_id}/tables/{table_index}`
 
 Guru mengedit tabel ke-`table_index` (mulai 0) di halaman itu. Body:

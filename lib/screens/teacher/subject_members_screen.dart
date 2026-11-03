@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
+import '../../widgets/search_box.dart';
 
 /// Guru melihat siswa di kelasnya dan bisa mengeluarkan siswa. Tiap baris satu
 /// fokus TalkBack, lalu tombol "Keluarkan" sebagai fokus sendiri.
@@ -73,49 +74,63 @@ class _SubjectMembersScreenState extends State<SubjectMembersScreen> {
           load: () => store.subjectMembers(widget.subject.id),
           builder: (context, members, _) {
             _announceCount(members.length);
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                Semantics(
-                  header: true,
-                  child: Text(
-                    widget.subject.name,
-                    style: AppType.headlineMedium,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text('${members.length} siswa', style: AppType.titleMedium),
-                if (_feedback != null) ...[
-                  const SizedBox(height: 12),
-                  // Tombol yang difokus ikut hilang bersama barisnya, jadi
-                  // hasilnya harus dibacakan.
+            return FilteredList<SubjectMember>(
+              items: members,
+              textOf: (member) => member.name,
+              label: 'Cari siswa',
+              noun: 'siswa',
+              builder: (context, visible, searchBox) => ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
                   Semantics(
-                    container: true,
-                    liveRegion: true,
-                    child: Text(_feedback!, style: AppType.bodyMedium),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                if (members.isEmpty)
-                  const EmptyState(message: 'Belum ada siswa di kelas ini.'),
-                for (final member in members) ...[
-                  ListRow(
-                    icon: Icons.person_outline,
-                    title: member.name,
-                    subtitle: [member.emailText, ?member.joinedText].join('\n'),
-                    semanticLabel: member.label,
-                  ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.person_remove_outlined),
-                      label: Text('Keluarkan ${member.name}'),
-                      onPressed: _removing ? null : () => _remove(member),
+                    header: true,
+                    child: Text(
+                      widget.subject.name,
+                      style: AppType.headlineMedium,
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 6),
+                  Text('${members.length} siswa', style: AppType.titleMedium),
+                  if (searchBox != null) ...[
+                    const SizedBox(height: 16),
+                    searchBox,
+                  ],
+                  if (_feedback != null) ...[
+                    const SizedBox(height: 12),
+                    // Tombol yang difokus ikut hilang bersama barisnya, jadi
+                    // hasilnya harus dibacakan.
+                    Semantics(
+                      container: true,
+                      liveRegion: true,
+                      child: Text(_feedback!, style: AppType.bodyMedium),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (members.isEmpty)
+                    const EmptyState(message: 'Belum ada siswa di kelas ini.'),
+                  for (final member in visible) ...[
+                    ListRow(
+                      key: ValueKey(member.id),
+                      icon: Icons.person_outline,
+                      title: member.name,
+                      subtitle: [
+                        member.emailText,
+                        ?member.joinedText,
+                      ].join('\n'),
+                      semanticLabel: member.label,
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.person_remove_outlined),
+                        label: Text('Keluarkan ${member.name}'),
+                        onPressed: _removing ? null : () => _remove(member),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                 ],
-              ],
+              ),
             );
           },
         ),
