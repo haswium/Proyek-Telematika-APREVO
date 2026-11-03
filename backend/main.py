@@ -288,6 +288,17 @@ require_teacher = require_role("teacher")
 require_student = require_role("student")
 
 
+def read_profile(user_id: str):
+    return (
+        supabase_admin.table("users")
+        .select("id, name, role")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+
+
 def parse_time(value):
     if value is None:
         return None
@@ -1819,6 +1830,10 @@ class SubjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+class ChooseRoleRequest(BaseModel):
+    role: Literal["teacher", "student"]
+
+
 class JoinSubjectRequest(BaseModel):
     code: str
 
@@ -1893,6 +1908,32 @@ def section_counts(material_ids):
     for row in sections_response.data or []:
         counts[row["material_id"]] += 1
     return counts
+
+
+@app.post("/me/role")
+def choose_role(data: ChooseRoleRequest, auth=Depends(get_current_user)):
+    """Peran akun Google yang baru pertama kali masuk. Hanya tersimpan sekali: kalau
+    baris akun sudah ada, peran lamanya yang dikembalikan."""
+    user = auth["user"]
+    user_id = str(user.id)
+    profile = read_profile(user_id)
+    if profile is None:
+        metadata = user.user_metadata or {}
+        name = str(metadata.get("name") or metadata.get("full_name") or "").strip()
+        try:
+            supabase_admin.table("users").insert(
+                {
+                    "id": user_id,
+                    "name": name or (user.email or "").split("@")[0] or "Pengguna",
+                    "role": data.role,
+                }
+            ).execute()
+        except APIError as error:
+            # 23505: permintaan lain baru saja menyimpan peran akun ini.
+            if error.code != "23505":
+                raise
+        profile = read_profile(user_id)
+    return {"name": profile["name"], "role": profile["role"]}
 
 
 @app.post("/teacher/subjects")

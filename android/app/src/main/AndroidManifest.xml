@@ -28,6 +28,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Kembali ke aplikasi setelah login Google. Sama dengan
+                 kAuthRedirectUrl di lib/services/google_auth.dart. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="id.aprevo.app" android:host="login-callback"/>
+            </intent-filter>
+            <!-- Tautan login ditangani Supabase, bukan Navigator Flutter. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false"/>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

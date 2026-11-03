@@ -10,8 +10,9 @@ Perbarui dokumen ini setiap kali endpoint berubah.
   Token tidak valid atau kedaluwarsa menghasilkan `401`.
 - Peran dibaca dari tabel `public.users.role` (`teacher` atau `student`).
   Baris ini dibuat otomatis dari metadata akun saat daftar
-  (`backend/migrations/000_users_trigger.sql`). Peran salah atau profil belum
-  ada menghasilkan `403`.
+  (`backend/migrations/006_pilih_peran.sql`). Akun tanpa peran di metadata, misalnya
+  akun Google yang baru pertama kali masuk, belum punya baris sampai memanggil
+  `POST /me/role`. Peran salah atau profil belum ada menghasilkan `403`.
 - Error memakai format FastAPI: `{"detail": "<pesan>"}`.
 - Waktu memakai ISO 8601 dengan zona waktu. Waktu tanpa zona ditolak `400`.
 - CORS mengizinkan `localhost`, `127.0.0.1`, dan IP jaringan lokal (`10.x`,
@@ -71,6 +72,16 @@ huruf kecil, spasi ganda dijadikan satu.
 
 Tanpa login dan tanpa database. Respons: `{"status": "ok"}`. Dipakai health check
 Render, dan aplikasi memanggilnya saat dibuka untuk membangunkan server.
+
+### POST `/me/role`
+
+Perlu login, tetapi boleh dipanggil oleh akun yang belum punya baris
+`public.users`. Body: `{"role": "teacher" | "student"}`. Respons:
+`{"name": "...", "role": "teacher" | "student"}`.
+
+Peran hanya tersimpan sekali. Kalau akun sudah punya peran, permintaan tetap `200`
+dan respons berisi peran lama, walaupun body meminta peran lain. Peran di luar dua
+nilai itu ditolak `422`.
 
 ## Endpoint pengembangan
 

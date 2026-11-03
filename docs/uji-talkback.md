@@ -94,12 +94,18 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 4.1 | Geser kanan dari awal | "Masuk ke APREVO, judul", "Email, kotak edit", "Password, kotak edit", "Tampilkan password, tombol", "Lupa password?, tombol" | | |
+| 4.1 | Geser kanan dari awal | "Masuk ke APREVO, judul", "Email, kotak edit", "Password, kotak edit", "Tampilkan password, tombol", "Masuk, tombol", "Masuk dengan Google, tombol" | | |
 | 4.2 | Kata "atau" di antara tombol | Tidak difokus | | |
 | 4.3 | Ketuk dua kali "Masuk" dengan kolom kosong | "Email belum benar..." dibacakan satu kali | | |
 | 4.4 | Isi email benar dan password salah, ketuk "Masuk" | "Email atau password salah." | | |
-| 4.5 | Ketuk dua kali "Lupa password?" | Pesan "Lupa password akan aktif..." dibacakan satu kali | | |
-| 4.6 | Masuk dengan akun **siswa** | Pindah ke layar sambutan siswa (pertama kali) atau layar Kelas | | |
+| 4.5 | Masuk dengan akun **siswa** | Pindah ke layar sambutan siswa (pertama kali) atau layar Kelas | | |
+| 4.6 | Ketuk dua kali "Masuk dengan Google" | "Membuka halaman login Google", lalu browser terbuka. **Wajib dicek di HP** | | |
+| 4.7 | Tutup browser tanpa memilih akun | Kembali ke aplikasi, sekitar 5 detik kemudian "Login Google dibatalkan" | | |
+| 4.8 | Pilih akun Google yang sudah punya peran | Aplikasi terbuka lagi, "Berhasil masuk", lalu beranda sesuai perannya | | |
+| 4.9 | Pilih akun Google yang baru | "Berhasil masuk", lalu layar "Pilih peran, judul" | | |
+| 4.10 | Di "Pilih peran", geser kanan | Tombol "Guru" dan "Siswa" dibacakan beserta penjelasan dan "Peran tidak bisa diganti setelah dipilih", lalu "Batal dan keluar" | | |
+| 4.11 | Ketuk dua kali "Guru", lalu buat kelas | Masuk ke beranda guru, dan kelas berhasil dibuat | | |
+| 4.12 | Keluar, lalu masuk lagi dengan akun Google yang sama | Layar "Pilih peran" tidak muncul lagi, peran tetap sama | | |
 
 ## 5. Sambutan siswa (hanya muncul pertama kali)
 

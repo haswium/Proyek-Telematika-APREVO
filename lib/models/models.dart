@@ -1281,9 +1281,17 @@ extension UserRoleInfo on UserRole {
 }
 
 class Account {
-  Account({required this.name, required this.email, required this.role});
+  Account({
+    required this.name,
+    required this.email,
+    required this.role,
+    this.roleChosen = true,
+  });
 
   final String name;
   final String email;
   final UserRole role;
+
+  /// `false` untuk akun Google yang baru pertama kali masuk.
+  final bool roleChosen;
 }

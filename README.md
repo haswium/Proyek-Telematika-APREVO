@@ -57,7 +57,8 @@ hasil masih data contoh di `lib/data/app_store.dart`.
 - Mode demo: guru `guru@aprevo.id`, siswa `siswa@aprevo.id`, password `123456`.
 - Kode materi contoh: `APV-7K29` (Fotosintesis), `APV-3NPS` (Sistem
   Pernapasan), `APV-D4AR` (Daur Air), `APV-TS8X` (Tata Surya).
-- "Lupa password" dan "Masuk dengan Google" baru tombolnya saja.
+- "Masuk dengan Google" perlu pengaturan di Supabase dan Google Cloud, lihat
+  `docs/deploy.md`.
 
 ## Tampilan
 

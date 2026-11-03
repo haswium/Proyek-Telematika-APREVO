@@ -26,6 +26,7 @@ from postgrest.exceptions import APIError  # noqa: E402
 import main  # noqa: E402
 
 UNIQUE_KEYS = {
+    "users": [("id",)],
     "subjects": [("access_code",)],
     "subject_students": [("subject_id", "student_id")],
     "answers": [("attempt_id", "question_id")],
