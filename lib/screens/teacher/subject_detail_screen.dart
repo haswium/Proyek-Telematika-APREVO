@@ -9,6 +9,7 @@ import '../../widgets/playful.dart';
 import 'material_editor_screen.dart';
 import 'material_images_screen.dart';
 import 'new_material_screen.dart';
+import 'subject_members_screen.dart';
 
 /// Status satu kuis untuk guru, misalnya "Pre-test: dibuka sampai ...".
 String quizSummary(LessonMaterial m, TestKind kind) {
@@ -92,7 +93,18 @@ class SubjectDetailScreen extends StatelessWidget {
                   icon: Icons.add_circle_outline,
                   onPressed: () => _createMaterial(context),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
+                ListRow(
+                  icon: Icons.groups_outlined,
+                  title: 'Anggota kelas',
+                  subtitle: 'Daftar siswa dan jumlahnya',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SubjectMembersScreen(subject: subject),
+                    ),
+                  ),
+                ),
                 SectionTitle('Daftar materi (${materials.length})'),
                 if (materials.isEmpty)
                   const EmptyState(message: 'Belum ada materi di kelas ini.'),

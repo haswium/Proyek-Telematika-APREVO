@@ -271,6 +271,20 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | 20.2 | Buka "Kelola materi" di materi yang sama | Peringatan yang sama dibacakan sebelum isi lain | | |
 | 20.3 | Lengkapi semua gambar, lalu kembali | Peringatan hilang dari kedua layar | | |
 
+## 22. Anggota kelas
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 22.1 | Guru, buka "Anggota kelas" | "Anggota kelas [nama kelas]: [n] siswa" sekali saja saat layar dibuka | | |
+| 22.2 | Fokus ke baris siswa | "Andi, [email], bergabung 3 November 2026" dalam satu fokus | | |
+| 22.3 | Fokus berikutnya | Tombol "Keluarkan Andi" | | |
+| 22.4 | Ketuk dua kali tombol itu | Dialog terbuka, menyebut siswa bisa bergabung lagi dan nilainya tetap tersimpan | | |
+| 22.5 | Pilih "Batal" | Dialog tertutup, siswa tetap ada | | |
+| 22.6 | Ulangi, pilih "Ya, keluarkan" | "Andi dikeluarkan dari kelas. Sisa [n] siswa." dibacakan, baris Andi hilang | | |
+| 22.7 | Siswa, buka "Anggota kelas" | "Anggota kelas [nama kelas]: [n] siswa", lalu nama guru | | |
+| 22.8 | Fokus ke daftar teman | Hanya nama, satu fokus per baris, tanpa email. Baris sendiri: "[nama], ini kamu" | | |
+| 22.9 | Siswa yang dikeluarkan membuka kelas itu lagi | Pesan bahwa dia belum bergabung, bukan layar kosong | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

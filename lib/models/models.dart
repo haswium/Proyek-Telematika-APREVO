@@ -206,6 +206,72 @@ extension TestKindInfo on TestKind {
   String get api => this == TestKind.pre ? 'pre' : 'post';
 }
 
+/// Satu siswa di daftar anggota kelas untuk guru.
+class SubjectMember {
+  SubjectMember({
+    required this.id,
+    required this.name,
+    this.email,
+    this.joinedAt,
+  });
+
+  factory SubjectMember.fromJson(Map<String, dynamic> json) => SubjectMember(
+    id: _str(json['id']),
+    name: _str(json['name']),
+    email: json['email'] as String?,
+    joinedAt: parseTime(json['joined_at']),
+  );
+
+  final String id;
+  final String name;
+
+  /// `null` kalau server gagal mengambilnya dari Supabase Auth.
+  final String? email;
+  final DateTime? joinedAt;
+
+  String get emailText => email ?? 'email tidak tersedia';
+
+  String? get joinedText =>
+      joinedAt == null ? null : 'bergabung ${formatShortDate(joinedAt!)}';
+
+  /// Satu label TalkBack: "Andi, andi@contoh.com, bergabung 3 November 2026".
+  String get label => [name, emailText, ?joinedText].join(', ');
+}
+
+/// Satu teman di daftar anggota kelas untuk siswa: nama saja.
+class Classmate {
+  const Classmate({required this.name, this.isMe = false});
+
+  factory Classmate.fromJson(Map<String, dynamic> json) =>
+      Classmate(name: _str(json['name']), isMe: json['is_me'] == true);
+
+  final String name;
+  final bool isMe;
+
+  String get label => isMe ? '$name, ini kamu' : name;
+}
+
+/// Hasil `GET /student/subjects/{id}/members`.
+class ClassmateList {
+  ClassmateList({
+    this.teacherName,
+    required this.count,
+    required this.classmates,
+  });
+
+  factory ClassmateList.fromJson(Map<String, dynamic> json) => ClassmateList(
+    teacherName: json['teacher_name'] as String?,
+    count: _int(json['student_count']),
+    classmates: [
+      for (final c in _list(json['classmates'])) Classmate.fromJson(c),
+    ],
+  );
+
+  final String? teacherName;
+  final int count;
+  final List<Classmate> classmates;
+}
+
 /// Panjang kode akses kelas: 6 huruf kapital A-Z, tanpa strip.
 const int kAccessCodeLength = 6;
 

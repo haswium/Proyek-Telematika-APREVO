@@ -199,6 +199,19 @@ di aplikasi dengan `starsFor`.
 
 ## Siswa
 
+### GET `/teacher/subjects/{subject_id}/members`
+
+Hanya guru pemilik. Respons: `{"subject": {id, name}, "student_count", "students":
+[{id, name, email, joined_at}]}`, urut nama. `email` diambil dari Supabase Auth dan
+`null` kalau gagal diambil. Error: `404` kelas tidak ditemukan atau bukan milik guru.
+
+### DELETE `/teacher/subjects/{subject_id}/members/{student_id}`
+
+Hanya guru pemilik. Mengeluarkan siswa dan mencabut `material_access` siswa itu
+untuk materi kelas ini. Nilainya tetap tersimpan. Siswa bisa bergabung lagi dengan
+kode akses, dan nilainya muncul lagi. Respons: `{"message", "student_count"}`.
+Error: `404` kelas tidak ditemukan, bukan milik guru, atau siswa bukan anggota.
+
 ### POST `/student/subjects/join`
 
 Body `{"code": "KXPRTA"}`. Huruf kecil, spasi, dan strip diabaikan. Bergabung
@@ -209,6 +222,12 @@ name}}`. Error: `400` format kode salah, `404` kode tidak ditemukan.
 
 Respons: `{"subjects": [{id, name, teacher_name, material_count, joined_at}]}`.
 `material_count` hanya menghitung materi yang dipublikasikan.
+
+### GET `/student/subjects/{subject_id}/members`
+
+Hanya anggota. Respons: `{"subject": {id, name}, "teacher_name", "student_count",
+"classmates": [{name, is_me}]}`, urut nama, tanpa id, email, dan tanggal bergabung.
+Error: `403` belum bergabung, `404` kelas tidak ditemukan.
 
 ### GET `/student/subjects/{subject_id}/materials`
 

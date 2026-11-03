@@ -174,6 +174,30 @@ class AppStore extends ChangeNotifier {
 
   // ---- Guru.
 
+  /// Daftar anggota kelas untuk guru pemilik.
+  Future<List<SubjectMember>> subjectMembers(String subjectId) async {
+    final data = await api.get('/teacher/subjects/$subjectId/members');
+    return [
+      for (final s in data['students'] as List? ?? const [])
+        SubjectMember.fromJson(s as Map<String, dynamic>),
+    ];
+  }
+
+  /// Mengeluarkan siswa dari kelas. Mengembalikan jumlah siswa yang tersisa.
+  Future<int> removeSubjectMember(String subjectId, String studentId) async {
+    final data = await api.delete(
+      '/teacher/subjects/$subjectId/members/$studentId',
+    );
+    notifyListeners();
+    return (data['student_count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Nama guru dan teman sekelas untuk siswa.
+  Future<ClassmateList> classmates(String subjectId) async =>
+      ClassmateList.fromJson(
+        await api.get('/student/subjects/$subjectId/members'),
+      );
+
   Future<List<Subject>> teacherSubjects() async {
     final data = await api.get('/teacher/subjects');
     return [

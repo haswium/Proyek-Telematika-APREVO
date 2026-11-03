@@ -24,6 +24,7 @@ import secrets
 import string
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from uuid import uuid4
 import pymupdf
@@ -2553,6 +2554,87 @@ def update_quiz_schedule(
     return {"message": "Jadwal kuis berhasil diperbarui", "quiz": response.data[0]}
 
 
+def subject_member_rows(subject_id):
+    """Anggota kelas beserta namanya, urut nama."""
+    members = (
+        supabase_admin.table("subject_students")
+        .select("student_id, joined_at")
+        .eq("subject_id", subject_id)
+        .execute()
+    ).data or []
+    if not members:
+        return []
+    users = (
+        supabase_admin.table("users")
+        .select("id, name")
+        .in_("id", [row["student_id"] for row in members])
+        .execute()
+    ).data or []
+    names = {row["id"]: row["name"] for row in users}
+    rows = [
+        {
+            "id": row["student_id"],
+            "name": names.get(row["student_id"], "Tanpa nama"),
+            "joined_at": row.get("joined_at"),
+        }
+        for row in members
+    ]
+    return sorted(rows, key=lambda row: row["name"].casefold())
+
+
+def student_email(student_id):
+    """Email ada di Supabase Auth, bukan di tabel users. Kalau gagal diambil,
+    daftar anggota tetap tampil tanpa email siswa itu."""
+    try:
+        return supabase_admin.auth.admin.get_user_by_id(student_id).user.email
+    except Exception:
+        logger.exception("Gagal mengambil email siswa %s", student_id)
+        return None
+
+
+@app.get("/teacher/subjects/{subject_id}/members")
+def list_subject_members(subject_id: str, auth=Depends(require_teacher)):
+    subject = get_owned_subject(subject_id, auth["user_id"])
+    rows = subject_member_rows(subject_id)
+    # Satu permintaan per siswa: dibuat bersamaan supaya kelas besar tidak lama.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        emails = list(pool.map(student_email, [row["id"] for row in rows]))
+    return {
+        "subject": {"id": subject["id"], "name": subject["name"]},
+        "student_count": len(rows),
+        "students": [{**row, "email": email} for row, email in zip(rows, emails)],
+    }
+
+
+@app.delete("/teacher/subjects/{subject_id}/members/{student_id}")
+def remove_subject_member(
+    subject_id: str, student_id: str, auth=Depends(require_teacher)
+):
+    """Mengeluarkan siswa dari kelas. Nilainya tetap tersimpan, dan muncul lagi
+    kalau siswa bergabung kembali dengan kode akses."""
+    get_owned_subject(subject_id, auth["user_id"])
+    if not is_subject_member(subject_id, student_id):
+        raise HTTPException(status_code=404, detail="Siswa bukan anggota kelas ini")
+    materials = (
+        supabase_admin.table("materials")
+        .select("id")
+        .eq("subject_id", subject_id)
+        .execute()
+    ).data or []
+    # material_access lama juga memberi akses, jadi ikut dicabut.
+    if materials:
+        supabase_admin.table("material_access").delete().eq(
+            "student_id", student_id
+        ).in_("material_id", [row["id"] for row in materials]).execute()
+    supabase_admin.table("subject_students").delete().eq("subject_id", subject_id).eq(
+        "student_id", student_id
+    ).execute()
+    return {
+        "message": "Siswa dikeluarkan dari kelas",
+        "student_count": len(subject_member_rows(subject_id)),
+    }
+
+
 @app.get("/teacher/subjects/{subject_id}/results")
 def get_subject_results(subject_id: str, auth=Depends(require_teacher)):
     subject = get_owned_subject(subject_id, auth["user_id"])
@@ -2746,6 +2828,46 @@ def list_student_subjects(auth=Depends(require_student)):
             ],
             key=lambda subject: subject["joined_at"],
         )
+    }
+
+
+@app.get("/student/subjects/{subject_id}/members")
+def list_subject_classmates(subject_id: str, auth=Depends(require_student)):
+    """Nama guru dan nama teman sekelas. Sengaja tanpa id, email, dan tanggal
+    bergabung: siswa hanya perlu tahu namanya."""
+    student_id = auth["user_id"]
+    if not is_subject_member(subject_id, student_id):
+        raise HTTPException(
+            status_code=403, detail="Kamu belum bergabung di kelas ini"
+        )
+    subject = (
+        supabase_admin.table("subjects")
+        .select("id, name, teacher_id")
+        .eq("id", subject_id)
+        .is_("deleted_at", "null")
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if subject is None:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    teacher = (
+        supabase_admin.table("users")
+        .select("name")
+        .eq("id", subject["teacher_id"])
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    rows = subject_member_rows(subject_id)
+    return {
+        "subject": {"id": subject["id"], "name": subject["name"]},
+        "teacher_name": (teacher or {}).get("name"),
+        "student_count": len(rows),
+        "classmates": [
+            {"name": row["name"], "is_me": str(row["id"]) == str(student_id)}
+            for row in rows
+        ],
     }
 
 
