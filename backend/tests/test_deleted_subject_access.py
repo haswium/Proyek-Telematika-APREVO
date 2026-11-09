@@ -43,12 +43,20 @@ STUDENT_CASES = [
     ("POST", "/student/attempts/{attempt}/submit", None),
     ("GET", "/student/attempts/{attempt}/result", None),
     ("GET", "/student/attempts/{attempt}/discussion", None),
+    ("GET", "/student/subjects/{subject}/attendance", None),
 ]
 TEACHER_CASES = [
     ("GET", "/teacher/subjects/{subject}/materials", None),
     ("GET", "/teacher/subjects/{subject}/results", None),
     ("GET", "/teacher/subjects/{subject}/members", None),
     ("DELETE", "/teacher/subjects/{subject}/members/{student}", None),
+    ("GET", "/teacher/subjects/{subject}/attendance/sessions", None),
+    (
+        "POST",
+        "/teacher/subjects/{subject}/attendance/sessions",
+        {"title": "Pertemuan 1", "close_preset": "15m"},
+    ),
+    ("GET", "/teacher/subjects/{subject}/attendance/summary", None),
     ("GET", "/teacher/subjects/{subject}/delete-summary", None),
     ("GET", "/materials/m1/sections", None),
     ("GET", "/materials/m1/search?q=daun", None),

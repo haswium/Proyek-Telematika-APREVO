@@ -25,7 +25,7 @@ import string
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import pymupdf
 import logging
@@ -3124,7 +3124,7 @@ def subjects_with_leftovers(subject_ids):
     if not subject_ids:
         return set()
     left = set()
-    for table in ("materials", "subject_students"):
+    for table in ("materials", "subject_students", "attendance_sessions"):
         rows = (
             supabase_admin.table(table)
             .select("subject_id")
@@ -3169,6 +3169,11 @@ def delete_subject(subject_id: str, auth=Depends(require_teacher)):
         supabase_admin.table("subject_students").delete().eq(
             "subject_id", subject_id
         ).execute()
+        # Catatan dulu, lalu sesinya. Kalau berhenti di tengah, sesi yang
+        # tersisa membuat penghapusan bisa dilanjutkan.
+        session_ids = [row["id"] for row in subject_sessions(subject_id)]
+        delete_rows("attendance_records", "session_id", session_ids, ())
+        delete_rows("attendance_sessions", "id", session_ids, ())
         materials = subject_material_rows(subject_id)
         material_ids = [row["id"] for row in materials]
         cancel_ai_jobs(material_ids)
@@ -3618,3 +3623,520 @@ def search_material(material_id: str, q: str = "", auth=Depends(get_current_prof
                 }
             )
     return {"query": query, "results": results}
+
+
+# ---- Presensi
+#
+# Status sesi (belum dibuka, terbuka, ditutup) selalu dihitung dengan jam
+# server, bukan jam HP. Alpa tidak disimpan oleh tugas terjadwal karena server
+# Render bisa tidur: siswa tanpa catatan di sesi yang sudah tutup dihitung alpa
+# saat data dibaca.
+
+# Asia/Jakarta tidak memakai waktu musim panas, jadi selisih tetap cukup dan
+# tidak bergantung pada data zona waktu sistem (Windows tidak punya).
+JAKARTA = timezone(timedelta(hours=7), "WIB")
+ATTENDANCE_STATUSES = ("hadir", "izin", "sakit", "alpa")
+# Pilihan cepat waktu tutup, dihitung dari jam server saat sesi dibuat.
+CLOSE_PRESET_MINUTES = {"15m": 15, "30m": 30, "1h": 60}
+ClosePreset = Literal["15m", "30m", "1h", "end_of_day"]
+SESSION_COLUMNS = "id, subject_id, title, opens_at, closes_at, created_at"
+SESSION_NOT_FOUND = "Sesi presensi tidak ditemukan"
+
+
+def server_now():
+    """Jam server. Diganti di tes."""
+    return datetime.now(timezone.utc)
+
+
+def end_of_day(moment):
+    """Pukul 23.59.59 WIB pada hari yang sama dengan `moment`."""
+    return moment.astimezone(JAKARTA).replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
+
+
+def as_aware(value):
+    """Waktu tanpa zona dianggap WIB, zona sekolah."""
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=JAKARTA)
+
+
+def session_state(session, now):
+    if now < parse_time(session["opens_at"]):
+        return "upcoming"
+    if now >= parse_time(session["closes_at"]):
+        return "closed"
+    return "open"
+
+
+def public_session(session, now):
+    opens_at = parse_time(session["opens_at"])
+    closes_at = parse_time(session["closes_at"])
+    state = session_state(session, now)
+    return {
+        "id": session["id"],
+        "subject_id": session["subject_id"],
+        "title": session["title"],
+        "opens_at": opens_at.isoformat(),
+        "closes_at": closes_at.isoformat(),
+        "state": state,
+        # Aplikasi memuat ulang setelah detik-detik ini, tanpa membaca jam HP.
+        "seconds_until_open": (
+            max(0, int((opens_at - now).total_seconds()))
+            if state == "upcoming"
+            else None
+        ),
+        "seconds_until_close": (
+            max(0, int((closes_at - now).total_seconds()))
+            if state != "closed"
+            else None
+        ),
+    }
+
+
+def expected_in_session(member, session):
+    """Siswa hanya dihitung di sesi yang tutup setelah ia bergabung."""
+    joined = parse_time(member.get("joined_at"))
+    return joined is None or joined < parse_time(session["closes_at"])
+
+
+def effective_status(session, record, now):
+    """Status catatan, atau alpa kalau sesi sudah tutup tanpa catatan. None
+    berarti belum presensi di sesi yang belum tutup."""
+    if record is not None:
+        return record["status"]
+    return "alpa" if session_state(session, now) == "closed" else None
+
+
+def empty_counts():
+    return {status: 0 for status in ATTENDANCE_STATUSES}
+
+
+def subject_sessions(subject_id):
+    """Sesi kelas, yang terbaru dibuka lebih dulu."""
+    rows = (
+        supabase_admin.table("attendance_sessions")
+        .select(SESSION_COLUMNS)
+        .eq("subject_id", subject_id)
+        .execute()
+    ).data or []
+    return sorted(rows, key=lambda row: parse_time(row["opens_at"]), reverse=True)
+
+
+def session_records(session_ids, student_id=None):
+    """Catatan presensi menurut (session_id, student_id)."""
+    records = {}
+    for chunk in chunks(list(session_ids)):
+        query = (
+            supabase_admin.table("attendance_records")
+            .select("session_id, student_id, status, source, marked_at")
+            .in_("session_id", chunk)
+        )
+        if student_id is not None:
+            query = query.eq("student_id", student_id)
+        for row in query.execute().data or []:
+            records[(row["session_id"], row["student_id"])] = row
+    return records
+
+
+def member_status(session, member, records, now):
+    """(dihitung, status) seorang anggota di satu sesi."""
+    record = records.get((session["id"], member["id"]))
+    if record is None and not expected_in_session(member, session):
+        return False, None
+    return True, effective_status(session, record, now)
+
+
+def session_counts(session, members, records, now):
+    counts = {**empty_counts(), "belum": 0}
+    for member in members:
+        counted, status = member_status(session, member, records, now)
+        if counted:
+            counts[status or "belum"] += 1
+    return counts
+
+
+def find_session(session_id):
+    session = (
+        supabase_admin.table("attendance_sessions")
+        .select(SESSION_COLUMNS)
+        .eq("id", session_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    if session is None:
+        raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
+    return session
+
+
+def get_owned_session(session_id, teacher_id):
+    """Sesi di kelas milik guru ini. Kelas yang dihapus dijawab 404."""
+    session = find_session(session_id)
+    try:
+        get_owned_subject(session["subject_id"], teacher_id)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND) from None
+    return session
+
+
+def get_member_session(session_id, student_id):
+    """Sesi di kelas yang diikuti siswa ini. Kelas yang dihapus dijawab 410."""
+    session = find_session(session_id)
+    get_member_subject(session["subject_id"], student_id)
+    return session
+
+
+def validate_session_times(opens_at, closes_at, now):
+    if closes_at <= opens_at:
+        raise HTTPException(
+            status_code=422, detail="Waktu tutup harus setelah waktu buka"
+        )
+    if closes_at <= now:
+        raise HTTPException(
+            status_code=422, detail="Waktu tutup sudah lewat. Pilih waktu lain"
+        )
+
+
+def clean_title(title):
+    title = " ".join(title.split())
+    if not title:
+        raise HTTPException(status_code=422, detail="Judul sesi wajib diisi")
+    return title
+
+
+def preset_close(preset, opens_at, now):
+    """Waktu tutup dari pilihan cepat, dihitung dari waktu buka atau jam
+    server, mana yang lebih akhir."""
+    start = max(opens_at, now)
+    if preset == "end_of_day":
+        return end_of_day(start)
+    return start + timedelta(minutes=CLOSE_PRESET_MINUTES[preset])
+
+
+class AttendanceSessionCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    # Kosong berarti dibuka sekarang (jam server).
+    opens_at: Optional[datetime] = None
+    # Isi salah satu: waktu tutup sendiri, atau pilihan cepat.
+    closes_at: Optional[datetime] = None
+    close_preset: Optional[ClosePreset] = None
+
+
+class AttendanceSessionUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    opens_at: Optional[datetime] = None
+    closes_at: Optional[datetime] = None
+    close_preset: Optional[ClosePreset] = None
+    close_now: bool = False
+
+
+class AttendanceStatusUpdate(BaseModel):
+    status: Literal["hadir", "izin", "sakit", "alpa"]
+
+
+@app.post("/teacher/subjects/{subject_id}/attendance/sessions")
+def create_attendance_session(
+    subject_id: str, data: AttendanceSessionCreate, auth=Depends(require_teacher)
+):
+    get_owned_subject(subject_id, auth["user_id"])
+    now = server_now()
+    title = clean_title(data.title)
+    if (data.closes_at is None) == (data.close_preset is None):
+        raise HTTPException(
+            status_code=422,
+            detail="Pilih waktu tutup: pilihan cepat atau atur sendiri",
+        )
+    opens_at = as_aware(data.opens_at) or now
+    closes_at = (
+        preset_close(data.close_preset, opens_at, now)
+        if data.close_preset
+        else as_aware(data.closes_at)
+    )
+    validate_session_times(opens_at, closes_at, now)
+    row = (
+        supabase_admin.table("attendance_sessions")
+        .insert(
+            {
+                "subject_id": subject_id,
+                "title": title,
+                "opens_at": opens_at.isoformat(),
+                "closes_at": closes_at.isoformat(),
+                "created_by": auth["user_id"],
+            }
+        )
+        .execute()
+    ).data[0]
+    return {"session": public_session(row, now)}
+
+
+@app.get("/teacher/subjects/{subject_id}/attendance/sessions")
+def list_attendance_sessions(subject_id: str, auth=Depends(require_teacher)):
+    get_owned_subject(subject_id, auth["user_id"])
+    now = server_now()
+    sessions = subject_sessions(subject_id)
+    members = subject_member_rows(subject_id)
+    records = session_records([row["id"] for row in sessions])
+    return {
+        "server_time": now.isoformat(),
+        "sessions": [
+            {
+                **public_session(row, now),
+                "counts": session_counts(row, members, records, now),
+            }
+            for row in sessions
+        ],
+    }
+
+
+@app.get("/teacher/attendance/sessions/{session_id}")
+def get_attendance_session(session_id: str, auth=Depends(require_teacher)):
+    """Rekap satu sesi: status tiap siswa."""
+    session = get_owned_session(session_id, auth["user_id"])
+    now = server_now()
+    members = subject_member_rows(session["subject_id"])
+    records = session_records([session_id])
+    students = []
+    for member in members:
+        counted, status = member_status(session, member, records, now)
+        if not counted:
+            continue
+        record = records.get((session_id, member["id"]))
+        students.append(
+            {
+                "student_id": member["id"],
+                "name": member["name"],
+                "status": status,
+                "source": record["source"] if record else None,
+                "marked_at": record["marked_at"] if record else None,
+            }
+        )
+    return {
+        "session": {
+            **public_session(session, now),
+            "counts": session_counts(session, members, records, now),
+        },
+        "students": students,
+    }
+
+
+@app.patch("/teacher/attendance/sessions/{session_id}")
+def update_attendance_session(
+    session_id: str, data: AttendanceSessionUpdate, auth=Depends(require_teacher)
+):
+    session = get_owned_session(session_id, auth["user_id"])
+    now = server_now()
+    changes = {}
+    if data.title is not None:
+        changes["title"] = clean_title(data.title)
+    old_opens = parse_time(session["opens_at"])
+    old_closes = parse_time(session["closes_at"])
+    opens_at = as_aware(data.opens_at) or old_opens
+    closes_at = old_closes
+    if data.close_now:
+        state = session_state(session, now)
+        if state == "upcoming":
+            raise HTTPException(
+                status_code=409,
+                detail="Sesi belum dibuka. Hapus sesi kalau tidak jadi dipakai",
+            )
+        if state == "closed":
+            raise HTTPException(status_code=409, detail="Sesi sudah ditutup")
+        closes_at = now
+    else:
+        if data.close_preset is not None:
+            closes_at = preset_close(data.close_preset, opens_at, now)
+        elif data.closes_at is not None:
+            closes_at = as_aware(data.closes_at)
+        if opens_at != old_opens or closes_at != old_closes:
+            validate_session_times(opens_at, closes_at, now)
+    if opens_at != old_opens:
+        changes["opens_at"] = opens_at.isoformat()
+    if closes_at != old_closes:
+        changes["closes_at"] = closes_at.isoformat()
+    if changes:
+        changes["updated_at"] = now.isoformat()
+        session = (
+            supabase_admin.table("attendance_sessions")
+            .update(changes)
+            .eq("id", session_id)
+            .execute()
+        ).data[0]
+    return {"session": public_session(session, now)}
+
+
+@app.delete("/teacher/attendance/sessions/{session_id}")
+def delete_attendance_session(session_id: str, auth=Depends(require_teacher)):
+    session = get_owned_session(session_id, auth["user_id"])
+    supabase_admin.table("attendance_records").delete().eq(
+        "session_id", session_id
+    ).execute()
+    supabase_admin.table("attendance_sessions").delete().eq(
+        "id", session_id
+    ).execute()
+    return {"message": "Sesi presensi dihapus", "session_id": session["id"]}
+
+
+@app.put("/teacher/attendance/sessions/{session_id}/students/{student_id}")
+def set_attendance_status(
+    session_id: str,
+    student_id: str,
+    data: AttendanceStatusUpdate,
+    auth=Depends(require_teacher),
+):
+    session = get_owned_session(session_id, auth["user_id"])
+    member = next(
+        (
+            row
+            for row in subject_member_rows(session["subject_id"])
+            if row["id"] == student_id
+        ),
+        None,
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Siswa bukan anggota kelas ini")
+    now = server_now()
+    record = (
+        supabase_admin.table("attendance_records")
+        .upsert(
+            {
+                "session_id": session_id,
+                "student_id": student_id,
+                "status": data.status,
+                "source": "guru",
+                "updated_by": auth["user_id"],
+                "marked_at": now.isoformat(),
+            },
+            on_conflict="session_id,student_id",
+        )
+        .execute()
+    ).data[0]
+    return {
+        "student": {
+            "student_id": student_id,
+            "name": member["name"],
+            "status": record["status"],
+            "source": record["source"],
+            "marked_at": record["marked_at"],
+        }
+    }
+
+
+@app.get("/teacher/subjects/{subject_id}/attendance/summary")
+def attendance_summary(subject_id: str, auth=Depends(require_teacher)):
+    """Rekap per siswa: jumlah tiap status di semua sesi kelas. Sesi yang
+    belum tutup hanya dihitung kalau sudah ada catatannya."""
+    get_owned_subject(subject_id, auth["user_id"])
+    now = server_now()
+    sessions = subject_sessions(subject_id)
+    members = subject_member_rows(subject_id)
+    records = session_records([row["id"] for row in sessions])
+    students = []
+    for member in members:
+        counts = empty_counts()
+        for session in sessions:
+            _, status = member_status(session, member, records, now)
+            if status is not None:
+                counts[status] += 1
+        students.append(
+            {"student_id": member["id"], "name": member["name"], "counts": counts}
+        )
+    return {"session_count": len(sessions), "students": students}
+
+
+def member_joined_at(subject_id, student_id):
+    row = (
+        supabase_admin.table("subject_students")
+        .select("joined_at")
+        .eq("subject_id", subject_id)
+        .eq("student_id", student_id)
+        .maybe_single()
+        .execute()
+        or EMPTY_RESPONSE
+    ).data
+    return (row or {}).get("joined_at")
+
+
+@app.get("/student/subjects/{subject_id}/attendance")
+def student_attendance(subject_id: str, auth=Depends(require_student)):
+    """Sesi presensi kelas beserta status siswa ini, dan rekapnya."""
+    student_id = auth["user_id"]
+    get_member_subject(subject_id, student_id)
+    now = server_now()
+    me = {"id": student_id, "joined_at": member_joined_at(subject_id, student_id)}
+    sessions = subject_sessions(subject_id)
+    records = session_records([row["id"] for row in sessions], student_id)
+    counts = empty_counts()
+    items = []
+    for session in sessions:
+        counted, status = member_status(session, me, records, now)
+        if not counted:
+            continue
+        if status is not None:
+            counts[status] += 1
+        record = records.get((session["id"], student_id))
+        items.append(
+            {
+                **public_session(session, now),
+                "status": status,
+                "source": record["source"] if record else None,
+                "marked_at": record["marked_at"] if record else None,
+            }
+        )
+    return {"server_time": now.isoformat(), "counts": counts, "sessions": items}
+
+
+def already_marked(session, record):
+    who = " oleh guru" if record["source"] == "guru" else ""
+    return HTTPException(
+        status_code=409,
+        detail=f"Kamu sudah tercatat {record['status']}{who} di {session['title']}",
+    )
+
+
+@app.post("/student/attendance/sessions/{session_id}/present")
+def mark_present(session_id: str, auth=Depends(require_student)):
+    student_id = auth["user_id"]
+    session = get_member_session(session_id, student_id)
+    now = server_now()
+    state = session_state(session, now)
+    if state == "upcoming":
+        raise HTTPException(status_code=409, detail="Sesi presensi belum dibuka")
+    if state == "closed":
+        raise HTTPException(status_code=409, detail="Sesi presensi sudah ditutup")
+    key = (session_id, student_id)
+    existing = session_records([session_id], student_id).get(key)
+    if existing is not None:
+        raise already_marked(session, existing)
+    try:
+        record = (
+            supabase_admin.table("attendance_records")
+            .insert(
+                {
+                    "session_id": session_id,
+                    "student_id": student_id,
+                    "status": "hadir",
+                    "source": "siswa",
+                    "updated_by": student_id,
+                    "marked_at": now.isoformat(),
+                }
+            )
+            .execute()
+        ).data[0]
+    except APIError as error:
+        # Dua ketukan bersamaan: yang kedua kena primary key.
+        if getattr(error, "code", None) != "23505":
+            raise
+        existing = session_records([session_id], student_id).get(key)
+        raise already_marked(
+            session, existing or {"status": "hadir", "source": "siswa"}
+        ) from None
+    return {
+        "session": {
+            **public_session(session, now),
+            "status": record["status"],
+            "source": record["source"],
+            "marked_at": record["marked_at"],
+        }
+    }
