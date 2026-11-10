@@ -3307,6 +3307,246 @@ def get_subject_results(subject_id: str, auth=Depends(require_teacher)):
     }
 
 
+# ---- Progres siswa
+#
+# Nilai = persen benar, dibulatkan ke bilangan bulat terdekat (setengah ke atas).
+# Pre-test memakai percobaan PERTAMA yang dikumpulkan (kemampuan awal),
+# post-test memakai percobaan TERAKHIR. Jumlah percobaan tetap dilaporkan.
+# Kenaikan = post-test - pre-test, hanya kalau keduanya ada.
+
+
+def score_percent(correct, total):
+    if not total:
+        return None
+    return (correct * 200 + total) // (2 * total)
+
+
+def stars_for(correct, total):
+    """Sama dengan `starsFor` di aplikasi."""
+    if not total or correct <= 0:
+        return 0
+    ratio = correct / total
+    if ratio >= 0.85:
+        return 3
+    if ratio >= 0.6:
+        return 2
+    return 1
+
+
+def average_of(values):
+    values = [value for value in values if value is not None]
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def subject_quiz_materials(subject_id):
+    """Materi kelas yang punya minimal satu kuis, urut waktu dibuat, beserta
+    kuisnya per materi."""
+    materials = (
+        supabase_admin.table("materials")
+        .select("id, title, is_published, created_at")
+        .eq("subject_id", subject_id)
+        .order("created_at")
+        .execute()
+    ).data or []
+    quizzes = quizzes_by_material([row["id"] for row in materials])
+    return [row for row in materials if quizzes.get(row["id"])], quizzes
+
+
+def submitted_attempts(quiz_ids, student_ids):
+    """Percobaan yang sudah dikumpulkan per (kuis, siswa), urut waktu kumpul."""
+    grouped = {}
+    if not quiz_ids or not student_ids:
+        return grouped
+    for quiz_chunk in chunks(list(quiz_ids)):
+        for student_chunk in chunks(list(student_ids)):
+            rows = (
+                supabase_admin.table("quiz_attempts")
+                .select(
+                    "id, quiz_id, student_id, correct_count, total_questions, "
+                    "submitted_at"
+                )
+                .in_("quiz_id", quiz_chunk)
+                .in_("student_id", student_chunk)
+                .not_.is_("submitted_at", "null")
+                .execute()
+            ).data or []
+            for row in rows:
+                key = (row["quiz_id"], row["student_id"])
+                grouped.setdefault(key, []).append(row)
+    for attempts in grouped.values():
+        attempts.sort(key=lambda row: parse_time(row["submitted_at"]))
+    return grouped
+
+
+def quiz_progress(quiz, attempts):
+    """Nilai satu siswa di satu kuis. `None` kalau kuisnya belum dibuat;
+    `score` `None` kalau belum dikerjakan."""
+    if quiz is None:
+        return None
+    attempts = attempts or []
+    base = {
+        "quiz_id": quiz["id"],
+        "kind": quiz["kind"],
+        "attempt_count": len(attempts),
+    }
+    if not attempts:
+        return {
+            **base,
+            "attempt_id": None,
+            "score": None,
+            "correct_count": None,
+            "total_questions": None,
+            "stars": None,
+            "submitted_at": None,
+        }
+    chosen = attempts[0] if quiz["kind"] == "pre" else attempts[-1]
+    correct = chosen["correct_count"] or 0
+    total = chosen["total_questions"] or 0
+    return {
+        **base,
+        "attempt_id": chosen["id"],
+        "score": score_percent(correct, total),
+        "correct_count": correct,
+        "total_questions": total,
+        "stars": stars_for(correct, total),
+        "submitted_at": chosen["submitted_at"],
+    }
+
+
+def progress_gain(pre, post):
+    if pre is None or post is None:
+        return None
+    if pre["score"] is None or post["score"] is None:
+        return None
+    return post["score"] - pre["score"]
+
+
+def material_progress(quizzes, student_id, attempts):
+    """Pre-test, post-test, dan kenaikan satu siswa di satu materi."""
+    by_kind = {quiz["kind"]: quiz for quiz in quizzes}
+    result = {}
+    for kind in ("pre", "post"):
+        quiz = by_kind.get(kind)
+        result[kind] = quiz_progress(
+            quiz, attempts.get((quiz["id"], student_id)) if quiz else None
+        )
+    result["gain"] = progress_gain(result["pre"], result["post"])
+    return result
+
+
+def gain_direction_counts(gains_per_student):
+    """Berapa siswa naik, tetap, atau turun menurut rata-rata kenaikannya."""
+    counts = {"improved": 0, "same": 0, "declined": 0}
+    for gains in gains_per_student:
+        average = average_of(gains)
+        if average is None:
+            continue
+        if average > 0:
+            counts["improved"] += 1
+        elif average < 0:
+            counts["declined"] += 1
+        else:
+            counts["same"] += 1
+    return counts
+
+
+def quiz_ids_of(materials, quizzes):
+    return [quiz["id"] for row in materials for quiz in quizzes[row["id"]]]
+
+
+@app.get("/teacher/subjects/{subject_id}/progress")
+def get_subject_progress(subject_id: str, auth=Depends(require_teacher)):
+    """Tabel nilai tiap siswa di tiap materi: pre-test, post-test, kenaikan,
+    beserta ringkasan kelas."""
+    subject = get_owned_subject(subject_id, auth["user_id"])
+    students = subject_member_rows(subject_id)
+    materials, quizzes = subject_quiz_materials(subject_id)
+    attempts = submitted_attempts(
+        quiz_ids_of(materials, quizzes), [student["id"] for student in students]
+    )
+    gains_per_student = {student["id"]: [] for student in students}
+    all_pre, all_post, all_gain = [], [], []
+    result_materials = []
+    for material in materials:
+        rows = []
+        pre_scores, post_scores, gains = [], [], []
+        for student in students:
+            row = material_progress(quizzes[material["id"]], student["id"], attempts)
+            if row["pre"] and row["pre"]["score"] is not None:
+                pre_scores.append(row["pre"]["score"])
+            if row["post"] and row["post"]["score"] is not None:
+                post_scores.append(row["post"]["score"])
+            if row["gain"] is not None:
+                gains.append(row["gain"])
+                gains_per_student[student["id"]].append(row["gain"])
+            rows.append({"student_id": student["id"], "name": student["name"], **row})
+        all_pre += pre_scores
+        all_post += post_scores
+        all_gain += gains
+        kinds = {quiz["kind"] for quiz in quizzes[material["id"]]}
+        result_materials.append(
+            {
+                "id": material["id"],
+                "title": material["title"],
+                "is_published": material["is_published"],
+                "has_pre": "pre" in kinds,
+                "has_post": "post" in kinds,
+                "average_pre": average_of(pre_scores),
+                "average_post": average_of(post_scores),
+                "average_gain": average_of(gains),
+                "rows": rows,
+            }
+        )
+    return {
+        "subject": {"id": subject["id"], "name": subject["name"]},
+        "summary": {
+            "student_count": len(students),
+            "material_count": len(materials),
+            "average_pre": average_of(all_pre),
+            "average_post": average_of(all_post),
+            "average_gain": average_of(all_gain),
+            "complete_count": len(all_gain),
+            **gain_direction_counts(gains_per_student.values()),
+        },
+        "materials": result_materials,
+    }
+
+
+@app.get("/teacher/subjects/{subject_id}/students/{student_id}/progress")
+def get_student_progress(
+    subject_id: str, student_id: str, auth=Depends(require_teacher)
+):
+    """Progres satu siswa di kelas ini: nilai, bintang, waktu mengerjakan, dan
+    jumlah percobaan tiap kuis, serta rata-rata kenaikannya."""
+    subject = get_owned_subject(subject_id, auth["user_id"])
+    student = next(
+        (row for row in subject_member_rows(subject_id) if row["id"] == student_id),
+        None,
+    )
+    if student is None:
+        raise HTTPException(status_code=404, detail="Siswa bukan anggota kelas ini")
+    materials, quizzes = subject_quiz_materials(subject_id)
+    attempts = submitted_attempts(quiz_ids_of(materials, quizzes), [student_id])
+    result_materials = []
+    gains = []
+    for material in materials:
+        row = material_progress(quizzes[material["id"]], student_id, attempts)
+        if row["gain"] is not None:
+            gains.append(row["gain"])
+        result_materials.append({"id": material["id"], "title": material["title"], **row})
+    return {
+        "subject": {"id": subject["id"], "name": subject["name"]},
+        "student": {
+            "id": student["id"],
+            "name": student["name"],
+            "joined_at": student["joined_at"],
+        },
+        "average_gain": average_of(gains),
+        "complete_count": len(gains),
+        "materials": result_materials,
+    }
+
+
 @app.post("/student/subjects/join")
 def join_subject(data: JoinSubjectRequest, auth=Depends(require_student)):
     code = normalize_access_code(data.code)
