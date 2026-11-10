@@ -70,6 +70,52 @@ curl -i https://proyek-telematika-aprevo.onrender.com/test-supabase
 
 Permintaan pertama bisa lama kalau layanannya sedang tidur.
 
+Periksa juga variabel Supabase. Endpoint ini tidak pernah menampilkan nilai
+variabel, hanya nama variabel yang bermasalah:
+
+```bash
+curl https://proyek-telematika-aprevo.onrender.com/health/config
+# {"ok":true,"problems":[]}
+```
+
+### Kalau aplikasi menampilkan "Token tidak valid"
+
+Backend memeriksa token login dengan memanggil Supabase Auth
+(`<SUPABASE_URL>/auth/v1/user`) memakai `SUPABASE_URL` dan `SUPABASE_KEY`. Tidak
+ada JWT secret atau JWKS yang perlu diisi. Satu-satunya perbedaan perilaku di
+Render (variabel `RENDER` terisi) adalah endpoint debug yang selalu mati, dan itu
+tidak memengaruhi login. Jadi kalau token yang sama diterima backend lokal tetapi
+ditolak Render, penyebabnya hampir selalu variabel di dashboard Render.
+
+1. Buka `/health/config`. Kalau `ok` bernilai `false`, `problems` menyebut
+   variabel mana yang salah, misalnya:
+   - `SUPABASE_URL kosong`, atau `SUPABASE_URL bukan alamat proyek <ref>.supabase.co`
+   - `SUPABASE_KEY adalah kunci service_role, seharusnya anon`
+   - `SUPABASE_KEY milik proyek Supabase lain, bukan proyek di SUPABASE_URL`
+2. Bandingkan tanpa menyalin nilainya ke mana pun. Di Render > layanan >
+   **Environment**, klik ikon mata di `SUPABASE_URL` dan `SUPABASE_KEY`, lalu
+   cocokkan dengan Supabase > Project Settings > API:
+   - `SUPABASE_URL` harus sama dengan Project URL, yaitu proyek yang sama dengan
+     `SUPABASE_URL` di `config/app_env.json` aplikasi.
+   - `SUPABASE_KEY` harus kunci `anon` (atau `publishable`) dari proyek itu, sama
+     dengan `SUPABASE_ANON_KEY` di `config/app_env.json`.
+   - `SUPABASE_SERVICE_KEY` harus kunci `service_role` (atau `secret`) dari
+     proyek yang sama.
+   Spasi, baris baru, dan tanda kutip di awal atau akhir nilai dibuang otomatis
+   oleh backend.
+3. Setelah mengubah variabel, pilih **Save, rebuild, and deploy**. Render tidak
+   memakai nilai baru sebelum layanan di-deploy ulang.
+4. Buka Render > **Logs**. Alasan gagal dicatat tanpa token:
+   - `Konfigurasi Supabase: ...` saat server menyala, isinya sama dengan
+     `/health/config`.
+   - `Verifikasi token gagal: status 403, kode bad_jwt, ...` artinya Supabase
+     menolak tokennya. Penyebabnya token dari proyek lain (cek langkah 2), atau
+     memang kedaluwarsa.
+   - `SUPABASE_KEY ditolak Supabase` artinya kunci anon salah. Aplikasi mendapat
+     pesan "Server belum dikonfigurasi dengan benar", bukan "Token tidak valid".
+   - `Verifikasi token gagal: ConnectError ...` artinya Render tidak bisa
+     menghubungi Supabase, biasanya karena `SUPABASE_URL` salah ketik.
+
 ## 5. Arahkan aplikasi ke Render
 
 Di `lib/config/api_config.dart`, ganti `productionBaseUrl` dengan alamat dari

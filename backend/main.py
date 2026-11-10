@@ -11,12 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
+import base64
+import json
 import os
 import threading
 import time
 from dataclasses import dataclass, field
 from supabase import create_client, ClientOptions
 from postgrest.exceptions import APIError
+from supabase_auth.errors import AuthApiError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import random
 import re
@@ -26,6 +29,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from uuid import uuid4
 import pymupdf
 import logging
@@ -53,8 +57,83 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+def env_value(name):
+    """Nilai variabel lingkungan tanpa spasi, baris baru, atau tanda kutip yang
+    ikut tersalin saat ditempel di dashboard Render. `None` kalau kosong."""
+    value = (os.getenv(name) or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    return value or None
+
+
+SUPABASE_URL = (env_value("SUPABASE_URL") or "").rstrip("/") or None
+SUPABASE_KEY = env_value("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = env_value("SUPABASE_SERVICE_KEY")
+
+
+def jwt_claims(token):
+    """Isi (payload) JWT tanpa memeriksa tanda tangannya, hanya untuk membaca
+    `role` dan `ref` kunci Supabase. `None` kalau bukan JWT."""
+    parts = (token or "").split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return claims if isinstance(claims, dict) else None
+
+
+def project_ref(url):
+    """"abcd" dari https://abcd.supabase.co."""
+    host = urlparse(url or "").hostname or ""
+    return host.split(".")[0] if host.endswith(".supabase.co") else None
+
+
+def check_supabase_key(name, key, url, roles, prefix):
+    """Masalah sebuah kunci Supabase, tanpa menyebut nilainya."""
+    if not key:
+        return [f"{name} kosong"]
+    claims = jwt_claims(key)
+    if claims is None:
+        if key.startswith(prefix):
+            return []
+        return [f"{name} bukan kunci Supabase (bukan JWT dan tidak diawali {prefix})"]
+    problems = []
+    if claims.get("role") not in roles:
+        problems.append(
+            f"{name} adalah kunci {claims.get('role') or 'tanpa peran'}, "
+            f"seharusnya {' atau '.join(roles)}"
+        )
+    ref, url_ref = claims.get("ref"), project_ref(url)
+    if ref and url_ref and ref != url_ref:
+        problems.append(f"{name} milik proyek Supabase lain, bukan proyek di SUPABASE_URL")
+    return problems
+
+
+def supabase_config_problems(url, key, service_key):
+    """Daftar masalah konfigurasi Supabase. Pesannya tidak memuat nilai rahasia,
+    jadi aman ditulis ke log dan dijawab oleh /health/config."""
+    problems = []
+    if not url:
+        problems.append("SUPABASE_URL kosong")
+    elif not url.startswith("https://"):
+        problems.append("SUPABASE_URL harus diawali https://")
+    elif project_ref(url) is None:
+        problems.append("SUPABASE_URL bukan alamat proyek <ref>.supabase.co")
+    problems += check_supabase_key("SUPABASE_KEY", key, url, ("anon",), "sb_publishable_")
+    problems += check_supabase_key(
+        "SUPABASE_SERVICE_KEY", service_key, url, ("service_role",), "sb_secret_"
+    )
+    return problems
+
+
+SUPABASE_CONFIG_PROBLEMS = supabase_config_problems(
+    SUPABASE_URL, SUPABASE_KEY, SUPABASE_SERVICE_KEY
+)
+for _problem in SUPABASE_CONFIG_PROBLEMS:
+    logger.error("Konfigurasi Supabase: %s", _problem)
 class ThreadLocalSupabase:
     """Klien Supabase tersendiri untuk setiap thread.
 
@@ -82,7 +161,7 @@ class ThreadLocalSupabase:
 
 
 supabase = ThreadLocalSupabase(SUPABASE_KEY)
-supabase_admin = ThreadLocalSupabase(os.getenv("SUPABASE_SERVICE_KEY"))
+supabase_admin = ThreadLocalSupabase(SUPABASE_SERVICE_KEY)
 TEST_LOGIN_EMAIL = os.getenv("TEST_LOGIN_EMAIL")
 TEST_LOGIN_PASSWORD = os.getenv("TEST_LOGIN_PASSWORD")
 
@@ -239,19 +318,77 @@ def test_supabase():
     return {"data": response.data}
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    access_token = credentials.credentials
+@app.get("/health/config")
+def health_config():
+    """Memeriksa variabel Supabase di server tanpa menampilkan nilainya, supaya
+    salah isi di dashboard Render bisa dicek dari browser."""
+    return {
+        "ok": not SUPABASE_CONFIG_PROBLEMS,
+        "problems": SUPABASE_CONFIG_PROBLEMS,
+    }
 
+
+TOKEN_INVALID = "Token tidak valid atau sudah kadaluwarsa"
+AUTH_UNAVAILABLE = "Server belum bisa memeriksa login. Coba lagi sebentar lagi"
+AUTH_MISCONFIGURED = (
+    "Server belum dikonfigurasi dengan benar, jadi login tidak bisa diperiksa. "
+    "Hubungi pengelola aplikasi"
+)
+
+
+def redact(text, token):
+    """Pesan error tanpa token, kalau token ikut tertulis di dalamnya."""
+    text = str(text)
+    return text.replace(token, "<token>") if token else text
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Memeriksa access token ke Supabase Auth (`/auth/v1/user`) dengan
+    SUPABASE_URL dan SUPABASE_KEY. Alasan gagal dicatat di log, tanpa token.
+
+    * Token ditolak Supabase (4xx): 401, aplikasi memperbarui token sekali.
+    * Konfigurasi server salah: 503, karena memperbarui token tidak menolong.
+    * Supabase tidak bisa dihubungi atau error 5xx: 503.
+    """
+    access_token = credentials.credentials
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        logger.error(
+            "Verifikasi token tidak bisa dijalankan: %s",
+            "; ".join(SUPABASE_CONFIG_PROBLEMS) or "SUPABASE_URL atau SUPABASE_KEY kosong",
+        )
+        raise HTTPException(status_code=503, detail=AUTH_MISCONFIGURED)
     try:
         response = supabase.auth.get_user(access_token)
-        user = response.user
-        if user is None:
-            raise HTTPException(status_code=401, detail="Token tidak valid")
-        return {"user": user, "access_token": access_token}
-    except Exception:
-        raise HTTPException(
-            status_code=401, detail="Token tidak valid atau sudah kadaluwarsa"
+    except AuthApiError as error:
+        status = getattr(error, "status", None)
+        code = getattr(error, "code", None)
+        logger.warning(
+            "Verifikasi token gagal: status %s, kode %s, pesan %s",
+            status,
+            code,
+            redact(error, access_token),
         )
+        if code == "no_api_key" or "api key" in str(error).lower():
+            # SUPABASE_KEY salah, bukan token siswa yang salah.
+            logger.error(
+                "SUPABASE_KEY ditolak Supabase. Periksa kuncinya di dashboard Render"
+            )
+            raise HTTPException(status_code=503, detail=AUTH_MISCONFIGURED) from None
+        if status is not None and 400 <= status < 500:
+            raise HTTPException(status_code=401, detail=TOKEN_INVALID) from None
+        raise HTTPException(status_code=503, detail=AUTH_UNAVAILABLE) from None
+    except Exception as error:
+        logger.warning(
+            "Verifikasi token gagal: %s: %s",
+            type(error).__name__,
+            redact(error, access_token),
+        )
+        raise HTTPException(status_code=503, detail=AUTH_UNAVAILABLE) from None
+    user = response.user if response is not None else None
+    if user is None:
+        logger.warning("Verifikasi token gagal: Supabase tidak mengembalikan user")
+        raise HTTPException(status_code=401, detail=TOKEN_INVALID)
+    return {"user": user, "access_token": access_token}
 
 
 ROLE_LABELS = {"teacher": "guru", "student": "siswa"}

@@ -65,7 +65,10 @@ def test_variabel_yang_dibaca_kode_tercatat_di_panduan():
     names = set()
     for path in (backend / "main.py", backend / "ai_client.py"):
         names |= set(
-            re.findall(r'os\.getenv\(\s*"([A-Z_]+)"', path.read_text(encoding="utf-8"))
+            re.findall(
+                r'(?:os\.getenv|env_value)\(\s*"([A-Z_]+)"',
+                path.read_text(encoding="utf-8"),
+            )
         )
     assert "SUPABASE_SERVICE_KEY" in names
     missing = [name for name in sorted(names) if f"`{name}`" not in guide]
