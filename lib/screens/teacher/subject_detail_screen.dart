@@ -14,6 +14,7 @@ import 'generate_questions_screen.dart';
 import 'material_editor_screen.dart';
 import 'material_images_screen.dart';
 import 'new_material_screen.dart';
+import 'progress_screen.dart';
 import 'subject_members_screen.dart';
 
 /// Status satu kuis untuk guru, misalnya "Pre-test: dibuka sampai ...".
@@ -165,6 +166,17 @@ class SubjectDetailScreen extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) =>
                             TeacherAttendanceScreen(subject: subject),
+                      ),
+                    ),
+                  ),
+                  ListRow(
+                    icon: Icons.insights_outlined,
+                    title: 'Progres siswa',
+                    subtitle: 'Nilai pre-test, post-test, dan kenaikannya',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SubjectProgressScreen(subject: subject),
                       ),
                     ),
                   ),
