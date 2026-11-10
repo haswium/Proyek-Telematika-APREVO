@@ -364,6 +364,38 @@ Uji dengan APK release (`docs/deploy.md`), bukan `flutter run`.
 | 25.9 | Ketuk dua kali "Tentang APREVO" | Terdengar penjelasan singkat APREVO | | |
 | 25.10 | Lanjutkan sampai 7 kali | Dari ketukan ke-4 terdengar "Ketuk 3 kali lagi untuk membuka menu pengembang". Ketukan ke-7 membuka "Menu pengembang" | | |
 
+## 26. Presensi
+
+Siapkan dengan akun guru: satu kelas dengan minimal dua siswa. Uji di HP, karena
+pengumuman dan liveRegion tidak bisa diperiksa penuh oleh tes otomatis.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 26.1 | Guru, halaman kelas, fokus ke menu | "Presensi, Buka sesi per pertemuan dan lihat rekap" dalam satu fokus, setelah "Anggota kelas" | | |
+| 26.2 | Ketuk dua kali "Presensi" | "Memuat presensi [nama kelas]" lalu judul "Presensi [nama kelas]". Lompat antarjudul menemukan "Sesi presensi" dan "Rekap per siswa" | | |
+| 26.3 | Ketuk dua kali "Buka sesi presensi" | Kolom "Judul pertemuan" sudah berisi "Pertemuan [n]" | | |
+| 26.4 | Fokus ke pilihan waktu buka dan waktu tutup | Tiap pilihan dibacakan dengan status terpilih: "Sekarang, terpilih", "1 jam, terpilih", lalu "15 menit", "30 menit", "Akhir hari", "Atur sendiri" | | |
+| 26.5 | Pilih "Atur sendiri" di waktu tutup | Pemilih tanggal lalu jam terbuka. Setelah dipilih terdengar "Waktu tutup: [hari, tanggal] pukul [jam]" | | |
+| 26.6 | Batalkan pemilih, lalu tekan "Buka sesi" | "Pilih waktu tutup dengan tombol Atur waktu tutup." dibacakan langsung | | |
+| 26.7 | Pilih "30 menit", lalu "Buka sesi" | Terdengar "Sesi Pertemuan [n] dibuka, ditutup pukul [jam]", kembali ke layar Presensi | | |
+| 26.8 | Fokus ke baris sesi | Satu fokus: "Pertemuan [n]. Terbuka, ditutup pukul [jam]. hadir 0, izin 0, sakit 0, alpa 0, belum presensi [n]" | | |
+| 26.9 | Siswa, halaman kelas, fokus ke menu Presensi | "Presensi, 1 sesi terbuka, tekan Hadir" | | |
+| 26.10 | Buka Presensi, fokus ke tombol | "Hadir untuk Pertemuan [n], ditutup pukul [jam], tombol" | | |
+| 26.11 | Ketuk dua kali tombol itu | "Presensi tercatat: hadir di Pertemuan [n]." dibacakan tanpa perlu memindah fokus. Tombol hilang, terdengar "Tidak ada sesi presensi yang menunggu kamu" kalau difokus | | |
+| 26.12 | Fokus ke rekap | Satu fokus: "Rekap kamu: hadir 1, izin 0, sakit 0, alpa 0" | | |
+| 26.13 | Fokus ke riwayat | Satu fokus per sesi: "Pertemuan [n]: Hadir. Terbuka, ditutup pukul [jam]" | | |
+| 26.14 | Siswa kedua membuka Presensi tepat setelah guru menutup sesi, lalu menekan Hadir dari layar yang masih terbuka | "Presensi belum tercatat. Sesi presensi sudah ditutup." dibacakan, tombol hilang | | |
+| 26.15 | Biarkan layar siswa terbuka sampai waktu tutup lewat, tanpa menyentuh apa pun | Paling lama beberapa detik setelah jam tutup server, tombol Hadir hilang dan riwayat menjadi "Alpa" | | |
+| 26.16 | Guru, buka sesi itu, fokus ke baris siswa | "Andi: hadir. Ubah status" dalam satu fokus. Siswa yang tidak presensi di sesi yang sudah ditutup: "Budi: alpa. Ubah status" | | |
+| 26.17 | Ketuk dua kali baris Budi | Dialog "Status Budi" dengan empat pilihan, yang sekarang dibacakan "Alpa, status sekarang" | | |
+| 26.18 | Pilih "Sakit" | "Status Budi diubah menjadi sakit." dibacakan, baris menjadi "Budi: sakit, diubah guru" | | |
+| 26.19 | Kembali ke layar Presensi, fokus ke Rekap per siswa | Tiap baris satu fokus: "Budi: hadir 0, izin 0, sakit 1, alpa 0" | | |
+| 26.20 | Buka sesi lain yang masih terbuka, ketuk dua kali "Tutup sesi sekarang" | "Sesi [judul] ditutup. Siswa yang belum presensi tercatat alpa." dibacakan, tombol tutup hilang | | |
+| 26.21 | Geser sampai habis, ketuk dua kali "Hapus sesi" | Dialog menyebut catatan ikut terhapus. Fokus awal di "Batal". Setelah "Ya, hapus sesi": kembali ke daftar, terdengar "Sesi [judul] dihapus" | | |
+| 26.22 | Atur jam HP 2 jam lebih maju, lalu siswa membuka Presensi | Status sesi tetap mengikuti jam server, bukan jam HP | | |
+| 26.23 | Periksa semua layar presensi | Tidak ada gestur geser yang diperlukan. Semua tombol bisa dicapai dengan geser satu jari dan ketuk dua kali | | |
+| 26.24 | Guru menghapus kelas, siswa membuka Presensi | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda" | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya
@@ -376,6 +408,7 @@ tetap tampil di layar.
 | T2 | Masukkan kode akses salah | Pesan error tampil, tidak ada suara | | |
 | T3 | Jawab satu soal | Umpan balik tampil, tidak ada suara | | |
 | T4 | Selesaikan satu tes | Ringkasan hasil tampil, tidak ada suara | | |
+| T5 | Tekan Hadir di Presensi | "Presensi tercatat" tampil, tidak ada suara | | |
 
 ## Masalah yang ditemukan
 

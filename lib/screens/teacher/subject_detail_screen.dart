@@ -9,6 +9,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
 import '../../widgets/search_box.dart';
+import 'attendance_screen.dart';
 import 'generate_questions_screen.dart';
 import 'material_editor_screen.dart';
 import 'material_images_screen.dart';
@@ -152,6 +153,18 @@ class SubjectDetailScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => SubjectMembersScreen(subject: subject),
+                      ),
+                    ),
+                  ),
+                  ListRow(
+                    icon: Icons.how_to_reg_outlined,
+                    title: 'Presensi',
+                    subtitle: 'Buka sesi per pertemuan dan lihat rekap',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            TeacherAttendanceScreen(subject: subject),
                       ),
                     ),
                   ),

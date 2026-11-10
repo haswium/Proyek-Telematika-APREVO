@@ -135,6 +135,8 @@ void main() {
     });
 
     testWidgets('kode benar membuka kelas dan materinya', (tester) async {
+      // Menu Anggota kelas dan Presensi mendorong daftar materi ke bawah.
+      tallScreen(tester);
       _studentServer().install();
       await tester.pumpWidget(
         testApp(const StudentHomeScreen(studentName: 'Tes Gabung')),

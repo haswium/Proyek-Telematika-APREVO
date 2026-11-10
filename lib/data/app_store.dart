@@ -5,11 +5,13 @@ import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
+import '../models/attendance.dart';
 import '../models/models.dart';
 import '../services/announce.dart';
 import '../services/api_client.dart';
 import '../services/google_auth.dart';
 import '../services/settings.dart';
+import '../services/time_format.dart';
 
 /// Seberapa sering status pembuatan soal AI diperiksa.
 const Duration kQuestionPollInterval = Duration(seconds: 3);
@@ -131,9 +133,8 @@ class AppStore extends ChangeNotifier {
   }
 
   /// Akun yang berhasil masuk lewat Google.
-  Stream<Account> get googleSignedIn => googleAuth.signedIn.map(
-    (user) => currentUser = _fromUser(user),
-  );
+  Stream<Account> get googleSignedIn =>
+      googleAuth.signedIn.map((user) => currentUser = _fromUser(user));
 
   /// Menyimpan peran akun yang belum punya peran. Backend memegang peran yang
   /// berlaku: kalau akun sudah punya peran, peran itu yang dikembalikan.
@@ -273,6 +274,89 @@ class AppStore extends ChangeNotifier {
     );
     notifyListeners();
     return (data['student_count'] as num?)?.toInt() ?? 0;
+  }
+
+  // ---- Presensi. Status sesi dihitung backend dengan jam server.
+
+  Future<TeacherAttendance> attendanceSessions(String subjectId) async =>
+      TeacherAttendance.fromJson(
+        await api.get('/teacher/subjects/$subjectId/attendance/sessions'),
+      );
+
+  /// Membuka sesi presensi. Isi [preset] untuk pilihan cepat, atau
+  /// [closesAt] (dan boleh [opensAt]) untuk waktu sendiri. Tanpa [opensAt],
+  /// sesi dibuka sekarang menurut jam server.
+  Future<AttendanceSession> createAttendanceSession(
+    String subjectId, {
+    required String title,
+    ClosePreset? preset,
+    DateTime? opensAt,
+    DateTime? closesAt,
+  }) async {
+    final data = await api.post(
+      '/teacher/subjects/$subjectId/attendance/sessions',
+      {
+        'title': title,
+        'close_preset': ?preset?.value,
+        if (opensAt != null) 'opens_at': isoWithOffset(opensAt),
+        if (closesAt != null) 'closes_at': isoWithOffset(closesAt),
+      },
+    );
+    notifyListeners();
+    return AttendanceSession.fromJson(data['session'] as Map<String, dynamic>);
+  }
+
+  Future<AttendanceSessionDetail> attendanceSession(String sessionId) async =>
+      AttendanceSessionDetail.fromJson(
+        await api.get('/teacher/attendance/sessions/$sessionId'),
+      );
+
+  Future<AttendanceSession> closeAttendanceSession(String sessionId) async {
+    final data = await api.patch('/teacher/attendance/sessions/$sessionId', {
+      'close_now': true,
+    });
+    notifyListeners();
+    return AttendanceSession.fromJson(data['session'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAttendanceSession(String sessionId) async {
+    await api.delete('/teacher/attendance/sessions/$sessionId');
+    notifyListeners();
+  }
+
+  Future<AttendanceStudentRow> setAttendanceStatus(
+    String sessionId,
+    String studentId,
+    AttendanceStatus status,
+  ) async {
+    final data = await api.put(
+      '/teacher/attendance/sessions/$sessionId/students/$studentId',
+      {'status': status.name},
+    );
+    notifyListeners();
+    return AttendanceStudentRow.fromJson(
+      data['student'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<AttendanceSummary> attendanceSummary(String subjectId) async =>
+      AttendanceSummary.fromJson(
+        await api.get('/teacher/subjects/$subjectId/attendance/summary'),
+      );
+
+  Future<StudentAttendance> studentAttendance(String subjectId) async =>
+      StudentAttendance.fromJson(
+        await api.get('/student/subjects/$subjectId/attendance'),
+      );
+
+  /// Siswa menekan Hadir. Ditolak server kalau sesi sudah tutup atau siswa
+  /// sudah tercatat.
+  Future<AttendanceSession> markPresent(String sessionId) async {
+    final data = await api.post(
+      '/student/attendance/sessions/$sessionId/present',
+    );
+    notifyListeners();
+    return AttendanceSession.fromJson(data['session'] as Map<String, dynamic>);
   }
 
   /// Nama guru dan teman sekelas untuk siswa.
