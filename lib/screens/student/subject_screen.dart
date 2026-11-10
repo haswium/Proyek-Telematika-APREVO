@@ -8,6 +8,7 @@ import '../../widgets/load_view.dart';
 import '../../widgets/mascot.dart';
 import '../../widgets/playful.dart';
 import '../../widgets/search_box.dart';
+import 'attendance_screen.dart';
 import 'classmates_screen.dart';
 import 'student_space_screen.dart';
 
@@ -111,6 +112,7 @@ class StudentSubjectScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                StudentAttendanceMenuRow(subject: subject),
                 const SizedBox(height: 8),
                 ?searchBox,
                 SectionTitle(
