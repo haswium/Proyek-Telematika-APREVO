@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 
 import '../models/attendance.dart';
 import '../models/models.dart';
+import '../models/progress.dart';
 import '../services/announce.dart';
 import '../services/api_client.dart';
 import '../services/google_auth.dart';
@@ -358,6 +359,21 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     return AttendanceSession.fromJson(data['session'] as Map<String, dynamic>);
   }
+
+  // ---- Progres siswa (guru). Pre-test memakai percobaan pertama, post-test
+  // percobaan terakhir; dihitung backend.
+
+  Future<ClassProgress> subjectProgress(String subjectId) async =>
+      ClassProgress.fromJson(
+        await api.get('/teacher/subjects/$subjectId/progress'),
+      );
+
+  Future<StudentProgress> studentProgressFor(
+    String subjectId,
+    String studentId,
+  ) async => StudentProgress.fromJson(
+    await api.get('/teacher/subjects/$subjectId/students/$studentId/progress'),
+  );
 
   /// Nama guru dan teman sekelas untuk siswa.
   Future<ClassmateList> classmates(String subjectId) async =>

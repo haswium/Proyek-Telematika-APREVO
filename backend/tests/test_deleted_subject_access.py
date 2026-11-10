@@ -57,6 +57,8 @@ TEACHER_CASES = [
         {"title": "Pertemuan 1", "close_preset": "15m"},
     ),
     ("GET", "/teacher/subjects/{subject}/attendance/summary", None),
+    ("GET", "/teacher/subjects/{subject}/progress", None),
+    ("GET", "/teacher/subjects/{subject}/students/{student}/progress", None),
     ("GET", "/teacher/subjects/{subject}/delete-summary", None),
     ("GET", "/materials/m1/sections", None),
     ("GET", "/materials/m1/search?q=daun", None),

@@ -251,6 +251,78 @@ attempt_limit, created_at, kind, available_from, deadline_at}, "questions":
 `average_percent` dihitung dari siswa yang sudah mengumpulkan. Bintang dihitung
 di aplikasi dengan `starsFor`.
 
+## Progres siswa
+
+Hanya guru pemilik kelas. Tidak ada tabel baru: dihitung dari `quiz_attempts`
+yang sudah dikumpulkan (`submitted_at` terisi).
+
+### Aturan
+
+- Nilai = persen benar, dibulatkan ke bilangan bulat terdekat (setengah ke atas,
+  1 dari 8 = 13). Kuis tanpa soal bernilai `null`.
+- **Pre-test memakai percobaan pertama** yang dikumpulkan (kemampuan awal).
+  **Post-test memakai percobaan terakhir.** `attempt_count` tetap melaporkan
+  semua percobaan yang sudah dikumpulkan.
+- Kenaikan (`gain`) = nilai post-test dikurangi nilai pre-test, hanya kalau
+  keduanya ada. Bisa negatif.
+- Bintang sama dengan `starsFor` di aplikasi: 85% ke atas 3, 60% ke atas 2, ada
+  yang benar 1, selain itu 0.
+- Hanya materi yang punya minimal satu kuis, urut waktu dibuat. Kuis yang dihapus
+  tidak dihitung. Siswa yang dihitung hanya anggota kelas saat ini, urut nama.
+- Rata-rata (`average_*`) berupa angka dengan satu desimal, `null` kalau belum
+  ada nilai.
+- Error: `404` kelas tidak ditemukan, bukan milik guru, atau sudah dihapus;
+  `403` akun bukan guru.
+
+Bentuk nilai satu kuis (`pre` atau `post`). Isinya `null` kalau kuis itu belum
+dibuat. Kalau siswa belum mengumpulkan, `attempt_count` 0 dan kolom lain `null`.
+
+```json
+{ "quiz_id": "...", "kind": "pre", "attempt_count": 2, "attempt_id": "...",
+  "score": 60, "correct_count": 3, "total_questions": 5, "stars": 2,
+  "submitted_at": "2026-11-02T01:00:00+00:00" }
+```
+
+### GET `/teacher/subjects/{subject_id}/progress`
+
+```json
+{
+  "subject": { "id": "...", "name": "IPA" },
+  "summary": {
+    "student_count": 3, "material_count": 2,
+    "average_pre": 51.0, "average_post": 77.5, "average_gain": 7.5,
+    "complete_count": 2, "improved": 1, "same": 0, "declined": 0
+  },
+  "materials": [
+    { "id": "...", "title": "Fotosintesis", "is_published": true,
+      "has_pre": true, "has_post": true,
+      "average_pre": 36.5, "average_post": 85.0, "average_gain": 25.0,
+      "rows": [
+        { "student_id": "...", "name": "Andi", "pre": {}, "post": {}, "gain": 25 }
+      ] }
+  ]
+}
+```
+
+- `average_pre` dan `average_post` di `summary`: rata-rata semua nilai di kelas.
+- `average_gain`: rata-rata kenaikan dari pasangan pre-test dan post-test yang
+  lengkap. `complete_count` adalah jumlah pasangan itu.
+- `improved`, `same`, `declined`: jumlah siswa menurut rata-rata kenaikannya
+  sendiri. Siswa tanpa pasangan lengkap tidak dihitung.
+
+### GET `/teacher/subjects/{subject_id}/students/{student_id}/progress`
+
+```json
+{
+  "subject": { "id": "...", "name": "IPA" },
+  "student": { "id": "...", "name": "Andi", "joined_at": "..." },
+  "average_gain": 7.5, "complete_count": 2,
+  "materials": [ { "id": "...", "title": "Fotosintesis", "pre": {}, "post": {}, "gain": 25 } ]
+}
+```
+
+Error tambahan: `404 "Siswa bukan anggota kelas ini"`.
+
 ## Siswa
 
 ### GET `/teacher/subjects/{subject_id}/members`
