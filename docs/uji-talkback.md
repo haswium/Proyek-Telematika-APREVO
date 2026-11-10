@@ -396,6 +396,30 @@ pengumuman dan liveRegion tidak bisa diperiksa penuh oleh tes otomatis.
 | 26.23 | Periksa semua layar presensi | Tidak ada gestur geser yang diperlukan. Semua tombol bisa dicapai dengan geser satu jari dan ketuk dua kali | | |
 | 26.24 | Guru menghapus kelas, siswa membuka Presensi | "Kelas ini sudah dihapus guru." dibacakan, lalu tombol "Kembali ke beranda" | | |
 
+## 27. Progres siswa (guru)
+
+Siapkan: satu kelas dengan dua materi berkuis. Siswa A mengerjakan pre-test dua
+kali dan post-test sekali, siswa B hanya pre-test, siswa C belum mengerjakan.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 27.1 | Guru, halaman kelas, fokus ke menu | "Progres siswa, Nilai pre-test, post-test, dan kenaikannya" dalam satu fokus, setelah "Presensi" | | |
+| 27.2 | Ketuk dua kali | "Memuat progres [kelas]", lalu ringkasan diumumkan sekali: "Progres [kelas]: [n] siswa, [n] materi berkuis. Rata-rata pre-test ..., post-test ..., naik ... ." | | |
+| 27.3 | Fokus ke kotak ringkasan | Kalimat ringkasan yang sama dalam satu fokus, bukan angka satu per satu | | |
+| 27.4 | Fokus berikutnya | Keterangan "Nilai pre-test diambil dari percobaan pertama, nilai post-test dari percobaan terakhir, dan kenaikan adalah selisih keduanya." | | |
+| 27.5 | Lompat antarjudul | Tiap materi menjadi judul "Kuis [materi]" | | |
+| 27.6 | Fokus ke tabel | Kepala kolom (Siswa, Pre, Post, Selisih) tidak dibacakan. Fokus langsung ke baris pertama | | |
+| 27.7 | Fokus ke baris siswa A | Satu fokus: "[A], Kuis [materi], pre-test [n], post-test [n], naik [n]. Dikerjakan: pre-test 2 kali, post-test 1 kali", lalu "tombol" | | |
+| 27.8 | Cocokkan nilai pre-test siswa A | Sama dengan nilai percobaan **pertama**, bukan yang kedua | | |
+| 27.9 | Fokus ke baris siswa B | "[B], Kuis [materi], pre-test [n], post-test belum dikerjakan" | | |
+| 27.10 | Fokus ke baris siswa C | "[C], Kuis [materi], pre-test belum dikerjakan, post-test belum dikerjakan" | | |
+| 27.11 | Siswa dengan nilai turun | Terdengar "turun [n]", bukan "naik -[n]" | | |
+| 27.12 | Ketuk dua kali baris siswa A | Terdengar "[A]: rata-rata naik [n] dari [n] materi." sekali | | |
+| 27.13 | Fokus ke baris pre-test | "Pre-test [materi]: nilai [n], benar [n] dari [n], [n] bintang, dikerjakan [hari, tanggal] pukul [jam], 2 kali percobaan, yang dihitung percobaan pertama" | | |
+| 27.14 | Fokus ke baris post-test dan kenaikan | Satu fokus per baris. Kenaikan: "Kenaikan [materi]: naik [n]" | | |
+| 27.15 | Kembali ke layar progres kelas | Ringkasan tidak diumumkan ulang | | |
+| 27.16 | Periksa kedua layar | Tidak ada grafik dan tidak ada gestur geser. Semua baris bisa dicapai dengan geser satu jari | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya
