@@ -26,6 +26,8 @@ mendapat `410 "Kelas ini sudah dihapus guru"`, guru mendapat `404`. Daftar
 `GET /student/subjects`, `GET /student/materials`, dan `GET /teacher/subjects`
 tidak lagi memuat isi kelas itu. Yang tetap terbuka hanya
 `DELETE /teacher/subjects/{subject_id}`, untuk melanjutkan penghapusan.
+Presensi ikut aturan ini (lihat bagian Presensi), dan sesi serta catatannya
+ikut terhapus bersama kelas.
 
 ### Jadwal kuis
 
@@ -436,3 +438,124 @@ soal:
 - benar/salah: `correct_answer`
 - isian: `accepted_answers` (daftar teks)
 - urutan: `correct_order` di tiap item
+
+## Presensi
+
+Migrasi: `backend/migrations/007_presensi.sql` (tabel `attendance_sessions` dan
+`attendance_records`, RLS aktif tanpa policy, jadi hanya backend dengan service
+role yang bisa membaca dan menulis).
+
+### Aturan
+
+- Guru membuka sesi per pertemuan: judul (1 sampai 100 huruf), waktu buka, dan
+  waktu tutup.
+- Status sesi selalu dihitung backend dengan jam server, tidak pernah dengan jam
+  HP. Zona sekolah WIB (UTC+7). Waktu tanpa zona dianggap WIB.
+
+  | `state`    | Arti |
+  |------------|------|
+  | `upcoming` | Belum dibuka (`now < opens_at`) |
+  | `open`     | Siswa bisa menekan Hadir |
+  | `closed`   | Sudah ditutup (`now >= closes_at`) |
+
+- Tiap sesi di respons membawa `seconds_until_open` (hanya `upcoming`) dan
+  `seconds_until_close` (`upcoming` dan `open`), selain itu `null`. Aplikasi
+  memuat ulang setelah detik-detik itu, tanpa membandingkan dengan jam HP.
+- Status catatan: `hadir`, `izin`, `sakit`, `alpa`. Satu siswa satu catatan per
+  sesi (primary key `session_id, student_id`). `source` bernilai `siswa` (tombol
+  Hadir) atau `guru` (diubah guru).
+- **Alpa dihitung saat data dibaca**, tidak ditulis oleh cron atau tugas
+  terjadwal karena server Render bisa tidur: siswa tanpa catatan di sesi yang
+  sudah `closed` dihitung `alpa`. Di sesi yang belum tutup, siswa tanpa catatan
+  berstatus `null` (belum presensi).
+- Siswa hanya dihitung di sesi yang tutup setelah ia bergabung ke kelas. Siswa
+  baru tidak dihitung alpa di sesi lama.
+- Kelas yang dihapus: guru `404`, siswa `410 "Kelas ini sudah dihapus guru"`.
+- Bukan guru pemilik kelas: `404`. Siswa bukan anggota: `403`.
+- Error validasi memakai `422` dengan `detail` berbahasa Indonesia.
+
+Bentuk sesi (`session`) di semua respons:
+
+```json
+{
+  "id": "...", "subject_id": "...", "title": "Pertemuan 3",
+  "opens_at": "2026-11-10T09:00:00+07:00",
+  "closes_at": "2026-11-10T10:00:00+07:00",
+  "state": "open", "seconds_until_open": null, "seconds_until_close": 1800
+}
+```
+
+`counts` berisi `{"hadir", "izin", "sakit", "alpa"}`. Di data sesi guru ada
+tambahan `belum` (siswa tanpa catatan di sesi yang belum tutup).
+
+### POST `/teacher/subjects/{subject_id}/attendance/sessions`
+
+Hanya guru pemilik. Body: `title`, `opens_at` (boleh kosong: dibuka sekarang
+menurut jam server), dan tepat satu dari:
+
+- `close_preset`: `15m`, `30m`, `1h`, atau `end_of_day` (pukul 23.59.59 WIB di
+  hari yang sama). Dihitung dari waktu buka atau jam server, mana yang lebih akhir.
+- `closes_at`: waktu tutup sendiri ("Atur sendiri" di aplikasi).
+
+```json
+{ "title": "Pertemuan 3", "close_preset": "30m" }
+```
+
+Respons: `{"session": {...}}`. Error: `404` kelas; `422` judul kosong, waktu
+tutup tidak diisi atau diisi dua-duanya ("Pilih waktu tutup: pilihan cepat atau
+atur sendiri"), "Waktu tutup harus setelah waktu buka", "Waktu tutup sudah lewat.
+Pilih waktu lain".
+
+### GET `/teacher/subjects/{subject_id}/attendance/sessions`
+
+Hanya guru pemilik. Respons: `{"server_time", "sessions": [{...session,
+"counts"}]}`, urut waktu buka terbaru lebih dulu.
+
+### GET `/teacher/attendance/sessions/{session_id}`
+
+Hanya guru pemilik. Rekap satu sesi. Respons: `{"session": {...session,
+"counts"}, "students": [{student_id, name, status, source, marked_at}]}`.
+`status` `null` berarti belum presensi di sesi yang belum tutup. Error: `404`
+sesi tidak ditemukan, bukan milik guru, atau kelasnya dihapus.
+
+### PATCH `/teacher/attendance/sessions/{session_id}`
+
+Hanya guru pemilik. Body (semua boleh kosong): `title`, `opens_at`, `closes_at`,
+`close_preset`, `close_now`. `close_now: true` menutup sesi sekarang menurut jam
+server. Respons: `{"session": {...}}`. Error: `404`; `409` "Sesi sudah ditutup",
+atau sesi belum dibuka ("Hapus sesi kalau tidak jadi dipakai"); `422` seperti
+saat membuat.
+
+### DELETE `/teacher/attendance/sessions/{session_id}`
+
+Hanya guru pemilik. Menghapus sesi beserta catatannya. Respons: `{"message",
+"session_id"}`. Error: `404`.
+
+### PUT `/teacher/attendance/sessions/{session_id}/students/{student_id}`
+
+Hanya guru pemilik. Body `{"status": "izin"}` (`hadir`, `izin`, `sakit`,
+`alpa`). Menimpa catatan yang ada, termasuk Hadir dari siswa, dan boleh di sesi
+yang sudah tutup. Respons: `{"student": {student_id, name, status, source:
+"guru", marked_at}}`. Error: `404` sesi, atau "Siswa bukan anggota kelas ini";
+`422` status tidak dikenal.
+
+### GET `/teacher/subjects/{subject_id}/attendance/summary`
+
+Hanya guru pemilik. Rekap per siswa di semua sesi kelas. Sesi yang belum tutup
+hanya dihitung kalau sudah ada catatannya. Respons: `{"session_count",
+"students": [{student_id, name, counts}]}`. Aplikasi membacakan tiap baris
+sebagai "Andi: hadir 5, izin 1, sakit 0, alpa 2".
+
+### GET `/student/subjects/{subject_id}/attendance`
+
+Hanya siswa anggota. Riwayat presensi siswa itu sendiri. Respons:
+`{"server_time", "counts", "sessions": [{...session, status, source,
+marked_at}]}`. Error: `403` bukan anggota, `410` kelas dihapus.
+
+### POST `/student/attendance/sessions/{session_id}/present`
+
+Hanya siswa anggota, tanpa body. Mencatat `hadir` dengan jam server. Respons:
+`{"session": {...session, status: "hadir", source: "siswa", marked_at}}`.
+Error: `403` bukan anggota; `404` sesi tidak ditemukan; `409` "Sesi presensi
+belum dibuka", "Sesi presensi sudah ditutup", atau "Kamu sudah tercatat hadir di
+Pertemuan 3" (ditambah "oleh guru" kalau guru yang mencatat); `410` kelas dihapus.
