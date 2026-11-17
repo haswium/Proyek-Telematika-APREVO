@@ -666,3 +666,25 @@ def test_file_gemini_gagal_diproses(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="gagal memproses"):
         ai_media.transcribe_audio(path, "audio/mpeg")
     assert files.deleted == ["files/abc"]
+
+
+def test_materi_gagal_bisa_dihapus(client, kelas):
+    broken = zip_bytes({"word/document.xml": b"<bukan xml"})
+    material_id, status = selesai(client, unggah(client, kelas, "rusak.docx", broken))
+    assert status["status"] == "failed"
+    response = client.delete(f"/teacher/materials/{material_id}")
+    assert response.status_code == 200, response.text
+    assert not [m for m in kelas.db["materials"] if m["id"] == material_id]
+
+
+def test_materi_yang_berhasil_tidak_bisa_dihapus_di_sini(client, kelas):
+    response = client.delete("/teacher/materials/m1")
+    assert response.status_code == 409
+    assert [m for m in kelas.db["materials"] if m["id"] == "m1"]
+
+
+def test_hapus_materi_gagal_di_kelas_terhapus_ditolak(client, kelas):
+    kelas.db["materials"][0]["conversion_status"] = "failed"
+    kelas.db["subjects"][0]["deleted_at"] = "2026-11-01T00:00:00+00:00"
+    assert client.delete("/teacher/materials/m1").status_code == 404
+    assert [m for m in kelas.db["materials"] if m["id"] == "m1"]

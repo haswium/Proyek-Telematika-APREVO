@@ -2098,6 +2098,8 @@ CONVERSION_RESTARTED_DETAIL = (
     "Server dimulai ulang saat file ini diproses. Hapus materi ini lalu unggah "
     "ulang filenya."
 )
+# Materi gagal dihapus lewat DELETE /teacher/materials/{id}; aplikasi
+# menghapusnya sendiri setelah menampilkan pesan gagal di layar unggah.
 CONVERSION_FAILED_DETAIL = "Server gagal memproses file ini. Coba unggah lagi."
 
 STEP_WAITING = "Menunggu giliran diproses."
@@ -2465,6 +2467,30 @@ def mark_interrupted_conversions():
     except Exception:
         # Migrasi 008 belum dijalankan, atau Supabase belum bisa dihubungi.
         logger.warning("Status konversi lama tidak bisa diperiksa saat start")
+
+
+@app.delete("/teacher/materials/{material_id}")
+def delete_failed_material(material_id: str, auth=Depends(require_teacher)):
+    """Menghapus materi yang gagal diproses, supaya guru bisa mengunggah ulang
+    tanpa menumpuk draf rusak. Materi lain tidak bisa dihapus di sini."""
+    material = get_owned_material(material_id, auth["user_id"])
+    if (material.get("conversion_status") or "ready") != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail="Hanya materi yang gagal diproses yang bisa dihapus di sini",
+        )
+    image_paths = [
+        row["image_url"] for row in material_image_rows(material_id) if row.get("image_url")
+    ]
+    remove_from_storage("material-images", image_paths)
+    if material.get("source_path"):
+        remove_from_storage(MATERIAL_FILES_BUCKET, [material["source_path"]])
+    if material.get("file_url"):
+        remove_from_storage("materials-pdf", [material["file_url"]])
+    delete_rows("material_images", "material_id", [material_id], ())
+    delete_rows("material_sections", "material_id", [material_id], ())
+    delete_rows("materials", "id", [material_id], ())
+    return {"message": "Materi dihapus", "material_id": material_id}
 
 
 class SectionTextUpdate(BaseModel):

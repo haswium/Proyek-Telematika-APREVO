@@ -105,6 +105,9 @@ EXEMPT = {
     # Materi m1 di sini PDF tanpa audio. Kelas terhapus untuk audio diuji di
     # test_material_files.py.
     ("GET", "/materials/{material_id}/audio"),
+    # Hanya untuk materi gagal; m1 di sini siap, jadi pembandingnya 409.
+    # Kelas terhapus: get_owned_material menjawab 404 (test_material_files).
+    ("DELETE", "/teacher/materials/{material_id}"),
 }
 
 
