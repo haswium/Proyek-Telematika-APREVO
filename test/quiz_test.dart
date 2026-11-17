@@ -3,9 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aprevo/models/models.dart';
 import 'package:aprevo/screens/student/play_game_screen.dart';
 import 'package:aprevo/screens/student/review_screen.dart';
+import 'package:aprevo/services/settings.dart';
 import 'package:aprevo/services/time_format.dart';
 
 import 'fake_server.dart';
+import 'fake_sound.dart';
 
 final _deadline = DateTime(2026, 11, 3, 21);
 
@@ -61,42 +63,54 @@ Map<String, dynamic> _review({required bool withKey}) => {
   ],
 };
 
+FakeServer _quizServer() => FakeServer({
+  'GET /student/quizzes/k1': (_) => {
+    'quiz': {'id': 'k1', 'title': 'Pre-test', 'attempt_limit': null},
+    'questions': [
+      {
+        'id': 'q1',
+        'type': 'multiple_choice',
+        'question': 'Di mana fotosintesis terjadi?',
+        'options': [
+          {'id': 'o1', 'text': 'Akar'},
+          {'id': 'o2', 'text': 'Daun'},
+        ],
+      },
+      {'id': 'q2', 'type': 'true_false', 'question': 'Akar membuat makanan.'},
+    ],
+  },
+  'POST /quizzes/k1/attempts': (_) => {
+    'message': 'Percobaan kuis berhasil dimulai',
+    'attempt': {'id': 'a1', 'submitted_at': null},
+  },
+  'PUT /student/attempts/a1/answers/q1': (_) => {'is_correct': true},
+  'PUT /student/attempts/a1/answers/q2': (_) => {'is_correct': false},
+  'POST /student/attempts/a1/submit': (_) => {
+    'attempt_id': 'a1',
+    'correct_count': 1,
+    'total_questions': 2,
+    'deadline_passed': false,
+  },
+})..install();
+
+/// Membuka kuis dua soal dan menunggu soal pertama tampil.
+Future<void> _openQuiz(WidgetTester tester) async {
+  await tester.pumpWidget(
+    testApp(
+      PlayGameScreen(
+        quiz: _quiz(),
+        materialTitle: 'Tumbuhan',
+        studentName: 'Dimas',
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('kuis: tiap soal hanya benar/salah, lalu hasil', (tester) async {
     tallScreen(tester);
-    final server = FakeServer({
-      'GET /student/quizzes/k1': (_) => {
-        'quiz': {'id': 'k1', 'title': 'Pre-test', 'attempt_limit': null},
-        'questions': [
-          {
-            'id': 'q1',
-            'type': 'multiple_choice',
-            'question': 'Di mana fotosintesis terjadi?',
-            'options': [
-              {'id': 'o1', 'text': 'Akar'},
-              {'id': 'o2', 'text': 'Daun'},
-            ],
-          },
-          {
-            'id': 'q2',
-            'type': 'true_false',
-            'question': 'Akar membuat makanan.',
-          },
-        ],
-      },
-      'POST /quizzes/k1/attempts': (_) => {
-        'message': 'Percobaan kuis berhasil dimulai',
-        'attempt': {'id': 'a1', 'submitted_at': null},
-      },
-      'PUT /student/attempts/a1/answers/q1': (_) => {'is_correct': true},
-      'PUT /student/attempts/a1/answers/q2': (_) => {'is_correct': false},
-      'POST /student/attempts/a1/submit': (_) => {
-        'attempt_id': 'a1',
-        'correct_count': 1,
-        'total_questions': 2,
-        'deadline_passed': false,
-      },
-    })..install();
+    final server = _quizServer();
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(
       testApp(
@@ -154,6 +168,69 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('bunyi benar dan salah, pengumuman tetap ada', (tester) async {
+    tallScreen(tester);
+    _quizServer();
+    fakeSound.played.clear();
+    final handle = tester.ensureSemantics();
+    await _openQuiz(tester);
+
+    await tapAndPump(tester, find.bySemanticsLabel('Pilihan B, Daun'));
+    await tapAndPump(tester, find.text('Periksa Jawaban'));
+    await tester.pumpAndSettle();
+    expect(fakeSound.played, ['sounds/correct.wav']);
+    expectLive(tester, 'Benar! Hebat! Jawabanmu: Pilihan B, Daun. ');
+
+    await tapAndPump(tester, find.text('Soal berikutnya'));
+    await tapAndPump(tester, find.bySemanticsLabel('Benar'));
+    await tapAndPump(tester, find.text('Periksa Jawaban'));
+    await tester.pumpAndSettle();
+    expect(fakeSound.played, ['sounds/correct.wav', 'sounds/wrong.wav']);
+    expectLive(
+      tester,
+      'Belum tepat, tidak apa-apa. Jawabanmu: Benar. Tetap semangat, kamu '
+      'pasti bisa!',
+    );
+    handle.dispose();
+  });
+
+  testWidgets('bunyi dimatikan di Profil: tidak berbunyi', (tester) async {
+    tallScreen(tester);
+    _quizServer();
+    fakeSound.played.clear();
+    await Settings.setSoundEffects(false);
+    addTearDown(() => Settings.setSoundEffects(true));
+    await _openQuiz(tester);
+
+    await tapAndPump(tester, find.bySemanticsLabel('Pilihan B, Daun'));
+    await tapAndPump(tester, find.text('Periksa Jawaban'));
+    await tester.pumpAndSettle();
+    expect(fakeSound.played, isEmpty);
+    expect(find.text('Benar! Hebat!'), findsOneWidget);
+  });
+
+  testWidgets('soal berikutnya: fokus TalkBack pindah ke teks soal', (
+    tester,
+  ) async {
+    tallScreen(tester);
+    _quizServer();
+    final handle = tester.ensureSemantics();
+    await _openQuiz(tester);
+    await tapAndPump(tester, find.bySemanticsLabel('Pilihan B, Daun'));
+    await tapAndPump(tester, find.text('Periksa Jawaban'));
+    await tester.pumpAndSettle();
+    final reader = watchScreenReader(tester);
+
+    await tapAndPump(tester, find.text('Soal berikutnya'));
+    await tester.pump();
+    expect(
+      reader.focusedOn(tester, find.text('Akar membuat makanan.')),
+      isTrue,
+    );
+    expect(reader.said.last, startsWith('Soal 2 dari 2.'));
+    handle.dispose();
+  });
+
   testWidgets('kuis di luar jadwal: pesan backend dibacakan', (tester) async {
     FakeServer({
       'GET /student/quizzes/k1': (_) =>
@@ -200,6 +277,34 @@ void main() {
     expect(find.text('Jawaban benar'), findsNothing);
     expect(find.text('Buka pembahasan'), findsNothing);
     handle.dispose();
+  });
+
+  testWidgets('tutup pembahasan: kembali ke Jawabanku, bukan ke luar', (
+    tester,
+  ) async {
+    // Pembahasan dibuka di atas Jawabanku, jadi saat ditutup Flutter
+    // mengembalikan fokus TalkBack ke tombol Buka pembahasan.
+    tallScreen(tester);
+    FakeServer({
+      'GET /student/attempts/a1/result': (_) => {
+        ..._review(withKey: false),
+        'discussion_available': true,
+      },
+      'GET /student/attempts/a1/discussion': (_) => _review(withKey: true),
+    }).install();
+    await tester.pumpWidget(
+      testApp(const ReviewScreen(attemptId: 'a1', withKey: false)),
+    );
+    await tester.pumpAndSettle();
+
+    await tapAndPump(tester, find.text('Buka pembahasan'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pembahasan'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Kembali'));
+    await tester.pumpAndSettle();
+    expect(find.text('Jawabanku'), findsOneWidget);
+    expect(find.text('Buka pembahasan'), findsOneWidget);
   });
 
   testWidgets('pembahasan: jawaban benar dan penjelasan', (tester) async {

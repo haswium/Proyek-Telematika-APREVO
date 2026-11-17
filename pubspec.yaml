@@ -41,6 +41,7 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.5.6
   http_parser: ^4.1.2
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -73,6 +74,11 @@ flutter:
           weight: 600
         - asset: assets/fonts/Poppins-Bold.ttf
           weight: 700
+
+  # Efek bunyi jawaban benar dan salah: nada sintetis buatan sendiri (bukan
+  # suara bicara), masing-masing kurang dari 0,3 detik.
+  assets:
+    - assets/sounds/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -4,7 +4,9 @@ import 'package:flutter/semantics.dart';
 import '../../data/app_store.dart';
 import '../../models/models.dart';
 import '../../services/api_client.dart';
+import '../../services/a11y_focus.dart';
 import '../../services/announce.dart';
+import '../../services/sound_effects.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
@@ -90,6 +92,7 @@ class _QuizRunnerState extends State<_QuizRunner> {
   ];
 
   final _answer = TextEditingController();
+  final _promptKey = GlobalKey(debugLabel: 'teks soal');
 
   int _index = 0;
   bool _answered = false;
@@ -201,7 +204,10 @@ class _QuizRunnerState extends State<_QuizRunner> {
         _answered = true;
         _correct = correct;
       });
-      // TalkBack membacakan kartu umpan balik lewat liveRegion.
+      // Bunyi pendek (kalau tidak dimatikan di Profil), lalu TalkBack
+      // membacakan kartu umpan balik lewat liveRegion. Kartu muncul tepat
+      // sebelum tombol yang sedang difokus, jadi satu geser ke kiri sampai.
+      soundEffects.playAnswer(correct: correct);
     } on ApiException catch (e) {
       if (!mounted) return;
       _showError('Jawaban belum terkirim. ${e.message}');
@@ -248,6 +254,9 @@ class _QuizRunnerState extends State<_QuizRunner> {
       _prepare();
     });
     announce(_questionIntro());
+    // Fokus TalkBack pindah dari tombol "Soal berikutnya" ke teks soal baru,
+    // supaya siswa tidak perlu menggeser kembali ke atas.
+    moveScreenReaderFocus(_promptKey);
   }
 
   Future<void> _finish() async {
@@ -355,7 +364,11 @@ class _QuizRunnerState extends State<_QuizRunner> {
           // Key per soal supaya animasi masuk terulang tiap ganti soal.
           FadeSlideIn(
             key: ValueKey('prompt-$_index'),
-            child: Text(_q.prompt, style: AppType.headlineMedium),
+            child: Text(
+              _q.prompt,
+              key: _promptKey,
+              style: AppType.headlineMedium,
+            ),
           ),
         ),
         const SizedBox(height: 20),

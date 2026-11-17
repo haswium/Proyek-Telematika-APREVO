@@ -2,16 +2,30 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../models/models.dart';
+import '../services/settings.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/mascot.dart';
 import '../widgets/playful.dart';
 import 'auth_flow.dart';
+import 'guide_screen.dart';
 import 'server_settings_screen.dart';
 
-/// Tab Profil, dipakai guru dan siswa: nama, email, peran, dan tombol keluar.
-class ProfileTab extends StatelessWidget {
+/// Tab Profil, dipakai guru dan siswa: nama, email, peran, panduan, efek
+/// bunyi (siswa), dan tombol keluar.
+class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
+
+  @override
+  State<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<ProfileTab> {
+  // Status saklar ("aktif"/"nonaktif") sudah dibacakan TalkBack sendiri.
+  void _setSound(bool on) {
+    Settings.setSoundEffects(on);
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +81,33 @@ class ProfileTab extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+            ListRow(
+              icon: Icons.menu_book_outlined,
+              title: 'Panduan',
+              subtitle: 'Langkah singkat memakai setiap fitur',
+              onTap: () => openGuide(context, role),
+            ),
+            if (role == UserRole.student)
+              AppCard(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: SwitchListTile(
+                    value: Settings.soundEffects,
+                    onChanged: _setSound,
+                    title: Text(
+                      'Efek bunyi benar dan salah',
+                      style: AppType.titleMedium,
+                    ),
+                    subtitle: Text(
+                      'Bunyi pendek setelah menjawab soal. Pengumuman '
+                      'TalkBack tetap ada.',
+                      style: AppType.bodySmall,
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 20),
             const AboutAprevoRow(),
             const SizedBox(height: 8),
