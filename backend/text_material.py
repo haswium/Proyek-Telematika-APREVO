@@ -47,13 +47,19 @@ def _is_item(line: str) -> bool:
     )
 
 
+def _standalone(line: str) -> bool:
+    """Baris yang tidak pernah digabung dengan baris lain: butir daftar,
+    subjudul "## ", dan penanda [[tabel]] atau [[gambar]] (dari file .md)."""
+    return _is_item(line) or line.startswith(SUBHEADING_PREFIX) or line.startswith("[[")
+
+
 def looks_like_heading(line: str) -> bool:
     """Baris pendek tanpa titik di akhir yang bukan butir daftar."""
     text = line.strip()
     return (
         0 < len(text) < HEADING_MAX_LENGTH
         and not text.endswith(".")
-        and not _is_item(text)
+        and not _standalone(text)
     )
 
 
@@ -93,7 +99,7 @@ def _paragraphs(block: list[str]) -> list[str]:
     """Baris biasa yang berurutan digabung, butir daftar tetap sendiri."""
     out, pending = [], []
     for line in block:
-        if _is_item(line):
+        if _standalone(line):
             if pending:
                 out.append(" ".join(pending))
                 pending = []

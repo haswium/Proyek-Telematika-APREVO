@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from schemas.ai_output import AIOutput
 from dotenv import load_dotenv
+import asyncio
 import base64
 import json
 import os
@@ -25,15 +26,21 @@ import random
 import re
 import secrets
 import string
+import tempfile
+from contextlib import asynccontextmanager
+from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from uuid import uuid4
+import mutagen
 import pymupdf
 import logging
 from pdf_sections import (
+    IMAGE_MARKER_RE,
+    TABLE_MARKER_RE,
     image_keys,
     normalize_content,
     page_images,
@@ -46,6 +53,20 @@ from pdf_sections import (
 )
 from ai_client import GeminiKeyMissing, gemini_client
 from text_material import MAX_PAGES, MAX_TEXT_LENGTH, preview_of, split_pasted_text
+from ai_media import read_photo, transcribe_audio
+from converters import ConversionError, Converted, PageBuilder, require_content
+from converters.docx_material import convert_docx
+from converters.pptx_material import convert_pptx
+from converters.sheet_material import convert_csv, convert_xlsx
+from converters.text_file_material import convert_text_file
+from file_formats import (
+    MAX_AUDIO_SECONDS,
+    MAX_UPLOAD_BYTES,
+    MB,
+    UnsupportedFile,
+    check_size,
+    detect,
+)
 from ai_quiz import generate_quiz
 from PIL import UnidentifiedImageError
 from ai_image import describe_image
@@ -193,7 +214,14 @@ EXTRA_CORS_ORIGINS = [WEB_APP_ORIGIN] + [
     if origin.strip() and origin.strip() != WEB_APP_ORIGIN
 ]
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(_app):
+    # Konversi yang terputus karena restart ditandai gagal.
+    await asyncio.to_thread(mark_interrupted_conversions)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 SERVER_ERROR_DETAIL = (
     "Server mengalami kesalahan saat memproses permintaan. Coba lagi nanti, "
@@ -629,7 +657,9 @@ def get_owned_subject(subject_id, teacher_id):
 def get_owned_material(material_id, teacher_id):
     material_response = (
         supabase_admin.table("materials")
-        .select("id, title, subject_id, teacher_id, is_published, created_at, file_url")
+        # "*": kolom migrasi 008 (status konversi, audio) ikut terbaca kalau
+        # sudah ada, tanpa membuat endpoint gagal kalau migrasinya belum jalan.
+        .select("*")
         .eq("id", material_id)
         .eq("teacher_id", teacher_id)
         .maybe_single()
@@ -2047,6 +2077,486 @@ def create_pasted_material(
     }
 
 
+# ---- Unggah materi semua format ---------------------------------------------
+#
+# Satu endpoint untuk PDF, DOCX, PPTX, XLSX, CSV, TXT, MD, foto, dan audio.
+# Endpoint hanya menyimpan file ke disk sementara dan membuat materi draf
+# berstatus "processing", lalu langsung menjawab 202. Konversi berjalan di
+# latar belakang, satu per satu (CONVERSION_SEMAPHORE) supaya memori Render
+# gratis (512 MB) cukup. Status disimpan di kolom materials.conversion_*,
+# jadi tidak hilang kalau proses backend lain yang ditanya, dan materi yang
+# tertinggal "processing" saat backend menyala ulang ditandai gagal.
+#
+# Endpoint lama POST /teacher/materials/upload (PDF saja) tetap ada tanpa
+# perubahan untuk APK yang sudah terpasang.
+
+MATERIAL_FILES_BUCKET = "material-files"
+UPLOAD_DIR = Path(tempfile.gettempdir()) / "aprevo-uploads"
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+CONVERSION_SEMAPHORE = threading.Semaphore(1)
+CONVERSION_RESTARTED_DETAIL = (
+    "Server dimulai ulang saat file ini diproses. Hapus materi ini lalu unggah "
+    "ulang filenya."
+)
+CONVERSION_FAILED_DETAIL = "Server gagal memproses file ini. Coba unggah lagi."
+
+STEP_WAITING = "Menunggu giliran diproses."
+STEPS = {
+    "pdf": "Membaca PDF dan memecahnya per halaman.",
+    "docx": "Membaca dokumen Word.",
+    "pptx": "Membaca slide PowerPoint.",
+    "xlsx": "Membaca tabel Excel.",
+    "csv": "Membaca tabel CSV.",
+    "txt": "Membaca teks.",
+    "md": "Membaca teks Markdown.",
+    "image": "Membaca tulisan dan mendeskripsikan foto dengan AI.",
+    "audio": "Membuat transkrip audio dengan AI. Bisa sampai beberapa menit.",
+}
+
+
+async def save_upload(file: UploadFile) -> tuple[Path, int]:
+    """Menyimpan unggahan ke disk sedikit demi sedikit. Berhenti dan menolak
+    begitu melewati batas, tanpa pernah memuat file utuh ke memori."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    path = UPLOAD_DIR / f"{uuid4()}.upload"
+    size = 0
+    try:
+        with open(path, "wb") as out:
+            while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise UnsupportedFile(
+                        f"Ukuran file maksimal {MAX_UPLOAD_BYTES // MB} MB.", 413
+                    )
+                out.write(chunk)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path, size
+
+
+def audio_duration_seconds(path: Path) -> int:
+    try:
+        info = mutagen.File(str(path))
+    except Exception:
+        info = None
+    length = getattr(getattr(info, "info", None), "length", None)
+    if not length:
+        raise UnsupportedFile(
+            "Durasi audio tidak bisa dibaca. Simpan ulang sebagai .mp3 atau .m4a "
+            "lalu unggah lagi."
+        )
+    if length > MAX_AUDIO_SECONDS:
+        minutes = round(length / 60)
+        raise UnsupportedFile(
+            f"Audio terlalu panjang ({minutes} menit). Maksimal "
+            f"{MAX_AUDIO_SECONDS // 60} menit; potong menjadi beberapa file.",
+            413,
+        )
+    return max(1, round(length))
+
+
+def material_conversion(material) -> dict:
+    """Status konversi materi. Materi lama (sebelum migrasi 008) selalu siap."""
+    return {
+        "material_id": material["id"],
+        "source_type": material.get("source_type") or "pdf",
+        "status": material.get("conversion_status") or "ready",
+        "step": material.get("conversion_step"),
+        "error": material.get("conversion_error"),
+    }
+
+
+def set_conversion(material_id, **changes):
+    supabase_admin.table("materials").update(
+        {f"conversion_{key}": value for key, value in changes.items()}
+    ).eq("id", material_id).execute()
+
+
+@app.post("/teacher/materials/files", status_code=202)
+async def upload_material_file(
+    background_tasks: BackgroundTasks,
+    title: str = Form(...),
+    subject_id: str = Form(...),
+    file: UploadFile = File(...),
+    auth=Depends(require_teacher),
+):
+    teacher_id = auth["user_id"]
+    get_owned_subject(subject_id, teacher_id)
+    title = title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Judul materi wajib diisi.")
+    path = None
+    try:
+        path, size = await save_upload(file)
+        detected = detect(path, file.filename or "")
+        check_size(detected, size)
+        duration = audio_duration_seconds(path) if detected.kind == "audio" else None
+        if detected.kind in ("image", "audio"):
+            require_gemini()
+    except UnsupportedFile as error:
+        if path is not None:
+            path.unlink(missing_ok=True)
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from None
+    except BaseException:
+        if path is not None:
+            path.unlink(missing_ok=True)
+        raise
+    material = (
+        supabase_admin.table("materials")
+        .insert(
+            {
+                "title": title,
+                "file_url": "",
+                "teacher_id": teacher_id,
+                "subject_id": subject_id,
+                "is_published": False,
+                "source_type": detected.kind,
+                "conversion_status": "processing",
+                "conversion_step": STEP_WAITING,
+                "audio_duration_seconds": duration,
+            }
+        )
+        .execute()
+    ).data[0]
+    background_tasks.add_task(run_conversion, material, detected, path, teacher_id)
+    return {
+        "material": {**material, "section_count": 0},
+        "conversion": material_conversion(material),
+    }
+
+
+@app.get("/teacher/materials/{material_id}/conversion")
+def get_material_conversion(material_id: str, auth=Depends(require_teacher)):
+    """Dipantau aplikasi setiap beberapa detik selama status "processing"."""
+    material = get_owned_material(material_id, auth["user_id"])
+    info = material_conversion(material)
+    info["section_count"] = section_counts([material_id]).get(material_id, 0)
+    return info
+
+
+def _source_path(teacher_id, material_id, detected):
+    return f"{teacher_id}/{material_id}/source.{detected.extension}"
+
+
+def _photo_material(path: Path, title: str) -> Converted:
+    data = path.read_bytes()
+    reading = read_photo(data)
+    builder = PageBuilder(title)
+    builder.new_page(reading.title or title)
+    for line in reading.lines:
+        if line.startswith("## "):
+            builder.subheading(line[3:])
+        elif line.startswith("- "):
+            builder.item(line[2:])
+        else:
+            builder.paragraph(line)
+    # Foto aslinya ikut disimpan sebagai gambar, dengan deskripsi dari Gemini
+    # sebagai isian awal yang bisa diperbaiki guru.
+    builder.image(data, "foto", reading.description or None)
+    return builder.build()
+
+
+def _audio_material(path: Path, title: str, content_type: str) -> Converted:
+    transcript = transcribe_audio(path, content_type)
+    builder = PageBuilder(title)
+    builder.new_page("Transkrip")
+    if transcript.strip() == "(tidak ada ucapan)":
+        builder.paragraph("Rekaman ini tidak berisi ucapan.")
+    else:
+        for paragraph in re.split(r"\n\s*\n", transcript):
+            builder.paragraph(" ".join(paragraph.split()))
+    return builder.build()
+
+
+def convert_upload(material, detected, path: Path, title: str) -> Converted:
+    kind = detected.kind
+    if kind == "docx":
+        return convert_docx(path, title)
+    if kind == "pptx":
+        return convert_pptx(path, title)
+    if kind == "xlsx":
+        return convert_xlsx(path, title)
+    if kind == "csv":
+        return convert_csv(path, title)
+    if kind in ("txt", "md"):
+        return convert_text_file(path, title, markdown=kind == "md")
+    if kind == "image":
+        return _photo_material(path, title)
+    if kind == "audio":
+        return _audio_material(path, title, detected.content_type)
+    raise ConversionError(f"Jenis file {kind} belum didukung.")
+
+
+def store_converted(material_id, teacher_id, converted: Converted, uploaded_images):
+    """Gambar ke bucket material-images dan baris material_images, lalu
+    halaman ke material_sections. Path gambar dicatat di uploaded_images supaya
+    bisa dibersihkan kalau ada yang gagal."""
+    for image in converted.images:
+        image_path = f"{teacher_id}/{material_id}/images/{image.key}.{image.extension}"
+        supabase_admin.storage.from_("material-images").upload(
+            path=image_path,
+            file=image.data,
+            file_options={"content-type": image.content_type, "upsert": "true"},
+        )
+        uploaded_images.append(image_path)
+        supabase_admin.table("material_images").insert(
+            {
+                "material_id": material_id,
+                "image_key": image.key,
+                "page_number": image.page_number,
+                "image_url": image_path,
+                "description": image.description,
+                "is_decorative": image.decorative,
+                "audio_url": None,
+            }
+        ).execute()
+    rows = [
+        section.as_row(material_id, position)
+        for position, section in enumerate(converted.sections, start=1)
+    ]
+    if rows:
+        supabase_admin.table("material_sections").insert(rows).execute()
+
+
+def convert_pdf_upload(material, path: Path, teacher_id, uploaded_images):
+    """Sama seperti POST /teacher/materials/upload, tetapi di latar belakang."""
+    data = path.read_bytes()
+    try:
+        sections = split_pdf_bytes(data)
+    except Exception as error:
+        raise ConversionError("PDF tidak dapat diproses.") from error
+    store_converted(material["id"], teacher_id, Converted(sections=sections), [])
+    with pymupdf.open(stream=data, filetype="pdf") as pdf:
+        store_page_images(pdf, material["id"], teacher_id, set(), uploaded_images)
+    # PDF asli disimpan terakhir: kalau langkah sebelumnya gagal, tidak ada PDF
+    # yatim di Storage.
+    file_path = f"{teacher_id}/{uuid4()}.pdf"
+    supabase_admin.storage.from_("materials-pdf").upload(
+        path=file_path,
+        file=data,
+        file_options={"content-type": "application/pdf", "upsert": "false"},
+    )
+    supabase_admin.table("materials").update({"file_url": file_path}).eq(
+        "id", material["id"]
+    ).execute()
+    images = sum(section.image_count for section in sections)
+    return len(sections), images, []
+
+
+def conversion_summary(pages, images, notes):
+    parts = [f"Selesai: {pages} halaman"]
+    if images:
+        parts.append(f"{images} gambar")
+    text = ", ".join(parts) + "."
+    return " ".join([text, *notes])
+
+
+def conversion_failure(error) -> str:
+    if isinstance(error, (ConversionError, UnsupportedFile)):
+        return str(error)
+    if isinstance(error, GeminiKeyMissing):
+        return GEMINI_KEY_MISSING_DETAIL
+    if is_rate_limited(error):
+        return "Batas pemakaian Gemini tercapai. Hapus materi ini lalu unggah lagi beberapa menit lagi."
+    return CONVERSION_FAILED_DETAIL
+
+
+def material_still_wanted(material) -> bool:
+    """Kelas belum dihapus dan materinya masih ada."""
+    if subject_is_deleted(material.get("subject_id")):
+        return False
+    return bool(
+        (
+            supabase_admin.table("materials")
+            .select("id")
+            .eq("id", material["id"])
+            .execute()
+        ).data
+    )
+
+
+def discard_partial(material_id, uploaded_images, source_path):
+    try:
+        remove_from_storage("material-images", uploaded_images)
+        if source_path:
+            remove_from_storage(MATERIAL_FILES_BUCKET, [source_path])
+        delete_rows("material_images", "material_id", [material_id], ())
+        delete_rows("material_sections", "material_id", [material_id], ())
+    except Exception:
+        logger.exception("Gagal membersihkan sisa konversi materi %s", material_id)
+
+
+def run_conversion(material, detected, path: Path, teacher_id):
+    """Dijalankan di latar belakang setelah endpoint unggah menjawab."""
+    material_id = material["id"]
+    uploaded_images: list[str] = []
+    source_path = None
+    try:
+        with CONVERSION_SEMAPHORE:
+            if not material_still_wanted(material):
+                return
+            set_conversion(material_id, step=STEPS[detected.kind])
+            if detected.kind == "pdf":
+                pages, images, notes = convert_pdf_upload(
+                    material, path, teacher_id, uploaded_images
+                )
+            else:
+                # File asli disimpan dulu (dibaca dari disk oleh klien
+                # Storage), lalu diubah ke halaman.
+                source_path = _source_path(teacher_id, material_id, detected)
+                supabase_admin.storage.from_(MATERIAL_FILES_BUCKET).upload(
+                    path=source_path,
+                    file=str(path),
+                    file_options={"content-type": detected.content_type, "upsert": "true"},
+                )
+                supabase_admin.table("materials").update(
+                    {"source_path": source_path}
+                ).eq("id", material_id).execute()
+                converted = require_content(
+                    convert_upload(material, detected, path, material["title"])
+                )
+                store_converted(material_id, teacher_id, converted, uploaded_images)
+                pages, images, notes = (
+                    len(converted.sections),
+                    len(converted.images),
+                    converted.notes,
+                )
+            if not material_still_wanted(material):
+                # Kelas dihapus selama proses: hasilnya dibuang.
+                discard_partial(material_id, uploaded_images, source_path)
+                return
+            set_conversion(
+                material_id,
+                status="ready",
+                step=conversion_summary(pages, images, notes),
+                error=None,
+            )
+    except Exception as error:
+        if not isinstance(error, (ConversionError, UnsupportedFile)):
+            logger.exception("Konversi materi %s gagal", material_id)
+        discard_partial(material_id, uploaded_images, source_path)
+        try:
+            supabase_admin.table("materials").update(
+                {
+                    "conversion_status": "failed",
+                    "conversion_step": None,
+                    "conversion_error": conversion_failure(error),
+                    "source_path": None,
+                }
+            ).eq("id", material_id).execute()
+        except Exception:
+            logger.exception("Status gagal materi %s tidak tersimpan", material_id)
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def mark_interrupted_conversions():
+    """File sementara hilang saat backend menyala ulang, jadi konversi yang
+    tertinggal "processing" tidak bisa dilanjutkan."""
+    try:
+        supabase_admin.table("materials").update(
+            {
+                "conversion_status": "failed",
+                "conversion_step": None,
+                "conversion_error": CONVERSION_RESTARTED_DETAIL,
+            }
+        ).eq("conversion_status", "processing").execute()
+    except Exception:
+        # Migrasi 008 belum dijalankan, atau Supabase belum bisa dihubungi.
+        logger.warning("Status konversi lama tidak bisa diperiksa saat start")
+
+
+class SectionTextUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=200)
+    content: Optional[str] = Field(default=None, max_length=MAX_TEXT_LENGTH)
+
+
+def marker_lines(content: str) -> list[str]:
+    return [
+        line.strip()
+        for line in content.split("\n")
+        if IMAGE_MARKER_RE.match(line.strip()) or TABLE_MARKER_RE.match(line.strip())
+    ]
+
+
+@app.patch("/teacher/materials/{material_id}/sections/{section_id}")
+def update_section_text(
+    material_id: str,
+    section_id: str,
+    data: SectionTextUpdate,
+    auth=Depends(require_teacher),
+):
+    """Guru memperbaiki judul dan teks satu halaman (hasil foto, transkrip,
+    atau format lain). Penanda gambar dan tabel harus tetap ada dan urut sama;
+    isinya diedit di menu masing-masing."""
+    get_owned_material(material_id, auth["user_id"])
+    section = (
+        (
+            supabase_admin.table("material_sections")
+            .select("id, material_id, title, content")
+            .eq("id", section_id)
+            .eq("material_id", material_id)
+            .execute()
+        ).data
+        or [None]
+    )[0]
+    if section is None:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    changes = {}
+    if data.title is not None:
+        changes["title"] = " ".join(data.title.split())
+    if data.content is not None:
+        lines = [line.rstrip() for line in data.content.replace("\r", "").split("\n")]
+        content = normalize_content("\n".join(line for line in lines if line.strip()))
+        if marker_lines(content) != marker_lines(section.get("content") or ""):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Gambar dan tabel di halaman ini tidak boleh dihapus atau "
+                    "dipindah dari editor teks. Kembalikan barisnya, lalu simpan lagi."
+                ),
+            )
+        changes["content"] = content
+    if not changes:
+        raise HTTPException(status_code=400, detail="Tidak ada perubahan")
+    updated = (
+        supabase_admin.table("material_sections")
+        .update(changes)
+        .eq("id", section_id)
+        .execute()
+    ).data[0]
+    return {
+        "section": {
+            "id": updated["id"],
+            "title": updated["title"],
+            "content": updated["content"],
+        }
+    }
+
+
+AUDIO_URL_SECONDS = 3600
+
+
+@app.get("/materials/{material_id}/audio")
+def get_material_audio(material_id: str, auth=Depends(get_current_profile)):
+    """Alamat sementara (1 jam) untuk memutar audio asli materi audio."""
+    material = get_readable_material(material_id, auth)
+    if material.get("source_type") != "audio" or not material.get("source_path"):
+        raise HTTPException(status_code=404, detail="Materi ini tidak punya audio")
+    signed = supabase_admin.storage.from_(MATERIAL_FILES_BUCKET).create_signed_url(
+        material["source_path"], AUDIO_URL_SECONDS
+    )
+    url = signed.get("signedURL") or signed.get("signedUrl")
+    if not url:
+        raise HTTPException(status_code=502, detail="Audio belum bisa diputar. Coba lagi")
+    return {
+        "url": url,
+        "expires_in": AUDIO_URL_SECONDS,
+        "duration_seconds": material.get("audio_duration_seconds"),
+    }
+
+
 ACCESS_CODE_LETTERS = string.ascii_uppercase
 ACCESS_CODE_RE = re.compile(r"^[A-Z]{6}$")
 
@@ -2254,7 +2764,8 @@ def list_teacher_subject_materials(subject_id: str, auth=Depends(require_teacher
     subject = get_owned_subject(subject_id, auth["user_id"])
     materials_response = (
         supabase_admin.table("materials")
-        .select("id, title, is_published, created_at")
+        # "*" supaya kolom migrasi 008 terbaca kalau sudah ada.
+        .select("*")
         .eq("subject_id", subject_id)
         .order("created_at")
         .execute()
@@ -2267,7 +2778,12 @@ def list_teacher_subject_materials(subject_id: str, auth=Depends(require_teacher
         "subject": subject,
         "materials": [
             {
-                **material,
+                **{
+                    key: material.get(key)
+                    for key in ("id", "title", "is_published", "created_at")
+                },
+                "source_type": material.get("source_type") or "pdf",
+                "conversion": material_conversion(material),
                 "section_count": counts.get(material["id"], 0),
                 "hidden_image_count": (
                     hidden_image_count(material["id"]) if material["is_published"] else 0
@@ -2286,11 +2802,22 @@ def list_teacher_subject_materials(subject_id: str, auth=Depends(require_teacher
 def update_material(
     material_id: str, data: MaterialUpdateRequest, auth=Depends(require_teacher)
 ):
-    get_owned_material(material_id, auth["user_id"])
+    material = get_owned_material(material_id, auth["user_id"])
     changes = data.model_dump(exclude_none=True)
     if not changes:
         raise HTTPException(status_code=400, detail="Tidak ada perubahan")
     if changes.get("is_published"):
+        status = material.get("conversion_status") or "ready"
+        if status != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Materi belum bisa diterbitkan: file masih diproses."
+                    if status == "processing"
+                    else "Materi belum bisa diterbitkan: file gagal diproses. "
+                    "Hapus materi ini lalu unggah ulang."
+                ),
+            )
         pages = undescribed_image_pages(material_id)
         if pages:
             known = sorted({page for page in pages if page})
@@ -3328,7 +3855,7 @@ def delete_rows(table, column, values, children):
 def subject_material_rows(subject_id):
     return (
         supabase_admin.table("materials")
-        .select("id, file_url")
+        .select("*")
         .eq("subject_id", subject_id)
         .execute()
     ).data or []
@@ -3425,6 +3952,10 @@ def delete_subject(subject_id: str, auth=Depends(require_teacher)):
         remove_from_storage(
             "materials-pdf",
             [row["file_url"] for row in materials if row.get("file_url")],
+        )
+        remove_from_storage(
+            MATERIAL_FILES_BUCKET,
+            [row["source_path"] for row in materials if row.get("source_path")],
         )
         delete_rows("material_images", "material_id", material_ids, ())
         delete_rows("materials", "id", material_ids, ())
@@ -3991,7 +4522,7 @@ def get_readable_material(material_id, auth):
     """Materi yang boleh dibaca: milik guru ini, atau terbit dan bisa diakses siswa."""
     material_response = (
         supabase_admin.table("materials")
-        .select("id, title, subject_id, teacher_id, is_published")
+        .select("*")
         .eq("id", material_id)
         .maybe_single()
         .execute()
@@ -4034,8 +4565,17 @@ def get_material_sections(material_id: str, auth=Depends(get_current_profile)):
     # Materi lama dan teks ketikan guru bisa masih memuat tanda butir.
     for section in sections:
         section["content"] = normalize_content(section.get("content") or "")
+    source_type = material.get("source_type") or "pdf"
     return {
-        "material": {"id": material["id"], "title": material["title"]},
+        "material": {
+            "id": material["id"],
+            "title": material["title"],
+            "source_type": source_type,
+            # Layar baca menampilkan pemutar audio kalau true (lihat
+            # GET /materials/{id}/audio).
+            "has_audio": source_type == "audio" and bool(material.get("source_path")),
+            "audio_duration_seconds": material.get("audio_duration_seconds"),
+        },
         "sections": sections,
         # Deskripsi untuk penanda [[gambar:...]] di isi halaman.
         "images": [public_image(row) for row in material_image_rows(material_id)],

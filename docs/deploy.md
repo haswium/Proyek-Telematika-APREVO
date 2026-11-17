@@ -10,6 +10,10 @@ Repo ini publik. Jangan menulis kunci, kata sandi, atau keystore di repo.
 - Kode yang mau dipakai sudah ada di branch `main` di GitHub. Render membaca dari
   sana, bukan dari laptop.
 - Semua migrasi di `backend/migrations/` sudah dijalankan di Supabase.
+  `008_format_materi.sql` juga membuat bucket Storage `material-files`
+  (private) beserta policy-nya, jadi bucket itu tidak perlu dibuat manual.
+  Jalankan migrasi ini **sebelum** backend yang memuat unggah semua format
+  di-deploy; tanpa kolom barunya, unggah lewat tombol "Unggah materi" gagal.
 
 ## 2. Buat akun Render dan sambungkan repo
 
@@ -47,6 +51,7 @@ Opsional, tambahkan sendiri kalau perlu:
 | Variabel | Kegunaan |
 |---|---|
 | `CORS_ORIGINS` | Origin web tambahan, dipisah koma. Versi web resmi (`https://haswium.github.io`) sudah diizinkan di kode, jadi biasanya tidak perlu diisi. Lihat bagian [Versi web](#versi-web-github-pages) |
+| `GEMINI_MODEL` | Model Gemini untuk semua fitur AI (deskripsi gambar, soal, foto, transkrip audio). Bawaan `gemini-3.5-flash-lite` |
 | `GEMINI_DELAY_SECONDS` | Jeda antar panggilan Gemini, bawaan 4 detik |
 | `GEMINI_RATE_LIMIT_PAUSE_SECONDS` | Jeda setelah kena batas Gemini, bawaan 30 detik |
 
