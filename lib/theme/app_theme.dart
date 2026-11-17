@@ -41,6 +41,10 @@ class AppColors {
 /// ditemukan dengan explore-by-touch TalkBack.
 const double kTouchTarget = 56;
 
+/// Lebar maksimum kolom isi dan menu bawah. Di HP isinya selebar layar; di
+/// browser laptop isinya di tengah dengan lebar baca yang nyaman.
+const double kContentMaxWidth = 720;
+
 /// Gaya teks APREVO. Sengaja TANPA warna: warnanya mengikuti tempat teks
 /// itu berada, putih di latar ungu dan ungu tua di dalam kartu putih.
 ///

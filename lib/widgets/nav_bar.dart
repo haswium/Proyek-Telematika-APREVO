@@ -37,17 +37,25 @@ class AprevoNavBar extends StatelessWidget {
         border: Border(top: BorderSide(color: AppColors.violet, width: 2)),
       ),
       // Warna, huruf, dan pil kuning diatur di navigationBarTheme (app_theme).
-      child: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: onChanged,
-        destinations: [
-          for (final item in items)
-            NavigationDestination(
-              icon: Icon(item.icon),
-              selectedIcon: Icon(item.selectedIcon),
-              label: item.label,
-            ),
-        ],
+      // Di layar lebar (browser di laptop) menu tetap sejajar dengan kolom isi
+      // PurpleScaffold, tidak tersebar ke ujung layar.
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: kContentMaxWidth),
+          child: NavigationBar(
+            selectedIndex: index,
+            onDestinationSelected: onChanged,
+            destinations: [
+              for (final item in items)
+                NavigationDestination(
+                  icon: Icon(item.icon),
+                  selectedIcon: Icon(item.selectedIcon),
+                  label: item.label,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

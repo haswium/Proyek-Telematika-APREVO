@@ -181,10 +181,15 @@ LOCAL_ORIGIN_REGEX = (
     r"|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}"
     r"|192\.168(\.\d{1,3}){2})(:\d+)?$"
 )
-EXTRA_CORS_ORIGINS = [
+# Versi web resmi di GitHub Pages (lihat .github/workflows/web.yml). Origin
+# hanya skema + host, tanpa path repo. Origin lain bisa ditambah lewat
+# CORS_ORIGINS. Login memakai token Bearer, bukan cookie, jadi origin yang
+# diizinkan tidak bisa memakai sesi orang lain.
+WEB_APP_ORIGIN = "https://haswium.github.io"
+EXTRA_CORS_ORIGINS = [WEB_APP_ORIGIN] + [
     origin.strip()
     for origin in os.getenv("CORS_ORIGINS", "").split(",")
-    if origin.strip()
+    if origin.strip() and origin.strip() != WEB_APP_ORIGIN
 ]
 
 app = FastAPI()
@@ -4245,7 +4250,9 @@ def create_attendance_session(
         )
         .execute()
     ).data[0]
-    return {"session": public_session(row, now)}
+    # server_time: aplikasi membandingkan waktu tutup dengan jam server, bukan
+    # jam HP, saat mengumumkan "ditutup pukul ...".
+    return {"server_time": now.isoformat(), "session": public_session(row, now)}
 
 
 @app.get("/teacher/subjects/{subject_id}/attendance/sessions")

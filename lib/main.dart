@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/semantics.dart' show SemanticsBinding;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,9 +10,14 @@ import 'screens/splash_screen.dart';
 import 'services/settings.dart';
 import 'theme/app_theme.dart';
 import 'widgets/connecting_banner.dart';
+import 'widgets/focus_ring.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Di web, Flutter baru membuat pohon aksesibilitas setelah tombol tersembunyi
+  // "Enable accessibility" ditekan. Dinyalakan sejak awal supaya screen reader
+  // (NVDA, TalkBack di Chrome) langsung membaca semua label.
+  if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
   // Alamat server dan status layar sambutan yang tersimpan di perangkat.
   await Settings.load();
   if (SupabaseConfig.isConfigured) {
@@ -38,7 +45,8 @@ class AprevoApp extends StatelessWidget {
       locale: const Locale('id', 'ID'),
       supportedLocales: const [Locale('id', 'ID')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      builder: (context, child) => ConnectingBanner(child: child!),
+      builder: (context, child) =>
+          KeyboardFocusRing(child: ConnectingBanner(child: child!)),
       home: const SplashScreen(),
     );
   }

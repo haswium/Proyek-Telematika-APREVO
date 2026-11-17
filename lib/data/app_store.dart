@@ -287,7 +287,9 @@ class AppStore extends ChangeNotifier {
   /// Membuka sesi presensi. Isi [preset] untuk pilihan cepat, atau
   /// [closesAt] (dan boleh [opensAt]) untuk waktu sendiri. Tanpa [opensAt],
   /// sesi dibuka sekarang menurut jam server.
-  Future<AttendanceSession> createAttendanceSession(
+  /// Sesi baru beserta jam server saat sesi dibuat.
+  Future<({AttendanceSession session, DateTime? serverTime})>
+  createAttendanceSession(
     String subjectId, {
     required String title,
     ClosePreset? preset,
@@ -304,7 +306,12 @@ class AppStore extends ChangeNotifier {
       },
     );
     notifyListeners();
-    return AttendanceSession.fromJson(data['session'] as Map<String, dynamic>);
+    return (
+      session: AttendanceSession.fromJson(
+        data['session'] as Map<String, dynamic>,
+      ),
+      serverTime: parseTime(data['server_time']),
+    );
   }
 
   Future<AttendanceSessionDetail> attendanceSession(String sessionId) async =>

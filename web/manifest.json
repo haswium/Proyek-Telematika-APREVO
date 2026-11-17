@@ -1,11 +1,11 @@
 {
-    "name": "aprevo",
-    "short_name": "aprevo",
+    "name": "APREVO",
+    "short_name": "APREVO",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#5B34E0",
+    "theme_color": "#5B34E0",
+    "description": "APREVO, aplikasi belajar untuk siswa tunanetra.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

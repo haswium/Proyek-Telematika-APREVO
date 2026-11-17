@@ -422,12 +422,13 @@ class PurpleScaffold extends StatelessWidget {
             data: aprevoOnPurpleTheme,
             child: DefaultTextStyle.merge(
               style: const TextStyle(color: AppColors.white),
-              // Di layar lebar (browser, tablet) isi tetap selebar HP dan
-              // berada di tengah, tidak melar ke seluruh layar.
+              // Di layar lebar (browser di laptop, tablet) isi berada di
+              // tengah dengan lebar baca yang nyaman, tidak melar ke seluruh
+              // layar.
               child: Align(
                 alignment: Alignment.topCenter,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
+                  constraints: const BoxConstraints(maxWidth: kContentMaxWidth),
                   child: body,
                 ),
               ),
