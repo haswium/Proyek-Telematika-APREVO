@@ -81,3 +81,37 @@ def test_file_rahasia_diabaikan_git():
     assert ".env" in backend.splitlines()
     for pattern in ("key.properties", "*.jks", "*.keystore"):
         assert pattern in root.splitlines(), pattern
+
+
+def preflight(client, origin):
+    return client.options(
+        "/teacher/subjects",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+
+
+def test_versi_web_github_pages_diizinkan_cors(client):
+    response = preflight(client, "https://haswium.github.io")
+    assert response.status_code == 200
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "https://haswium.github.io"
+    )
+
+
+def test_origin_lain_tidak_diizinkan_cors(client):
+    response = preflight(client, "https://situs-lain.example")
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_workflow_web_memakai_path_repo_dan_secret():
+    text = (ROOT / ".github" / "workflows" / "web.yml").read_text(encoding="utf-8")
+    assert "--base-href" in text
+    assert "secrets.SUPABASE_URL" in text
+    assert "secrets.SUPABASE_ANON_KEY" in text
+    # Kunci service_role tidak boleh ikut ke aplikasi web.
+    assert "SERVICE" not in text

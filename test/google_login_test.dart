@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show AuthException, User;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthException, User;
 
 import 'package:aprevo/data/app_store.dart';
 import 'package:aprevo/models/models.dart';
@@ -335,9 +336,8 @@ void main() {
   });
 
   test('alamat kembali sama dengan intent-filter', () {
-    final manifest = File(
-      'android/app/src/main/AndroidManifest.xml',
-    ).readAsStringSync();
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
     final redirect = Uri.parse(kAuthRedirectUrl);
 
     expect(
@@ -349,4 +349,22 @@ void main() {
     );
     expect(manifest, contains('android:name="flutter_deeplinking_enabled"'));
   });
+
+  test(
+    'alamat kembali versi web adalah halaman itu tanpa query dan fragmen',
+    () {
+      expect(
+        webRedirectUrl(
+          Uri.parse(
+            'https://haswium.github.io/Proyek-Telematika-APREVO/?code=abc#/',
+          ),
+        ),
+        'https://haswium.github.io/Proyek-Telematika-APREVO/',
+      );
+      expect(
+        webRedirectUrl(Uri.parse('http://localhost:5000/#/masuk')),
+        'http://localhost:5000/',
+      );
+    },
+  );
 }

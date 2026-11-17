@@ -1,9 +1,26 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Alamat kembali ke aplikasi setelah login Google. Harus sama dengan
+/// Alamat kembali ke aplikasi Android setelah login Google. Harus sama dengan
 /// intent-filter di `AndroidManifest.xml` dan Redirect URLs di dashboard Supabase
 /// (lihat `docs/deploy.md`).
 const String kAuthRedirectUrl = 'id.aprevo.app://login-callback';
+
+/// Alamat kembali untuk versi web: halaman yang sedang dibuka, tanpa query dan
+/// fragmen. Contoh `https://haswium.github.io/Proyek-Telematika-APREVO/#/`
+/// menjadi `https://haswium.github.io/Proyek-Telematika-APREVO/`. Setelah
+/// kembali, `Supabase.initialize` menukar kode login sebelum aplikasi tampil,
+/// jadi layar pembuka langsung menemukan sesinya.
+String webRedirectUrl(Uri page) => Uri(
+  scheme: page.scheme,
+  host: page.host,
+  port: page.port,
+  path: page.path,
+).toString();
+
+/// Alamat kembali sesuai platform.
+String authRedirectUrl() =>
+    kIsWeb ? webRedirectUrl(Uri.base) : kAuthRedirectUrl;
 
 /// Login Google lewat Supabase. Diganti tiruan di tes.
 class GoogleAuth {
@@ -12,8 +29,10 @@ class GoogleAuth {
   GoTrueClient get _auth => Supabase.instance.client.auth;
 
   /// Membuka halaman login Google. `false` kalau browser tidak bisa dibuka.
-  Future<bool> open() =>
-      _auth.signInWithOAuth(OAuthProvider.google, redirectTo: kAuthRedirectUrl);
+  Future<bool> open() => _auth.signInWithOAuth(
+    OAuthProvider.google,
+    redirectTo: authRedirectUrl(),
+  );
 
   /// Akun yang berhasil masuk. Kegagalan dari Google datang sebagai error.
   Stream<User> get signedIn => _auth.onAuthStateChange

@@ -1,0 +1,99 @@
+# Versi web APREVO di GitHub Pages:
+# https://haswium.github.io/Proyek-Telematika-APREVO/
+# Dibuild ulang setiap ada push ke main. Langkah persiapan (secret dan
+# pengaturan Pages) ada di docs/deploy.md, bagian "Versi web".
+name: Web (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lib/**"
+      - "web/**"
+      - "assets/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Hanya satu deploy berjalan. Build baru menunggu, tidak membatalkan yang lama.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Periksa secret Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        # Nilainya tidak pernah dicetak. Situs ini publik, jadi hanya kunci anon
+        # yang boleh masuk; kunci dengan peran lain ditolak.
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, sys
+          url = os.environ.get("SUPABASE_URL", "").strip()
+          key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+          problems = []
+          if not url.startswith("https://"):
+              problems.append("SUPABASE_URL kosong atau tidak diawali https://")
+          if not key.startswith("eyJ"):
+              problems.append("SUPABASE_ANON_KEY kosong atau bukan kunci anon (harus diawali eyJ)")
+          else:
+              try:
+                  part = key.split(".")[1]
+                  part += "=" * (-len(part) % 4)
+                  role = json.loads(base64.urlsafe_b64decode(part)).get("role")
+              except Exception:
+                  role = None
+              if role != "anon":
+                  problems.append("SUPABASE_ANON_KEY bukan kunci dengan peran anon")
+          for problem in problems:
+              print(f"::error::{problem}")
+          sys.exit(1 if problems else 0)
+          PY
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Build web
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        # GitHub Pages menyajikan situs di /<nama-repo>/.
+        run: >
+          flutter build web --release
+          --base-href "/${{ github.event.repository.name }}/"
+          --dart-define=SUPABASE_URL="$SUPABASE_URL"
+          --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
