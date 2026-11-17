@@ -235,7 +235,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 16.1 | Buka satu kelas | Nama kelas sebagai judul, kode akses dieja, tombol "Unggah Materi PDF", lalu "Daftar materi (jumlah)" | | |
+| 16.1 | Buka satu kelas | Nama kelas sebagai judul, kode akses dieja, tombol "Unggah materi" dan "Tempel teks", lalu "Daftar materi (jumlah)" | | |
 | 16.2 | Kelas tanpa materi | "Belum ada materi di kelas ini." | | |
 | 16.3 | Kartu materi | Status (Publik/Draf), judul sebagai judul, tombol "Kelola materi [judul]" | | |
 | 16.4 | Buka "Kelola materi" | Pilihan jenis soal terbaca, yang aktif terbaca "dipilih" | | |
@@ -495,6 +495,44 @@ Siapkan teks dari Word atau situs dengan beberapa judul bagian tanpa tanda `#`.
 | 31.7 | Fokus ke langkah | "Langkah 1 dari 3: ..." satu fokus per langkah | | |
 | 31.8 | Keluar lalu masuk lagi dengan akun yang sama | Panduan tidak ditawarkan lagi. Tetap bisa dibuka dari Profil > Panduan | | |
 | 31.9 | Laptop dengan NVDA: buka Panduan, tekan H | Pindah antarjudul fitur | | |
+
+## 32. Unggah materi semua format (guru)
+
+Siapkan satu file kecil per format: PDF, Word (.docx), PowerPoint (.pptx),
+Excel (.xlsx), CSV, .txt, .md, foto halaman buku (.jpg), dan rekaman suara
+pendek (.m4a atau .mp3, kurang dari 1 menit). Siapkan juga satu file .doc lama.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 32.1 | Halaman kelas, Unggah materi | Judul "Unggah materi". Teks bantuan menyebut semua format dan batas ukurannya | | |
+| 32.2 | Pilih file materi | Pemilih file Android menampilkan file semua format di atas | | |
+| 32.3 | Pilih file .doc lama | "Format .doc lama tidak didukung. Simpan ulang ... sebagai .docx lalu unggah lagi." | | |
+| 32.4 | Pilih file .docx | "File dipilih: [nama], [ukuran]". Baris file dibaca "File Word: ..." | | |
+| 32.5 | Isi judul, Unggah materi | Berurutan, masing-masing sekali: "Mengunggah ...", "Menunggu giliran diproses." atau "Membaca dokumen Word.", lalu "Selesai: N halaman ..." | | |
+| 32.6 | Setelah selesai | Fokus pindah ke pesan selesai. Tombol "Lanjut periksa materi, jadwal, dan soal" | | |
+| 32.7 | Buka materi Word sebagai siswa (setelah terbit) | Heading 1 menjadi halaman baru, heading 2 dibaca sebagai judul, tabel dibaca per baris dengan nama kolom | | |
+| 32.8 | Ulangi untuk PowerPoint | Satu slide satu halaman, judul slide sebagai judul halaman, catatan pembicara di akhir dengan judul "Catatan pembicara" | | |
+| 32.9 | Ulangi untuk Excel dan CSV | Satu sheet satu halaman. Baris dibaca "Baris 1. Nama: Andi. Nilai: 80." | | |
+| 32.10 | Ulangi untuk foto halaman buku | "Membaca tulisan dan mendeskripsikan foto dengan AI." Hasil: teks dari foto, lalu "Gambar: [deskripsi]" | | |
+| 32.11 | Ulangi untuk audio | "Membuat transkrip audio dengan AI. Bisa sampai beberapa menit." Tidak ada pengumuman berulang selama menunggu | | |
+| 32.12 | Kembali ke halaman kelas selama file diproses | Kartu materi "Sedang diproses" dengan langkahnya. Status berganti sendiri tanpa ditekan | | |
+| 32.13 | Unggah file .docx yang rusak (misalnya file .zip yang diganti nama) | Pesan gagal dibacakan, fokus pindah ke pesan itu, tombol "Coba unggah lagi". Materi gagal tidak tertinggal di daftar | | |
+| 32.14 | Audio lebih dari 15 menit | Ditolak dengan pesan durasi maksimal 15 menit | | |
+
+## 33. Pemutar audio dan edit teks halaman
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 33.1 | Siswa membuka materi audio, halaman Transkrip | Kartu "Audio materi" di atas transkrip. Audio tidak diputar sendiri | | |
+| 33.2 | Fokus ke posisi | "Posisi audio: 0 detik dari [durasi]" | | |
+| 33.3 | Ketuk dua kali Putar audio | Audio terdengar. Tombol berganti menjadi "Jeda audio" | | |
+| 33.4 | Ketuk dua kali Mundur 10 detik dan Maju 10 detik | Setiap kali terdengar "Posisi ... dari ...". Suara TalkBack tidak tertutup audio terlalu lama | | |
+| 33.5 | Ketuk dua kali Jeda audio | Audio berhenti, terdengar "Audio dijeda di ..." | | |
+| 33.6 | Pindah ke halaman lain lalu kembali | Pemutar tetap ada, tidak ada gestur geser | | |
+| 33.7 | Biarkan audio sampai habis | "Audio selesai." | | |
+| 33.8 | Guru: Kelola materi, Ubah teks halaman, pilih halaman | Kolom judul dan teks berisi teks halaman. Gambar dan tabel tampil sebagai baris [Gambar 1] dan [Tabel 1], dengan keterangan yang dibacakan | | |
+| 33.9 | Perbaiki satu kata, Simpan halaman | Kembali ke daftar, terdengar "Halaman 1 disimpan." Siswa membaca teks yang sudah diperbaiki | | |
+| 33.10 | Hapus baris [Gambar 1], Simpan halaman | Pesan error dibacakan, halaman tidak tersimpan | | |
 
 ## Tanpa TalkBack
 
