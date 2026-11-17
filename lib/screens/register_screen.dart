@@ -205,8 +205,11 @@ class _RoleCard extends StatelessWidget {
       onTap: onTap,
       excludeSemantics: true,
       child: Bouncy(
-        child: GestureDetector(
+        // InkWell, bukan GestureDetector, supaya bisa dicapai dengan Tab dan
+        // dipilih dengan Enter atau Spasi di versi web.
+        child: InkWell(
           onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             constraints: const BoxConstraints(minHeight: 64),
