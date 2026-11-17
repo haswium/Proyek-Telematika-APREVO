@@ -239,7 +239,12 @@ void main() {
     testWidgets('pilihan cepat dikirim sebagai close_preset', (tester) async {
       tallScreen(tester);
       final fake = FakeServer({
-        create: (_) => {'session': _session('p4', 'Pertemuan 4')},
+        // Jam server di hari yang sama dengan waktu tutup. Jam HP (tanggal
+        // tes dijalankan) tidak boleh dipakai.
+        create: (_) => {
+          'server_time': isoWithOffset(DateTime(2026, 11, 10, 9, 30)),
+          'session': _session('p4', 'Pertemuan 4'),
+        },
       })..install();
       await tester.pumpWidget(
         testApp(

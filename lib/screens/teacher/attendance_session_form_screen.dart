@@ -137,7 +137,7 @@ class _AttendanceSessionFormScreenState
     });
     announce('Membuka sesi $title.');
     try {
-      final session = await store.createAttendanceSession(
+      final (:session, :serverTime) = await store.createAttendanceSession(
         widget.subject.id,
         title: title,
         preset: _preset,
@@ -148,7 +148,7 @@ class _AttendanceSessionFormScreenState
       announce(
         session.state == SessionState.open
             ? 'Sesi ${session.title} dibuka, '
-                  '${closingPhrase(session.closesAt, DateTime.now())}.'
+                  '${closingPhrase(session.closesAt, serverTime)}.'
             : 'Sesi ${session.title} disimpan. ${session.stateText(null)}.',
       );
       Navigator.pop(context, true);

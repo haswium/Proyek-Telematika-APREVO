@@ -4245,7 +4245,9 @@ def create_attendance_session(
         )
         .execute()
     ).data[0]
-    return {"session": public_session(row, now)}
+    # server_time: aplikasi membandingkan waktu tutup dengan jam server, bukan
+    # jam HP, saat mengumumkan "ditutup pukul ...".
+    return {"server_time": now.isoformat(), "session": public_session(row, now)}
 
 
 @app.get("/teacher/subjects/{subject_id}/attendance/sessions")

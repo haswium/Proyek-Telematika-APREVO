@@ -89,6 +89,15 @@ def test_pilihan_cepat_dihitung_dari_jam_server(client, kelas, preset, minutes):
     assert session["seconds_until_open"] is None
 
 
+def test_buka_sesi_menyertakan_jam_server(client, kelas):
+    kelas.as_teacher()
+    response = client.post(
+        f"/teacher/subjects/{kelas.id}/attendance/sessions",
+        json={"title": "Pertemuan 3", "close_preset": "30m"},
+    )
+    assert datetime.fromisoformat(response.json()["server_time"]) == NOW
+
+
 def test_akhir_hari_memakai_zona_wib(client, kelas, clock):
     # 23.30 WIB, 9 November.
     clock.now = datetime(2026, 11, 9, 16, 30, tzinfo=timezone.utc)

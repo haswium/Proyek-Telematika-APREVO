@@ -573,7 +573,8 @@ menurut jam server), dan tepat satu dari:
 { "title": "Pertemuan 3", "close_preset": "30m" }
 ```
 
-Respons: `{"session": {...}}`. Error: `404` kelas; `422` judul kosong, waktu
+Respons: `{"server_time", "session": {...}}`. `server_time` dipakai aplikasi
+untuk pengumuman "ditutup pukul ...", bukan jam HP. Error: `404` kelas; `422` judul kosong, waktu
 tutup tidak diisi atau diisi dua-duanya ("Pilih waktu tutup: pilihan cepat atau
 atur sendiri"), "Waktu tutup harus setelah waktu buka", "Waktu tutup sudah lewat.
 Pilih waktu lain".
