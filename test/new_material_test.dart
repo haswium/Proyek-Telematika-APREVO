@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aprevo/models/material_file.dart';
 import 'package:aprevo/models/models.dart';
 import 'package:aprevo/screens/teacher/new_material_screen.dart';
 import 'package:aprevo/widgets/common.dart';
@@ -12,130 +13,231 @@ const int _mb = 1024 * 1024;
 
 final _subject = Subject(id: 'ipa', name: 'IPA Kelas 5', accessCode: 'KXPRTA');
 
-PickedPdf _pdf(String name, int size, {bool failRead = false}) => PickedPdf(
+PickedFile _file(String name, int size, {bool failRead = false}) => PickedFile(
   name: name,
   size: size,
   readBytes: () async {
     if (failRead) throw Exception('tidak bisa dibaca');
-    return Uint8List.fromList([37, 80, 68, 70]);
+    return Uint8List.fromList([80, 75, 3, 4]);
   },
 );
 
-final _uploadButton = find.widgetWithText(PrimaryButton, 'Unggah PDF');
+final _uploadButton = find.widgetWithText(PrimaryButton, 'Unggah materi');
+
+Map<String, dynamic> _conversion(
+  String status, {
+  String? step,
+  String? error,
+}) => {
+  'material_id': 'm1',
+  'source_type': 'docx',
+  'status': status,
+  'step': step,
+  'error': error,
+};
 
 Map<String, dynamic> _uploaded() => {
-  'message': 'PDF berhasil diunggah dan diekstraksi.',
   'material': {
     'id': 'm1',
     'title': 'Gaya dan Gerak',
     'subject_id': 'ipa',
     'is_published': false,
+    'section_count': 0,
   },
-  'sections': [
-    {
-      'id': 's1',
-      'position': 1,
-      'title': 'Pendahuluan',
-      'page_start': 1,
-      'page_end': 1,
-    },
-    {
-      'id': 's2',
-      'position': 2,
-      'title': 'Gaya Gesek',
-      'page_start': 2,
-      'page_end': 3,
-    },
-  ],
+  'conversion': _conversion('processing', step: 'Menunggu giliran diproses.'),
 };
 
+Widget _screen(Future<PickedFile?> Function() pick) => testApp(
+  NewMaterialScreen(
+    subject: _subject,
+    pickFile: pick,
+    pollInterval: const Duration(milliseconds: 10),
+  ),
+);
+
 void main() {
-  group('pemeriksaan PDF', () {
+  group('pemeriksaan file sebelum unggah', () {
     test('ukuran dibulatkan ke atas', () {
       expect(fileSizeLabel(850 * 1024), '850 KB');
       expect(fileSizeLabel(2 * _mb), '2,0 MB');
       expect(fileSizeLabel(20 * _mb + 40 * 1024), '20,1 MB');
     });
 
-    test('hanya PDF sampai 20 MB', () {
-      expect(pdfProblem('Modul.PDF', 20 * _mb), isNull);
-      expect(pdfProblem('modul.docx', 1024), contains('bukan PDF'));
+    test('semua format yang didukung diterima sampai batasnya', () {
+      for (final name in [
+        'Modul.PDF',
+        'a.docx',
+        'a.pptx',
+        'a.xlsx',
+        'a.csv',
+        'a.txt',
+        'a.md',
+        'foto.JPG',
+        'a.jpeg',
+        'a.png',
+        'a.mp3',
+        'a.m4a',
+        'a.wav',
+        'a.ogg',
+      ]) {
+        expect(uploadProblem(name, 1024), isNull, reason: name);
+      }
+      expect(uploadProblem('a.mp3', 25 * _mb), isNull);
       expect(
-        pdfProblem('besar.pdf', 25 * _mb),
-        'File besar.pdf terlalu besar, 25,0 MB. Batas ukuran PDF 20 MB. '
+        uploadProblem('besar.xlsx', 11 * _mb),
+        'File besar.xlsx terlalu besar, 11,0 MB. Batas ukuran Excel 10 MB. '
         'Pilih file yang lebih kecil.',
       );
-      expect(pdfProblem('modul.pdf', null), contains('tidak bisa dibaca'));
+      expect(
+        uploadProblem('a.wav', 26 * _mb),
+        contains('Batas ukuran audio 25 MB'),
+      );
+      expect(uploadProblem('modul.pdf', null), contains('tidak bisa dibaca'));
+    });
+
+    test('format lama: petunjuk menyimpan ulang', () {
+      expect(
+        uploadProblem('lama.doc', 1024),
+        'Format .doc lama tidak didukung. Simpan ulang lama.doc sebagai .docx '
+        'lalu unggah lagi.',
+      );
+      expect(uploadProblem('lama.ppt', 1024), contains('sebagai .pptx'));
+      expect(uploadProblem('lama.xls', 1024), contains('sebagai .xlsx'));
+      expect(uploadProblem('film.mp4', 1024), contains('tidak didukung'));
+    });
+
+    test('content type unggahan sesuai format', () {
+      expect(contentTypeFor('a.pdf'), 'application/pdf');
+      expect(contentTypeFor('a.m4a'), 'audio/mp4');
+      expect(
+        contentTypeFor('a.docx'),
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      );
+      expect(contentTypeFor('a.xyz'), 'application/octet-stream');
     });
   });
 
-  testWidgets('unggah PDF: file besar ditolak, lalu unggah berhasil', (
+  testWidgets('teks bantuan menyebut format yang didukung', (tester) async {
+    FakeServer({}).install();
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(_screen(() async => null));
+    expect(find.bySemanticsLabel(kUploadHelp), findsOneWidget);
+    for (final format in [
+      'PDF',
+      'Word',
+      'PowerPoint',
+      'Excel',
+      'CSV',
+      '.mp3',
+    ]) {
+      expect(kUploadHelp, contains(format));
+    }
+    handle.dispose();
+  });
+
+  testWidgets('unggah DOCX: status konversi diumumkan sampai selesai', (
+    tester,
+  ) async {
+    tallScreen(tester);
+    var checks = 0;
+    final server = FakeServer({
+      'POST /teacher/materials/files': (_) => _uploaded(),
+      'GET /teacher/materials/m1/conversion': (_) {
+        checks++;
+        if (checks == 1) {
+          return _conversion('processing', step: 'Membaca dokumen Word.');
+        }
+        if (checks == 2) {
+          // Langkah sama: tidak diumumkan ulang.
+          return _conversion('processing', step: 'Membaca dokumen Word.');
+        }
+        return _conversion('ready', step: 'Selesai: 3 halaman, 1 gambar.');
+      },
+      'POST /teacher/materials/m1/generate-image-description': (_) => {
+        'running': true,
+        'total': 1,
+        'done': 0,
+      },
+    }, delay: const Duration(milliseconds: 20))..install();
+    final handle = tester.ensureSemantics();
+    var next = _file('besar.docx', 25 * _mb);
+    await tester.pumpWidget(_screen(() async => next));
+
+    await tapAndPump(tester, find.text('Pilih file materi'));
+    expectLive(
+      tester,
+      'File besar.docx terlalu besar, 25,0 MB. Batas ukuran Word 20 MB. '
+      'Pilih file yang lebih kecil.',
+    );
+
+    next = _file('gaya.docx', 2 * _mb);
+    await tapAndPump(tester, find.text('Pilih file materi'));
+    expectLive(tester, 'File dipilih: gaya.docx, 2,0 MB.');
+    expect(find.bySemanticsLabel('File Word: gaya.docx, 2,0 MB'), findsOne);
+
+    await tester.enterText(find.byType(TextField), 'Gaya dan Gerak');
+    await tapAndPump(tester, _uploadButton);
+    expectLive(tester, 'Mengunggah gaya.docx. Tunggu sebentar.');
+
+    // Pantau sampai selesai (jeda server 20 ms, jeda pantau 10 ms).
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 30));
+    }
+    await tester.pumpAndSettle();
+
+    final upload = server.requests.first;
+    final body = String.fromCharCodes(upload.bodyBytes);
+    expect(upload.url.path, '/teacher/materials/files');
+    expect(body, contains('filename="gaya.docx"'));
+    expect(
+      body,
+      contains(
+        'content-type: application/vnd.openxmlformats-officedocument.'
+        'wordprocessingml.document',
+      ),
+    );
+    expect(checks, 3);
+    expectLive(
+      tester,
+      'Selesai: 3 halaman, 1 gambar. AI sedang membuat deskripsi 1 gambar di '
+      'latar belakang. Periksa hasilnya di menu Gambar dan deskripsi sebelum '
+      'terbit. Materi draf Gaya dan Gerak siap diperiksa, diberi jadwal, dan '
+      'soal.',
+    );
+    expect(
+      find.text('Lanjut periksa materi, jadwal, dan soal'),
+      findsOneWidget,
+    );
+    handle.dispose();
+  });
+
+  testWidgets('konversi gagal: pesan dibacakan, materi gagal dihapus', (
     tester,
   ) async {
     tallScreen(tester);
     final server = FakeServer({
-      'POST /teacher/materials/upload': (_) => _uploaded(),
-      'POST /teacher/materials/m1/generate-image-description': (_) => {
-        'running': true,
-        'total': 3,
-        'done': 0,
-      },
-    }, delay: const Duration(seconds: 1))..install();
+      'POST /teacher/materials/files': (_) => _uploaded(),
+      'GET /teacher/materials/m1/conversion': (_) =>
+          _conversion('failed', error: 'Dokumen Word tidak bisa dibaca.'),
+      'DELETE /teacher/materials/m1': (_) => {'message': 'Materi dihapus'},
+    })..install();
     final handle = tester.ensureSemantics();
-    var next = _pdf('besar.pdf', 25 * _mb);
-    await tester.pumpWidget(
-      testApp(NewMaterialScreen(subject: _subject, pickFile: () async => next)),
-    );
-
-    await tapAndPump(tester, find.text('Pilih file PDF'));
-    expectLive(
-      tester,
-      'File besar.pdf terlalu besar, 25,0 MB. Batas ukuran PDF 20 MB. '
-      'Pilih file yang lebih kecil.',
-    );
-
-    next = _pdf('modul.pdf', 2 * _mb);
-    await tapAndPump(tester, find.text('Pilih file PDF'));
-    expectLive(tester, 'File dipilih: modul.pdf, 2,0 MB.');
-    expect(find.bySemanticsLabel('File PDF: modul.pdf, 2,0 MB'), findsOne);
-
+    await tester.pumpWidget(_screen(() async => _file('rusak.docx', _mb)));
+    await tester.enterText(find.byType(TextField), 'Rusak');
+    await tapAndPump(tester, find.text('Pilih file materi'));
     await tapAndPump(tester, _uploadButton);
-    expectLive(tester, 'Judul materi belum diisi.');
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Gaya dan Gerak');
-    await tapAndPump(tester, _uploadButton);
     expectLive(
       tester,
-      'Mengunggah modul.pdf dan memecahnya per halaman. Tunggu sebentar.',
-    );
-
-    // Unggah, lalu proses deskripsi dimulai tanpa ditunggu selesai.
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump();
-    expectLive(
-      tester,
-      'Berhasil. modul.pdf diproses menjadi 2 halaman. AI sedang membuat '
-      'deskripsi 3 gambar di latar belakang. Pantau progresnya dan periksa '
-      'hasilnya di menu Gambar dan deskripsi sebelum terbit. Materi draf '
-      'Gaya dan Gerak siap diberi jadwal dan soal.',
+      'rusak.docx gagal diproses. Dokumen Word tidak bisa dibaca.',
     );
     expect(
-      server.requests.last.url.path,
-      '/teacher/materials/m1/generate-image-description',
+      server.requests.map((r) => '${r.method} ${r.url.path}'),
+      contains('DELETE /teacher/materials/m1'),
     );
-    final upload = server.requests.first;
-    final body = String.fromCharCodes(upload.bodyBytes);
-    expect(upload.headers['content-type'], startsWith('multipart/form-data'));
-    expect(body, contains('name="title"'));
-    expect(body, contains('Gaya dan Gerak'));
-    expect(body, contains('name="subject_id"'));
-    expect(body, contains('filename="modul.pdf"'));
-    // Tanpa contentType, http mengirim application/octet-stream dan
-    // backend dulu menolaknya.
-    expect(body, contains('content-type: application/pdf'));
-    expect(body, isNot(contains('application/octet-stream')));
-    expect(find.text('Halaman 2: Gaya Gesek'), findsOneWidget);
-    expect(find.text('Lanjut atur jadwal dan soal'), findsOneWidget);
+    expect(find.text('Coba unggah lagi'), findsOneWidget);
     handle.dispose();
   });
 
@@ -144,15 +246,10 @@ void main() {
     final server = FakeServer({})..install();
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(
-      testApp(
-        NewMaterialScreen(
-          subject: _subject,
-          pickFile: () async => _pdf('rusak.pdf', _mb, failRead: true),
-        ),
-      ),
+      _screen(() async => _file('rusak.pdf', _mb, failRead: true)),
     );
     await tester.enterText(find.byType(TextField), 'Materi Rusak');
-    await tapAndPump(tester, find.text('Pilih file PDF'));
+    await tapAndPump(tester, find.text('Pilih file materi'));
     await tapAndPump(tester, _uploadButton);
     await tester.pumpAndSettle();
     expectLive(
@@ -164,28 +261,27 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('server menolak PDF: pesan dari backend dibacakan', (
+  testWidgets('server menolak file: pesan dari backend dibacakan', (
     tester,
   ) async {
     tallScreen(tester);
     FakeServer({
-      'POST /teacher/materials/upload': (_) =>
-          jsonResponse({'detail': 'PDF tidak bisa diproses'}, 400),
+      'POST /teacher/materials/files': (_) => jsonResponse({
+        'detail': 'Format .ppt lama tidak didukung. Simpan ulang sebagai .pptx lalu unggah lagi.',
+      }, 400),
     }).install();
     final handle = tester.ensureSemantics();
-    await tester.pumpWidget(
-      testApp(
-        NewMaterialScreen(
-          subject: _subject,
-          pickFile: () async => _pdf('modul.pdf', _mb),
-        ),
-      ),
-    );
+    // Nama .pptx padahal isinya format lama: hanya backend yang tahu.
+    await tester.pumpWidget(_screen(() async => _file('slide.pptx', _mb)));
     await tester.enterText(find.byType(TextField), 'Magnet');
-    await tapAndPump(tester, find.text('Pilih file PDF'));
+    await tapAndPump(tester, find.text('Pilih file materi'));
     await tapAndPump(tester, _uploadButton);
     await tester.pumpAndSettle();
-    expectLive(tester, 'Gagal mengunggah modul.pdf. PDF tidak bisa diproses.');
+    expectLive(
+      tester,
+      'Gagal mengunggah slide.pptx. Format .ppt lama tidak didukung. Simpan '
+      'ulang sebagai .pptx lalu unggah lagi.',
+    );
     expect(find.text('Coba unggah lagi'), findsOneWidget);
     handle.dispose();
   });

@@ -152,6 +152,127 @@ Error: `400` bukan PDF (`"File harus berformat PDF."` atau `"Isi file bukan
 PDF yang valid."`) atau tidak bisa diproses, `403` bukan guru, `404`
 kelas tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 
+### POST `/teacher/materials/files`
+
+Hanya guru pemilik kelas. Satu endpoint untuk semua format; tombol "Unggah
+materi" di aplikasi memakainya. Multipart: `title`, `subject_id`, `file`.
+
+Jenis file dikenali dari **isinya** (magic bytes), bukan dari nama. Nama hanya
+membedakan CSV/MD dari teks biasa dan menyebut format yang benar saat menolak
+format lama.
+
+| Isi file | Jenis | Batas | Hasil |
+|---|---|---|---|
+| `%PDF-` | `pdf` | 20 MB | Sama seperti `/teacher/materials/upload` |
+| ZIP berisi `word/document.xml` | `docx` | 20 MB | Heading 1 dan page break = halaman baru, Heading 2+ = subjudul, daftar, tabel, gambar |
+| ZIP berisi `ppt/presentation.xml` | `pptx` | 20 MB | Satu slide satu halaman, judul slide, teks, tabel, grafik (sebagai tabel), gambar, catatan pembicara |
+| ZIP berisi `xl/workbook.xml` | `xlsx` | 10 MB | Satu sheet terlihat satu halaman berisi satu tabel (maks. 1.000 baris x 30 kolom) |
+| Teks, nama `.csv` | `csv` | 2 MB | Satu halaman berisi satu tabel; pemisah `,` `;` tab atau `|` |
+| Teks, nama `.md` | `md` | 2 MB | Markdown dirapikan, lalu aturan tempel teks |
+| Teks lain | `txt` | 2 MB | Aturan tempel teks |
+| JPEG / PNG | `image` | 10 MB | Gemini membaca tulisan dan mendeskripsikan foto; foto disimpan sebagai gambar berdeskripsi |
+| MP3 / M4A / WAV / OGG | `audio` | 25 MB, 15 menit | Transkrip Gemini (Files API); audio asli bisa diputar |
+
+Gambar di DOCX/PPTX memakai teks alternatif dari Office sebagai deskripsi awal
+(nama file seperti `image.png` diabaikan); sisanya dideskripsikan job deskripsi
+gambar yang sudah ada. Gambar EMF/WMF/SVG dilewati dengan catatan.
+
+Ditolak langsung (tidak ada materi yang dibuat):
+
+- `400` format Office lama (`.doc`, `.ppt`, `.xls`): "Format .ppt lama tidak
+  didukung. Simpan ulang sebagai .pptx lalu unggah lagi."; video, ZIP lain, atau
+  biner tidak dikenal; durasi audio tidak terbaca.
+- `413` melewati batas per format atau 25 MB saat diterima ("Ukuran file Excel
+  (.xlsx) maksimal 10 MB."), audio lebih dari 15 menit, atau isi ZIP lebih dari
+  150 MB setelah diekstrak.
+- `503` foto dan audio kalau `GEMINI_API_KEY` belum diatur.
+- `404` kelas bukan milik guru atau sudah dihapus. `403` bukan guru.
+
+Kalau diterima, server langsung menjawab **`202`** dengan materi draf berstatus
+`processing`:
+
+```json
+{
+  "material": { "id": "...", "title": "Iklim", "is_published": false, "section_count": 0, "...": "..." },
+  "conversion": {
+    "material_id": "...",
+    "source_type": "docx",
+    "status": "processing",
+    "step": "Menunggu giliran diproses.",
+    "error": null
+  }
+}
+```
+
+Pengubahan ke halaman berjalan di latar belakang, satu file per waktu supaya
+memori Render gratis cukup. File asli disimpan di bucket `material-files`
+(`materials.source_path`), kecuali PDF yang tetap di `materials-pdf`.
+
+### GET `/teacher/materials/{material_id}/conversion`
+
+Hanya guru pemilik. Dipantau aplikasi setiap 3 detik selama `processing`.
+
+```json
+{
+  "material_id": "...",
+  "source_type": "audio",
+  "status": "processing",
+  "step": "Membuat transkrip audio dengan AI. Bisa sampai beberapa menit.",
+  "error": null,
+  "section_count": 0
+}
+```
+
+- `status`: `processing`, `ready`, atau `failed`. Materi sebelum migrasi 008
+  selalu `ready`.
+- `step`: langkah yang sedang berjalan; setelah `ready` berisi ringkasan, misalnya
+  "Selesai: 3 halaman, 1 gambar." ditambah catatan (gambar yang dilewati).
+- `error`: pesan untuk guru kalau `failed` (file rusak, Gemini gagal, atau
+  "Server dimulai ulang saat file ini diproses..." kalau backend restart di
+  tengah proses).
+
+Setelah `ready`, aplikasi memanggil `generate-image-description` untuk gambar
+yang belum berdeskripsi. Materi yang belum `ready` tidak bisa diterbitkan
+(`409` di `PATCH /teacher/materials/{material_id}`).
+
+Daftar materi guru (`GET /teacher/subjects/{subject_id}/materials`) juga berisi
+`source_type` dan `conversion` (bentuk sama seperti di atas, tanpa
+`section_count`).
+
+### DELETE `/teacher/materials/{material_id}`
+
+Hanya guru pemilik, dan **hanya untuk materi yang `failed`**. Menghapus materi,
+halaman, gambar, dan file aslinya. Materi lain: `409`. Aplikasi memanggilnya
+sendiri setelah menampilkan pesan gagal di layar unggah, dan lewat tombol
+"Hapus materi ini" di kartu materi yang gagal.
+
+### PATCH `/teacher/materials/{material_id}/sections/{section_id}`
+
+Hanya guru pemilik. Memperbaiki judul dan teks satu halaman, misalnya tulisan
+foto yang salah baca atau transkrip yang salah dengar. Body: `{"title"?,
+"content"?}`. Isi dirapikan seperti teks lain (tanda butir menjadi `- `,
+baris kosong dibuang).
+
+Penanda `[[gambar:...]]` dan `[[tabel:...]]` harus tetap ada dengan urutan sama;
+kalau berubah, `422` "Gambar dan tabel di halaman ini tidak boleh dihapus atau
+dipindah dari editor teks...". Di aplikasi, penanda itu tampil sebagai baris
+`[Gambar 1]` dan `[Tabel 1]`. Error lain: `404` materi atau halaman, `400` tanpa
+perubahan.
+
+Respons: `{"section": {id, title, content}}`.
+
+### GET `/materials/{material_id}/audio`
+
+Hak akses sama dengan `GET /materials/{material_id}/sections` (siswa: `410` kalau
+kelas dihapus). Hanya materi `source_type` `audio`; lainnya `404` "Materi ini
+tidak punya audio".
+
+```json
+{ "url": "https://...signed...", "expires_in": 3600, "duration_seconds": 300 }
+```
+
+Alamat berlaku 1 jam, jadi aplikasi memintanya saat siswa menekan Putar audio.
+
 ### POST `/teacher/materials/text/preview`
 
 Hanya guru. Pembagian halaman teks tempelan, **tanpa menyimpan apa pun**.
@@ -459,10 +580,12 @@ beserta status kuis:
 ### GET `/materials/{material_id}/sections`
 
 Untuk guru pemilik materi, atau siswa yang punya akses ke materi yang sudah
-dipublikasikan. Respons: `{"material": {id, title}, "sections": [{id, position,
-title, content, image_description, image_count, page_start, page_end}]}`,
-diurutkan dari `position`. `image_description` masih `null` sampai deskripsi
-gambar diisi.
+dipublikasikan. Respons: `{"material": {id, title, source_type, has_audio,
+audio_duration_seconds}, "sections": [{id, position, title, content,
+image_description, image_count, page_start, page_end}]}`, diurutkan dari
+`position`. `image_description` masih `null` sampai deskripsi gambar diisi.
+`has_audio` `true` untuk materi audio: layar baca menampilkan pemutar (lihat
+`GET /materials/{material_id}/audio`).
 
 Baris `[[tabel:{json}]]` di `content` adalah tabel, dengan kunci `title`,
 `columns`, dan `rows`. Baris pertama tabel di PDF menjadi `columns`.

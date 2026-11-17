@@ -43,6 +43,15 @@ DEFAULTS = {
         "started_at": "2026-10-01T00:00:00+00:00",
     },
     "quizzes": {"deleted_at": None},
+    # Kolom dari migrasi 008.
+    "materials": {
+        "source_type": "pdf",
+        "source_path": None,
+        "conversion_status": "ready",
+        "conversion_step": None,
+        "conversion_error": None,
+        "audio_duration_seconds": None,
+    },
 }
 
 
@@ -207,6 +216,8 @@ def no_gemini(monkeypatch):
 
     monkeypatch.setattr(main, "describe_image", blocked)
     monkeypatch.setattr(main, "generate_quiz", blocked)
+    monkeypatch.setattr(main, "read_photo", blocked)
+    monkeypatch.setattr(main, "transcribe_audio", blocked)
     # Tanpa jeda antar panggilan, dan progres tidak terbawa antar tes.
     monkeypatch.setattr(main, "GEMINI_DELAY_SECONDS", 0)
     monkeypatch.setattr(main, "GEMINI_RATE_LIMIT_PAUSE_SECONDS", 0)

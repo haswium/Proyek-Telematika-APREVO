@@ -17,8 +17,15 @@ class GeminiKeyMissing(RuntimeError):
     """GEMINI_API_KEY belum diatur di backend/.env."""
 
 
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 _client = None
 _client_key = None
+
+
+def gemini_model() -> str:
+    """Model untuk semua fitur AI. Bisa diganti lewat GEMINI_MODEL."""
+    return os.getenv("GEMINI_MODEL", "").strip() or DEFAULT_GEMINI_MODEL
 
 
 def gemini_client() -> genai.Client:

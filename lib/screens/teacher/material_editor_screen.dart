@@ -15,6 +15,7 @@ import 'material_tables_screen.dart';
 import 'question_form_screen.dart';
 import 'quiz_schedule_screen.dart';
 import 'results_screen.dart';
+import 'section_text_screen.dart';
 
 /// Data editor: materi beserta soal tersimpan pre-test dan post-test, dan
 /// gambarnya.
@@ -304,15 +305,31 @@ class _MaterialEditorScreenState extends State<MaterialEditorScreen> {
         const SizedBox(height: 16),
         ListRow(
           icon: Icons.menu_book_outlined,
-          title: 'Lihat sub bab materi',
-          subtitle: '${m.sectionCount} sub bab dari PDF',
+          title: 'Lihat halaman materi',
+          subtitle: '${m.sectionCount} halaman',
           semanticLabel:
-              'Lihat sub bab materi ${m.title}. ${m.sectionCount} sub bab '
-              'dari PDF',
+              'Lihat halaman materi ${m.title}. ${m.sectionCount} halaman',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => MaterialSectionsScreen(
+                materialId: m.id,
+                materialTitle: m.title,
+              ),
+            ),
+          ),
+        ),
+        ListRow(
+          icon: Icons.edit_note,
+          title: 'Ubah teks halaman',
+          subtitle: 'Perbaiki hasil baca foto, transkrip audio, atau teks lain',
+          semanticLabel:
+              'Ubah teks halaman ${m.title}. Perbaiki hasil baca foto, '
+              'transkrip audio, atau teks lain',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SectionTextListScreen(
                 materialId: m.id,
                 materialTitle: m.title,
               ),

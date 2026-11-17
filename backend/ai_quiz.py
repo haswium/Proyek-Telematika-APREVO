@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from ai_client import gemini_client
+from ai_client import gemini_client, gemini_model
 from schemas.ai_output import AIOutput
 
 # Form soal guru hanya punya empat kolom pilihan atau langkah.
@@ -102,7 +102,7 @@ def generate_quiz(
     """
 
     response = gemini_client().models.generate_content(
-        model="gemini-3.5-flash-lite",
+        model=gemini_model(),
         contents=prompt,
         config={"response_mime_type": "application/json"},
     )

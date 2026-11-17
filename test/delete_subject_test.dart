@@ -97,7 +97,7 @@ void main() {
     );
     expect(button - previous.dy, greaterThan(48));
     for (final other in [
-      'Unggah Materi PDF',
+      'Unggah materi',
       'Anggota kelas',
       'Kelola materi',
     ]) {

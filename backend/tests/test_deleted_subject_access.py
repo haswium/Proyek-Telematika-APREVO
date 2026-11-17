@@ -58,6 +58,8 @@ TEACHER_CASES = [
     ),
     ("GET", "/teacher/subjects/{subject}/attendance/summary", None),
     ("GET", "/teacher/subjects/{subject}/progress", None),
+    ("GET", "/teacher/materials/m1/conversion", None),
+    ("PATCH", "/teacher/materials/m1/sections/s1", {"title": "Halaman baru"}),
     (
         "POST",
         "/teacher/materials/text",
@@ -100,6 +102,12 @@ TEACHER_CASES = [
 EXEMPT = {
     ("DELETE", "/teacher/subjects/{subject_id}"),
     ("POST", "/teacher/materials/upload"),
+    # Materi m1 di sini PDF tanpa audio. Kelas terhapus untuk audio diuji di
+    # test_material_files.py.
+    ("GET", "/materials/{material_id}/audio"),
+    # Hanya untuk materi gagal; m1 di sini siap, jadi pembandingnya 409.
+    # Kelas terhapus: get_owned_material menjawab 404 (test_material_files).
+    ("DELETE", "/teacher/materials/{material_id}"),
 }
 
 
