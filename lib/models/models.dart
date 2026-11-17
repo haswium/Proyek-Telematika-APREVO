@@ -5,6 +5,9 @@ library;
 import 'dart:convert';
 
 import '../services/time_format.dart';
+import 'material_file.dart';
+
+export 'material_file.dart' show ConversionState, MaterialConversion;
 
 enum GameType { quiz, trueFalse, shortAnswer, ordering }
 
@@ -566,6 +569,7 @@ class LessonMaterial {
     this.sectionCount = 0,
     this.hiddenImages = 0,
     this.quizzes = const [],
+    this.conversion = const MaterialConversion(),
   });
 
   factory LessonMaterial.fromJson(Map<String, dynamic> json) => LessonMaterial(
@@ -576,6 +580,9 @@ class LessonMaterial {
     sectionCount: _int(json['section_count']),
     hiddenImages: _int(json['hidden_image_count']),
     quizzes: [for (final q in _list(json['quizzes'])) QuizInfo.fromJson(q)],
+    conversion: MaterialConversion.fromJson(
+      json['conversion'] as Map<String, dynamic>?,
+    ),
   );
 
   final String id;
@@ -587,6 +594,10 @@ class LessonMaterial {
   /// Hanya dikirim untuk guru, dan hanya untuk materi yang sudah terbit.
   final int hiddenImages;
   final List<QuizInfo> quizzes;
+
+  /// Status pengubahan file ke halaman (hanya untuk guru). Materi lama dan
+  /// materi siswa selalu siap.
+  final MaterialConversion conversion;
 
   QuizInfo? quiz(TestKind kind) {
     for (final q in quizzes) {
@@ -849,20 +860,23 @@ class DescribeStatus {
 
 /// Halaman satu materi beserta gambar yang dirujuk isinya.
 class MaterialPages {
-  MaterialPages({required this.sections, this.images = const {}});
+  MaterialPages({
+    required this.sections,
+    this.images = const {},
+    this.hasAudio = false,
+    this.audioSeconds,
+    this.sourceType = 'pdf',
+  });
 
   final List<MaterialSection> sections;
 
   /// Gambar menurut `imageKey`.
   final Map<String, PageImage> images;
-}
 
-/// Hasil `POST /teacher/materials/upload`.
-class UploadResult {
-  UploadResult({required this.material, required this.sections});
-
-  final LessonMaterial material;
-  final List<MaterialSection> sections;
+  /// Materi dari rekaman audio: layar baca menampilkan pemutar audio.
+  final bool hasAudio;
+  final int? audioSeconds;
+  final String sourceType;
 }
 
 /// Pilihan jawaban atau item urutan, tanpa kunci jawaban.

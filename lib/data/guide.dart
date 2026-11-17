@@ -33,6 +33,9 @@ const studentGuide = [
     'Pindah halaman dengan tombol Halaman berikutnya dan Halaman sebelumnya di '
         'bawah teks. Nomor dan judul halaman dibacakan setiap pindah.',
     'Gambar dibacakan sebagai "Gambar:" lalu deskripsinya.',
+    'Kalau materinya rekaman suara guru, tombol Putar audio, Jeda audio, '
+        'Mundur 10 detik, dan Maju 10 detik ada di atas teks transkrip. Audio '
+        'tidak diputar sendiri.',
     'Untuk lompat ke halaman tertentu atau mencari kata, buka Daftar halaman.',
   ]),
   GuideSection('Mengerjakan kuis', [
@@ -74,12 +77,19 @@ const teacherGuide = [
     'Siswa yang bergabung muncul di Anggota kelas.',
   ]),
   GuideSection('Menambah materi', [
-    'Buka kelas, lalu pilih Unggah Materi PDF, atau Tempel teks kalau isinya '
-        'dari dokumen lain.',
+    'Buka kelas, lalu pilih Unggah materi, atau Tempel teks kalau isinya '
+        'disalin dari dokumen lain.',
+    'Unggah materi menerima PDF, Word, PowerPoint, Excel, CSV, teks, foto '
+        'halaman buku atau papan tulis, dan rekaman audio sampai 15 menit. '
+        'File Word, PowerPoint, dan Excel lama (.doc, .ppt, .xls) perlu '
+        'disimpan ulang dulu.',
+    'Setelah diunggah, file diproses di latar belakang. Status setiap langkah '
+        'dibacakan sampai selesai.',
     'Untuk tempel teks, salin teks dari dokumen, tempel di kolom isi, lalu '
         'periksa pratinjau pembagian halaman sebelum menyimpan.',
-    'Periksa isi tiap halaman dan deskripsi gambar. Deskripsi buatan AI bisa '
-        'salah, jadi perbaiki sebelum terbit.',
+    'Periksa isi tiap halaman dan deskripsi gambar. Tulisan dari foto, '
+        'transkrip audio, dan deskripsi buatan AI bisa salah, jadi perbaiki di '
+        'Ubah teks halaman dan Gambar dan deskripsi sebelum terbit.',
     'Materi masih draf sampai saklar Publikasikan ke siswa dinyalakan.',
   ]),
   GuideSection('Membuat soal dan jadwal', [

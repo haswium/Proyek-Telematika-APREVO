@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
+import '../../widgets/reload_timer.dart';
 import '../../widgets/search_box.dart';
 import 'attendance_screen.dart';
 import 'generate_questions_screen.dart';
@@ -66,6 +67,18 @@ class SubjectDetailScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _deleteFailed(
+    BuildContext context,
+    LessonMaterial material,
+  ) async {
+    try {
+      await store.deleteFailedMaterial(material.id);
+      announce('Materi ${material.title} yang gagal diproses dihapus.');
+    } on ApiException catch (e) {
+      announce('Materi belum terhapus. ${e.message}');
+    }
+  }
+
   void _createMaterial(BuildContext context) {
     Navigator.push(
       context,
@@ -81,150 +94,163 @@ class SubjectDetailScreen extends StatelessWidget {
         child: LoadView<List<LessonMaterial>>(
           loadingMessage: 'Memuat materi ${subject.name}.',
           load: () => store.teacherMaterials(subject.id),
-          builder: (context, materials, _) {
+          builder: (context, materials, reload) {
             final published = materials.where((m) => m.published).length;
-            return FilteredList<LessonMaterial>(
-              items: materials,
-              textOf: (material) => material.title,
-              label: 'Cari materi',
-              noun: 'materi',
-              builder: (context, visible, searchBox) => ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  HeroCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Pill(
-                          '$published dari ${materials.length} materi publik',
-                          color: const Color(0x33FFFFFF),
-                          textColor: AppColors.white,
-                        ),
-                        const SizedBox(height: 12),
-                        Semantics(
-                          header: true,
-                          child: Text(
-                            subject.name,
-                            style: const TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.white,
+            // Selama ada file yang masih diproses, daftar dimuat ulang
+            // berkala supaya statusnya berganti sendiri.
+            final processing = materials.any((m) => m.conversion.processing);
+            return ReloadTimer(
+              after: processing ? const Duration(seconds: 5) : null,
+              reload: reload,
+              child: FilteredList<LessonMaterial>(
+                items: materials,
+                textOf: (material) => material.title,
+                label: 'Cari materi',
+                noun: 'materi',
+                builder: (context, visible, searchBox) => ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    HeroCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Pill(
+                            '$published dari ${materials.length} materi publik',
+                            color: const Color(0x33FFFFFF),
+                            textColor: AppColors.white,
+                          ),
+                          const SizedBox(height: 12),
+                          Semantics(
+                            header: true,
+                            child: Text(
+                              subject.name,
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.white,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Bagikan kode ini ke siswa. Siswa hanya melihat '
-                          'materi yang sudah dipublikasikan.',
-                          style: TextStyle(
-                            color: AppColors.white,
-                            fontSize: 15,
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Bagikan kode ini ke siswa. Siswa hanya melihat '
+                            'materi yang sudah dipublikasikan.',
+                            style: TextStyle(
+                              color: AppColors.white,
+                              fontSize: 15,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        CodeBox(code: subject.accessCode, onDark: true),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  PrimaryButton(
-                    label: 'Unggah Materi PDF',
-                    icon: Icons.add_circle_outline,
-                    onPressed: () => _createMaterial(context),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.content_paste),
-                    label: const Text('Tempel teks'),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PasteMaterialScreen(subject: subject),
+                          const SizedBox(height: 12),
+                          CodeBox(code: subject.accessCode, onDark: true),
+                        ],
                       ),
                     ),
-                  ),
-                  if (materials.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    PrimaryButton(
+                      label: 'Unggah materi',
+                      icon: Icons.add_circle_outline,
+                      onPressed: () => _createMaterial(context),
+                    ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Buat soal dengan AI'),
+                      icon: const Icon(Icons.content_paste),
+                      label: const Text('Tempel teks'),
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              GenerateQuestionsScreen(subject: subject),
+                          builder: (_) => PasteMaterialScreen(subject: subject),
                         ),
                       ),
+                    ),
+                    if (materials.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('Buat soal dengan AI'),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                GenerateQuestionsScreen(subject: subject),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    ListRow(
+                      icon: Icons.groups_outlined,
+                      title: 'Anggota kelas',
+                      subtitle: 'Daftar siswa dan jumlahnya',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              SubjectMembersScreen(subject: subject),
+                        ),
+                      ),
+                    ),
+                    ListRow(
+                      icon: Icons.how_to_reg_outlined,
+                      title: 'Presensi',
+                      subtitle: 'Buka sesi per pertemuan dan lihat rekap',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              TeacherAttendanceScreen(subject: subject),
+                        ),
+                      ),
+                    ),
+                    ListRow(
+                      icon: Icons.insights_outlined,
+                      title: 'Progres siswa',
+                      subtitle: 'Nilai pre-test, post-test, dan kenaikannya',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              SubjectProgressScreen(subject: subject),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ?searchBox,
+                    SectionTitle(
+                      'Daftar materi (${countLabel(visible.length, materials.length)})',
+                    ),
+                    if (materials.isEmpty)
+                      const EmptyState(
+                        message: 'Belum ada materi di kelas ini.',
+                      ),
+                    for (var i = 0; i < visible.length; i++)
+                      Padding(
+                        key: ValueKey(visible[i].id),
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: FadeSlideIn(
+                          delay: Duration(milliseconds: 60 * (i > 5 ? 5 : i)),
+                          child: _MaterialCard(
+                            material: visible[i],
+                            onOpen: () => _open(context, visible[i]),
+                            onDeleteFailed: () =>
+                                _deleteFailed(context, visible[i]),
+                          ),
+                        ),
+                      ),
+                    if (materials.isNotEmpty)
+                      Text(
+                        'Ketuk "Kelola materi" untuk mengatur jadwal, soal, dan '
+                        'publikasi.',
+                        style: AppType.bodySmall,
+                      ),
+                    // Paling bawah dan berjarak, supaya tidak tertekan tanpa sengaja.
+                    const SizedBox(height: 64),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Hapus kelas'),
+                      onPressed: () => _deleteSubject(context),
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  ListRow(
-                    icon: Icons.groups_outlined,
-                    title: 'Anggota kelas',
-                    subtitle: 'Daftar siswa dan jumlahnya',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SubjectMembersScreen(subject: subject),
-                      ),
-                    ),
-                  ),
-                  ListRow(
-                    icon: Icons.how_to_reg_outlined,
-                    title: 'Presensi',
-                    subtitle: 'Buka sesi per pertemuan dan lihat rekap',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            TeacherAttendanceScreen(subject: subject),
-                      ),
-                    ),
-                  ),
-                  ListRow(
-                    icon: Icons.insights_outlined,
-                    title: 'Progres siswa',
-                    subtitle: 'Nilai pre-test, post-test, dan kenaikannya',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SubjectProgressScreen(subject: subject),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ?searchBox,
-                  SectionTitle(
-                    'Daftar materi (${countLabel(visible.length, materials.length)})',
-                  ),
-                  if (materials.isEmpty)
-                    const EmptyState(message: 'Belum ada materi di kelas ini.'),
-                  for (var i = 0; i < visible.length; i++)
-                    Padding(
-                      key: ValueKey(visible[i].id),
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: FadeSlideIn(
-                        delay: Duration(milliseconds: 60 * (i > 5 ? 5 : i)),
-                        child: _MaterialCard(
-                          material: visible[i],
-                          onOpen: () => _open(context, visible[i]),
-                        ),
-                      ),
-                    ),
-                  if (materials.isNotEmpty)
-                    Text(
-                      'Ketuk "Kelola materi" untuk mengatur jadwal, soal, dan '
-                      'publikasi.',
-                      style: AppType.bodySmall,
-                    ),
-                  // Paling bawah dan berjarak, supaya tidak tertekan tanpa sengaja.
-                  const SizedBox(height: 64),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Hapus kelas'),
-                    onPressed: () => _deleteSubject(context),
-                  ),
-                ],
+                ),
               ),
             );
           },
@@ -360,14 +386,21 @@ class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
 }
 
 class _MaterialCard extends StatelessWidget {
-  const _MaterialCard({required this.material, required this.onOpen});
+  const _MaterialCard({
+    required this.material,
+    required this.onOpen,
+    required this.onDeleteFailed,
+  });
 
   final LessonMaterial material;
   final VoidCallback onOpen;
+  final VoidCallback onDeleteFailed;
 
   @override
   Widget build(BuildContext context) {
     final m = material;
+    final conversion = m.conversion;
+    if (!conversion.ready) return _conversionCard(m, conversion);
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -412,6 +445,47 @@ class _MaterialCard extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Materi yang masih diproses atau gagal diproses: belum bisa dikelola.
+  Widget _conversionCard(LessonMaterial m, MaterialConversion conversion) {
+    final failed = conversion.failed;
+    return AppCard(
+      color: failed ? AppColors.highlight : AppColors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Pill(
+            failed ? 'Gagal diproses' : 'Sedang diproses',
+            icon: failed ? Icons.error_outline : Icons.hourglass_top,
+            color: AppColors.highlight,
+            textColor: AppColors.ink,
+          ),
+          const SizedBox(height: 10),
+          Semantics(
+            header: true,
+            child: Text(m.title, style: AppType.titleLarge),
+          ),
+          const SizedBox(height: 8),
+          Text(conversion.message, style: AppType.bodyMedium),
+          if (failed) ...[
+            const SizedBox(height: 12),
+            Semantics(
+              container: true,
+              label: 'Hapus materi ${m.title} yang gagal diproses',
+              button: true,
+              onTap: onDeleteFailed,
+              excludeSemantics: true,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Hapus materi ini'),
+                onPressed: onDeleteFailed,
+              ),
+            ),
+          ],
         ],
       ),
     );

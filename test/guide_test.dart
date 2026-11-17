@@ -46,12 +46,17 @@ void main() {
             isSemantics(label: section.title, isHeader: true),
           );
           final total = section.steps.length;
-          expect(
-            find.bySemanticsLabel(
-              'Langkah 1 dari $total: ${section.steps.first}',
-            ),
-            findsOneWidget,
+          // Panduan panjang: langkah pertama bisa di bawah layar saat
+          // judulnya terlihat.
+          final firstStep = find.bySemanticsLabel(
+            'Langkah 1 dari $total: ${section.steps.first}',
           );
+          await tester.scrollUntilVisible(
+            firstStep,
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
+          expect(firstStep, findsOneWidget);
         }
         handle.dispose();
       },

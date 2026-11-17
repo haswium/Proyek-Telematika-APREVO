@@ -7,6 +7,7 @@ import '../../services/a11y_focus.dart';
 import '../../services/announce.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/audio_player_card.dart';
 import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/playful.dart';
@@ -208,6 +209,8 @@ class _SectionListState extends State<_SectionList> {
           images: widget.pages.images,
           initialIndex: index,
           searchHit: hit,
+          audioMaterialId: widget.pages.hasAudio ? widget.materialId : null,
+          audioSeconds: widget.pages.audioSeconds,
         ),
       ),
     );
@@ -326,10 +329,16 @@ class SectionReaderScreen extends StatefulWidget {
     this.images = const {},
     this.initialIndex = 0,
     this.searchHit,
+    this.audioMaterialId,
+    this.audioSeconds,
   });
 
   final String materialTitle;
   final List<MaterialSection> sections;
+
+  /// Materi audio: pemutar audio asli tampil di atas isi setiap halaman.
+  final String? audioMaterialId;
+  final int? audioSeconds;
 
   /// Gambar menurut kuncinya, untuk baris `[[gambar:...]]` di isi halaman.
   final Map<String, PageImage> images;
@@ -485,6 +494,15 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+              if (widget.audioMaterialId != null) ...[
+                // Key tetap: audio tidak berhenti saat pindah halaman.
+                AudioPlayerCard(
+                  key: const ValueKey('pemutar-audio'),
+                  materialId: widget.audioMaterialId!,
+                  durationSeconds: widget.audioSeconds,
+                ),
+                const SizedBox(height: 20),
+              ],
               AppCard(
                 key: ValueKey('halaman-$_index'),
                 color: AppColors.soft,

@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, Supabase, User;
 
 import '../models/attendance.dart';
+import '../models/material_file.dart';
 import '../models/models.dart';
 import '../models/pasted_text.dart';
 import '../models/progress.dart';
@@ -212,12 +213,16 @@ class AppStore extends ChangeNotifier {
     final data = await _watchingSubject(
       () => api.get('/materials/$materialId/sections'),
     );
+    final material = data['material'] as Map<String, dynamic>? ?? const {};
     return MaterialPages(
       sections: [
         for (final s in data['sections'] as List? ?? const [])
           MaterialSection.fromJson(s as Map<String, dynamic>),
       ],
       images: {for (final image in _images(data)) image.imageKey: image},
+      hasAudio: material['has_audio'] == true,
+      audioSeconds: (material['audio_duration_seconds'] as num?)?.toInt(),
+      sourceType: material['source_type'] as String? ?? 'pdf',
     );
   }
 
@@ -431,36 +436,62 @@ class AppStore extends ChangeNotifier {
     throw const ApiException('Materi tidak ditemukan.', statusCode: 404);
   }
 
-  /// PDF dikirim ke backend, disimpan, lalu dipecah per sub-bab.
-  /// Materi baru selalu draf.
-  Future<UploadResult> uploadMaterialPdf(
+  /// Mengunggah file materi format apa pun (`POST /teacher/materials/files`).
+  /// Server langsung menjawab; pengubahan ke halaman berjalan di latar
+  /// belakang dan dipantau dengan [materialConversion].
+  Future<LessonMaterial> uploadMaterialFile(
     Subject subject, {
     required String title,
     required String fileName,
     required Uint8List bytes,
   }) async {
     final data = await api.upload(
-      '/teacher/materials/upload',
+      '/teacher/materials/files',
       fields: {'title': title, 'subject_id': subject.id},
       fileField: 'file',
       fileName: fileName,
       bytes: bytes,
-      contentType: MediaType('application', 'pdf'),
+      contentType: MediaType.parse(contentTypeFor(fileName)),
     );
-    final sections = [
-      for (final s in data['sections'] as List? ?? const [])
-        MaterialSection.fromJson(s as Map<String, dynamic>),
-    ];
     final material = data['material'] as Map<String, dynamic>? ?? const {};
     notifyListeners();
-    return UploadResult(
-      material: LessonMaterial.fromJson({
-        ...material,
-        'section_count': sections.length,
-      }),
-      sections: sections,
-    );
+    return LessonMaterial.fromJson({
+      ...material,
+      'conversion': data['conversion'],
+    });
   }
+
+  Future<MaterialConversion> materialConversion(String materialId) async =>
+      MaterialConversion.fromJson(
+        await api.get('/teacher/materials/$materialId/conversion'),
+      );
+
+  /// Hanya untuk materi yang gagal diproses.
+  Future<void> deleteFailedMaterial(String materialId) async {
+    await api.delete('/teacher/materials/$materialId');
+    notifyListeners();
+  }
+
+  /// Guru memperbaiki judul dan teks satu halaman.
+  Future<MaterialSection> updateSectionText(
+    String materialId,
+    String sectionId, {
+    required String title,
+    required String content,
+  }) async {
+    final data = await api.patch(
+      '/teacher/materials/$materialId/sections/$sectionId',
+      {'title': title, 'content': content},
+    );
+    notifyListeners();
+    return MaterialSection.fromJson(data['section'] as Map<String, dynamic>);
+  }
+
+  /// Alamat sementara (1 jam) audio materi.
+  Future<MaterialAudio> materialAudio(String materialId) async =>
+      MaterialAudio.fromJson(
+        await _watchingSubject(() => api.get('/materials/$materialId/audio')),
+      );
 
   /// Pembagian halaman teks tempelan, tanpa menyimpan apa pun.
   Future<List<PastedPage>> previewPastedText({
