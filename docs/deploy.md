@@ -75,13 +75,40 @@ curl -i https://proyek-telematika-aprevo.onrender.com/test-supabase
 
 Permintaan pertama bisa lama kalau layanannya sedang tidur.
 
-Periksa juga variabel Supabase. Endpoint ini tidak pernah menampilkan nilai
-variabel, hanya nama variabel yang bermasalah:
+Periksa juga variabel Supabase dan kesiapan database untuk unggah semua
+format. Endpoint ini tidak pernah menampilkan nilai variabel, hanya apa yang
+bermasalah:
 
 ```bash
 curl https://proyek-telematika-aprevo.onrender.com/health/config
 # {"ok":true,"problems":[]}
 ```
+
+### Kalau unggah materi gagal
+
+`/health/config` juga memeriksa kolom migrasi 008 di tabel `materials` dan
+bucket `material-files`. Kalau `problems` berisi:
+
+- "Kolom migrasi 008_format_materi.sql belum ada di tabel materials", atau
+- "Bucket Storage material-files belum ada",
+
+jalankan ulang `backend/migrations/008_format_materi.sql` di Supabase > SQL Editor.
+File itu aman dijalankan ulang. SQL Editor menjalankan satu file sebagai satu
+transaksi: versi lama migrasi ini bisa **batal seluruhnya** kalau bagian storage
+ditolak, sehingga kolomnya tidak pernah ada walau tampak sudah dijalankan. Versi
+sekarang membungkus bagian storage supaya kolom tetap tersimpan, menampilkan
+NOTICE kalau bucket atau policy perlu dibuat manual, dan menyegarkan cache skema
+API (`notify pgrst, 'reload schema'`).
+
+Di Render > **Logs**, cari:
+
+- `UPLOAD_GAGAL simpan materi ...: code=PGRST204` atau `code=42703`: kolom migrasi
+  008 tidak ada. Guru mendapat pesan "Server belum siap menerima unggahan:
+  database belum memuat migrasi 008_format_materi.sql".
+- `KONVERSI_GAGAL materi ...`: file diterima tetapi gagal diubah, misalnya
+  `Bucket not found`. Alasannya juga tampil ke guru di layar unggah.
+- `SERVER_ERROR endpoint=POST /teacher/materials/files`: error lain yang belum
+  dikenali. Baris itu memuat jenis error dan pesannya.
 
 ### Kalau aplikasi menampilkan "Token tidak valid"
 

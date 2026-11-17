@@ -688,3 +688,150 @@ def test_hapus_materi_gagal_di_kelas_terhapus_ditolak(client, kelas):
     kelas.db["subjects"][0]["deleted_at"] = "2026-11-01T00:00:00+00:00"
     assert client.delete("/teacher/materials/m1").status_code == 404
     assert [m for m in kelas.db["materials"] if m["id"] == "m1"]
+
+
+# ---- Unggah MP3 dan pesan error yang jelas (masalah dari versi web)
+
+
+def mp3_bytes(frames=40):
+    """MP3 kecil yang sah: header ID3v2.4 lalu frame MPEG-1 Layer III
+    128 kbps 44,1 kHz (417 byte per frame, sekitar 26 ms)."""
+    id3 = b"ID3\x04\x00\x00\x00\x00\x00\x00"
+    frame = b"\xff\xfb\x90\x64" + b"\x00" * 413
+    return id3 + frame * frames
+
+
+def test_mp3_dari_web_diterima(client, kelas, monkeypatch):
+    # Versi web mengirim bytes dengan content-type audio/mpeg dari ekstensi.
+    seen = {}
+
+    def fake_transcribe(path, mime_type):
+        seen["mime"] = mime_type
+        return "Halo semua."
+
+    monkeypatch.setattr(main, "transcribe_audio", fake_transcribe)
+    response = unggah(
+        client, kelas, "rekaman.mp3", mp3_bytes(), content_type="audio/mpeg"
+    )
+    material_id, status = selesai(client, response)
+    assert status["status"] == "ready", status
+    assert seen["mime"] == "audio/mpeg"
+    material = next(m for m in kelas.db["materials"] if m["id"] == material_id)
+    assert material["audio_duration_seconds"] == 1
+    assert material["source_path"].endswith("/source.mp3")
+
+
+def fail_insert(monkeypatch, error):
+    """Insert ke tabel materials gagal seperti di Supabase sungguhan."""
+    real_table = main.supabase_admin.table
+
+    def table(name):
+        query = real_table(name)
+        if name != "materials":
+            return query
+        real_insert = query.insert
+
+        def insert(payload):
+            def execute():
+                raise error
+
+            built = real_insert(payload)
+            built.execute = execute
+            return built
+
+        query.insert = insert
+        return query
+
+    monkeypatch.setattr(main.supabase_admin, "table", table)
+
+
+def test_kolom_migrasi_008_belum_ada_dijawab_jelas(client, kelas, monkeypatch, caplog):
+    fail_insert(
+        monkeypatch,
+        main.APIError(
+            {
+                "code": "PGRST204",
+                "message": "Could not find the 'audio_duration_seconds' column of "
+                "'materials' in the schema cache",
+            }
+        ),
+    )
+    with caplog.at_level("ERROR", logger="main"):
+        response = unggah(client, kelas, "rekaman.mp3", mp3_bytes())
+    # Bukan 500 "Server mengalami kesalahan", tetapi penyebabnya.
+    assert response.status_code == 503
+    assert "migrasi 008_format_materi.sql" in response.json()["detail"]
+    assert "UPLOAD_GAGAL" in caplog.text and "PGRST204" in caplog.text
+    assert not list(main.UPLOAD_DIR.glob("*.upload"))
+
+
+def test_error_database_lain_menyebut_kodenya(client, kelas, monkeypatch):
+    fail_insert(
+        monkeypatch,
+        main.APIError({"code": "23514", "message": "violates check constraint"}),
+    )
+    response = unggah(client, kelas, "a.txt", b"Isi.")
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "Materi gagal disimpan di database (kode 23514). Coba lagi, atau "
+        "hubungi pengelola server."
+    )
+
+
+def test_bucket_belum_ada_pesan_gagal_jelas(client, kelas, monkeypatch, caplog):
+    monkeypatch.setattr(main, "transcribe_audio", lambda *_: "Halo.")
+
+    class MissingBucket:
+        def __init__(self, storage):
+            self.storage = storage
+
+        def from_(self, name):
+            if name == main.MATERIAL_FILES_BUCKET:
+                raise RuntimeError("{'statusCode': 404, 'error': 'Bucket not found'}")
+            return self.storage.from_(name)
+
+    monkeypatch.setattr(main.supabase_admin, "storage", MissingBucket(kelas.storage))
+    with caplog.at_level("ERROR", logger="main"):
+        _, status = selesai(client, unggah(client, kelas, "a.mp3", mp3_bytes()))
+    assert status["status"] == "failed"
+    assert "bucket material-files belum ada" in status["error"]
+    assert "KONVERSI_GAGAL" in caplog.text
+
+
+def test_health_config_memeriksa_migrasi_dan_bucket(client, kelas, monkeypatch):
+    monkeypatch.setattr(main, "SUPABASE_CONFIG_PROBLEMS", [])
+    fail_select = main.APIError(
+        {"code": "42703", "message": "column materials.source_type does not exist"}
+    )
+    real_table = main.supabase_admin.table
+
+    def table(name):
+        query = real_table(name)
+        if name == "materials":
+            def execute():
+                raise fail_select
+            query.execute = execute
+        return query
+
+    class NoBucket:
+        def get_bucket(self, _name):
+            raise RuntimeError("Bucket not found")
+
+    monkeypatch.setattr(main.supabase_admin, "table", table)
+    monkeypatch.setattr(main.supabase_admin, "storage", NoBucket())
+    body = client.get("/health/config").json()
+    assert body == {
+        "ok": False,
+        "problems": [main.MIGRATION_008_MISSING, main.BUCKET_MISSING],
+    }
+
+
+def test_health_config_siap_unggah(client, kelas, monkeypatch):
+    monkeypatch.setattr(main, "SUPABASE_CONFIG_PROBLEMS", [])
+
+    class Bucket:
+        def get_bucket(self, name):
+            return {"id": name}
+
+    monkeypatch.setattr(main.supabase_admin, "storage", Bucket())
+    assert client.get("/health/config").json() == {"ok": True, "problems": []}

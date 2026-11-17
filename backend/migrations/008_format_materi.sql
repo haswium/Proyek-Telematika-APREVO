@@ -44,31 +44,41 @@ create index if not exists materials_conversion_processing_idx
 -- Private. Hanya backend (kunci service_role) yang membaca dan menulis;
 -- siswa memutar audio lewat signed URL berumur 1 jam dari backend.
 
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'material-files',
-  'material-files',
-  false,
-  26214400, -- 25 MB, sama dengan batas audio di backend
-  array[
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/csv',
-    'text/plain',
-    'text/markdown',
-    'image/jpeg',
-    'image/png',
-    'audio/mpeg',
-    'audio/mp4',
-    'audio/wav',
-    'audio/ogg'
-  ]
-)
-on conflict (id) do update
-  set public = false,
-      file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
+-- Dibungkus DO ... exception: kalau bagian storage ditolak (izin), kolom di
+-- langkah 1 tetap tersimpan. Tanpa ini, SQL Editor membatalkan SEMUA
+-- perintah di file ini (satu transaksi), dan unggah gagal karena kolomnya
+-- tidak ada. Pesan NOTICE tampil di hasil SQL Editor.
+do $$
+begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values (
+    'material-files',
+    'material-files',
+    false,
+    26214400, -- 25 MB, sama dengan batas audio di backend
+    array[
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
+      'text/plain',
+      'text/markdown',
+      'image/jpeg',
+      'image/png',
+      'audio/mpeg',
+      'audio/mp4',
+      'audio/wav',
+      'audio/ogg'
+    ]
+  )
+  on conflict (id) do update
+    set public = false,
+        file_size_limit = excluded.file_size_limit,
+        allowed_mime_types = excluded.allowed_mime_types;
+exception when insufficient_privilege then
+  raise notice 'Bucket material-files tidak bisa dibuat lewat SQL (izin). Buat manual di Storage: private, 25 MB.';
+end
+$$;
 
 -- 3. Policy --------------------------------------------------------------------
 -- service_role melewati RLS, jadi backend tetap bisa mengakses bucket ini.
@@ -76,11 +86,22 @@ on conflict (id) do update
 -- termasuk kalau nanti ada policy lain yang membuka storage.objects lebih luas.
 -- Aplikasi Flutter tidak pernah menyentuh bucket ini secara langsung.
 
-drop policy if exists "material-files hanya lewat backend" on storage.objects;
-create policy "material-files hanya lewat backend"
-  on storage.objects
-  as restrictive
-  for all
-  to anon, authenticated
-  using (bucket_id <> 'material-files')
-  with check (bucket_id <> 'material-files');
+do $$
+begin
+  drop policy if exists "material-files hanya lewat backend" on storage.objects;
+  create policy "material-files hanya lewat backend"
+    on storage.objects
+    as restrictive
+    for all
+    to anon, authenticated
+    using (bucket_id <> 'material-files')
+    with check (bucket_id <> 'material-files');
+exception when insufficient_privilege then
+  raise notice 'Policy storage tidak bisa dibuat lewat SQL (izin). Bucket tetap private, jadi aman.';
+end
+$$;
+
+-- 4. Segarkan cache skema PostgREST --------------------------------------------
+-- Supaya API Supabase langsung mengenali kolom baru. Tanpa ini, insert bisa
+-- gagal dengan PGRST204 "Could not find the ... column".
+notify pgrst, 'reload schema';

@@ -186,6 +186,11 @@ Ditolak langsung (tidak ada materi yang dibuat):
   (.xlsx) maksimal 10 MB."), audio lebih dari 15 menit, atau isi ZIP lebih dari
   150 MB setelah diekstrak.
 - `503` foto dan audio kalau `GEMINI_API_KEY` belum diatur.
+- `503` "Server belum siap menerima unggahan: database belum memuat migrasi
+  008_format_materi.sql..." kalau kolom migrasi 008 tidak ada (PostgREST
+  `PGRST204` atau Postgres `42703`).
+- `500` "Materi gagal disimpan di database (kode ...)" untuk error database lain.
+  Keduanya dicatat di log dengan awalan `UPLOAD_GAGAL`.
 - `404` kelas bukan milik guru atau sudah dihapus. `403` bukan guru.
 
 Kalau diterima, server langsung menjawab **`202`** dengan materi draf berstatus
@@ -227,9 +232,10 @@ Hanya guru pemilik. Dipantau aplikasi setiap 3 detik selama `processing`.
   selalu `ready`.
 - `step`: langkah yang sedang berjalan; setelah `ready` berisi ringkasan, misalnya
   "Selesai: 3 halaman, 1 gambar." ditambah catatan (gambar yang dilewati).
-- `error`: pesan untuk guru kalau `failed` (file rusak, Gemini gagal, atau
+- `error`: pesan untuk guru kalau `failed`: file rusak, Gemini gagal, bucket
+  `material-files` belum ada, Storage menolak jenis atau ukuran file, atau
   "Server dimulai ulang saat file ini diproses..." kalau backend restart di
-  tengah proses).
+  tengah proses. Dicatat di log dengan awalan `KONVERSI_GAGAL`.
 
 Setelah `ready`, aplikasi memanggil `generate-image-description` untuk gambar
 yang belum berdeskripsi. Materi yang belum `ready` tidak bisa diterbitkan

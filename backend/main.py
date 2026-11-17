@@ -352,12 +352,64 @@ def test_supabase():
 
 @app.get("/health/config")
 def health_config():
-    """Memeriksa variabel Supabase di server tanpa menampilkan nilainya, supaya
-    salah isi di dashboard Render bisa dicek dari browser."""
-    return {
-        "ok": not SUPABASE_CONFIG_PROBLEMS,
-        "problems": SUPABASE_CONFIG_PROBLEMS,
-    }
+    """Memeriksa variabel Supabase dan kesiapan database untuk unggah semua
+    format, tanpa menampilkan nilai apa pun, supaya bisa dicek dari browser."""
+    problems = list(SUPABASE_CONFIG_PROBLEMS)
+    if not problems:
+        problems += upload_setup_problems()
+    return {"ok": not problems, "problems": problems}
+
+
+# Kolom yang ditambahkan migrasi 008 dan dipakai unggah semua format.
+MIGRATION_008_COLUMNS = (
+    "source_type, source_path, conversion_status, conversion_step, "
+    "conversion_error, audio_duration_seconds"
+)
+MIGRATION_008_MISSING = (
+    "Kolom migrasi 008_format_materi.sql belum ada di tabel materials. "
+    "Jalankan ulang file itu di Supabase SQL Editor"
+)
+BUCKET_MISSING = (
+    "Bucket Storage material-files belum ada. Jalankan ulang "
+    "008_format_materi.sql di Supabase SQL Editor"
+)
+
+
+def is_missing_column(error) -> bool:
+    """PGRST204: kolom tidak ada di cache skema PostgREST. 42703: kolom tidak
+    ada di Postgres."""
+    code = str(getattr(error, "code", "") or "")
+    text = str(getattr(error, "message", "") or error).lower()
+    return code in ("PGRST204", "42703") or (
+        "column" in text and ("schema cache" in text or "does not exist" in text)
+    )
+
+
+def is_missing_bucket(error) -> bool:
+    return "bucket not found" in str(error).lower()
+
+
+def upload_setup_problems() -> list[str]:
+    """Migrasi 008 dan bucket material-files, yang dibutuhkan POST
+    /teacher/materials/files."""
+    problems = []
+    try:
+        supabase_admin.table("materials").select(MIGRATION_008_COLUMNS).limit(1).execute()
+    except Exception as error:
+        problems.append(
+            MIGRATION_008_MISSING
+            if is_missing_column(error)
+            else f"Tabel materials tidak bisa dibaca ({type(error).__name__})"
+        )
+    try:
+        supabase_admin.storage.get_bucket(MATERIAL_FILES_BUCKET)
+    except Exception as error:
+        problems.append(
+            BUCKET_MISSING
+            if is_missing_bucket(error) or "not found" in str(error).lower()
+            else f"Bucket material-files tidak bisa diperiksa ({type(error).__name__})"
+        )
+    return problems
 
 
 TOKEN_INVALID = "Token tidak valid atau sudah kadaluwarsa"
@@ -2202,23 +2254,49 @@ async def upload_material_file(
         if path is not None:
             path.unlink(missing_ok=True)
         raise
-    material = (
-        supabase_admin.table("materials")
-        .insert(
-            {
-                "title": title,
-                "file_url": "",
-                "teacher_id": teacher_id,
-                "subject_id": subject_id,
-                "is_published": False,
-                "source_type": detected.kind,
-                "conversion_status": "processing",
-                "conversion_step": STEP_WAITING,
-                "audio_duration_seconds": duration,
-            }
+    try:
+        material = (
+            supabase_admin.table("materials")
+            .insert(
+                {
+                    "title": title,
+                    "file_url": "",
+                    "teacher_id": teacher_id,
+                    "subject_id": subject_id,
+                    "is_published": False,
+                    "source_type": detected.kind,
+                    "conversion_status": "processing",
+                    "conversion_step": STEP_WAITING,
+                    "audio_duration_seconds": duration,
+                }
+            )
+            .execute()
+        ).data[0]
+    except APIError as error:
+        path.unlink(missing_ok=True)
+        # Dicari di log Render dengan "UPLOAD_GAGAL".
+        logger.error(
+            "UPLOAD_GAGAL simpan materi %s: code=%s pesan=%s",
+            detected.kind,
+            error.code,
+            error.message,
         )
-        .execute()
-    ).data[0]
+        if is_missing_column(error):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Server belum siap menerima unggahan: database belum "
+                    "memuat migrasi 008_format_materi.sql. Hubungi pengelola "
+                    "server."
+                ),
+            ) from None
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Materi gagal disimpan di database (kode {error.code or '-'}). "
+                "Coba lagi, atau hubungi pengelola server."
+            ),
+        ) from None
     background_tasks.add_task(run_conversion, material, detected, path, teacher_id)
     return {
         "material": {**material, "section_count": 0},
@@ -2355,6 +2433,24 @@ def conversion_summary(pages, images, notes):
 def conversion_failure(error) -> str:
     if isinstance(error, (ConversionError, UnsupportedFile)):
         return str(error)
+    text = str(error).lower()
+    if is_missing_bucket(error):
+        return (
+            "Penyimpanan file belum siap: bucket material-files belum ada di "
+            "Supabase. Hubungi pengelola server."
+        )
+    if "mime type" in text or "invalid_mime_type" in text:
+        return (
+            "Penyimpanan Supabase menolak jenis file ini. Hubungi pengelola "
+            "server untuk memeriksa bucket material-files."
+        )
+    if "exceeded the maximum allowed size" in text or "payload too large" in text:
+        return "File melebihi batas ukuran penyimpanan Supabase (25 MB)."
+    if is_missing_column(error):
+        return (
+            "Database belum memuat migrasi 008_format_materi.sql. Hubungi "
+            "pengelola server."
+        )
     if isinstance(error, GeminiKeyMissing):
         return GEMINI_KEY_MISSING_DETAIL
     if is_rate_limited(error):
@@ -2434,7 +2530,13 @@ def run_conversion(material, detected, path: Path, teacher_id):
             )
     except Exception as error:
         if not isinstance(error, (ConversionError, UnsupportedFile)):
-            logger.exception("Konversi materi %s gagal", material_id)
+            # Dicari di log Render dengan "KONVERSI_GAGAL".
+            logger.exception(
+                "KONVERSI_GAGAL materi %s (%s): %s",
+                material_id,
+                detected.kind,
+                " ".join(str(error).split())[:300],
+            )
         discard_partial(material_id, uploaded_images, source_path)
         try:
             supabase_admin.table("materials").update(

@@ -85,6 +85,8 @@ def test_masalah_konfigurasi_disebut_tanpa_nilai(url, key, service, problem):
 
 
 def test_health_config(client, monkeypatch):
+    # Pemeriksaan database diuji di test_material_files.py.
+    monkeypatch.setattr(main, "upload_setup_problems", lambda: [])
     monkeypatch.setattr(main, "SUPABASE_CONFIG_PROBLEMS", [])
     assert client.get("/health/config").json() == {"ok": True, "problems": []}
     monkeypatch.setattr(main, "SUPABASE_CONFIG_PROBLEMS", ["SUPABASE_KEY kosong"])
