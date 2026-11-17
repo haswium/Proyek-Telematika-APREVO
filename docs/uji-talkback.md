@@ -420,6 +420,28 @@ kali dan post-test sekali, siswa B hanya pre-test, siswa C belum mengerjakan.
 | 27.15 | Kembali ke layar progres kelas | Ringkasan tidak diumumkan ulang | | |
 | 27.16 | Periksa kedua layar | Tidak ada grafik dan tidak ada gestur geser. Semua baris bisa dicapai dengan geser satu jari | | |
 
+## 28. Versi web di laptop (guru)
+
+Buka `https://haswium.github.io/Proyek-Telematika-APREVO/` di Chrome atau Edge di
+laptop, dengan layar lebar (jendela penuh). Jalankan NVDA
+(<https://www.nvaccess.org>, gratis). Masuk sebagai guru.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 28.1 | Buka alamat web dengan NVDA menyala | NVDA langsung membaca isi layar. Tidak perlu menekan "Enable accessibility" | | |
+| 28.2 | Lihat layar di jendela penuh | Isi dan menu bawah berada di tengah, tidak melar ke ujung layar | | |
+| 28.3 | Tekan Tab berulang kali di layar masuk | Fokus berpindah ke kolom email, kata sandi, lalu tombol. Cincin kuning mengelilingi elemen yang difokus | | |
+| 28.4 | Klik dengan mouse, lalu tekan Tab | Cincin kuning baru muncul setelah Tab ditekan | | |
+| 28.5 | Di layar daftar, Tab ke pilihan Guru lalu tekan Enter | Guru terpilih. NVDA membaca "Daftar sebagai Guru", terpilih | | |
+| 28.6 | Masuk dengan email | Beranda guru terbuka, sama seperti di HP | | |
+| 28.7 | Masuk dengan Google | Setelah memilih akun Google, browser kembali ke APREVO dan langsung masuk | | |
+| 28.8 | Tab ke menu bawah lalu tekan Enter di "Hasil" | Tab Hasil terbuka. NVDA membaca nama tab | | |
+| 28.9 | Buka kelas, Tab ke baris materi, tekan Enter | Satu fokus per baris, label sama dengan TalkBack | | |
+| 28.10 | Unggah PDF materi | Pemilih file laptop terbuka, PDF terunggah, status diumumkan | | |
+| 28.11 | Buka Progres siswa | Ringkasan kelas dibacakan. Tab berpindah per baris siswa | | |
+| 28.12 | Zoom browser 200% (Ctrl +) | Teks membesar, tidak ada isi yang terpotong | | |
+| 28.13 | Tab ke tombol kembali di AppBar, tekan Enter | Kembali ke layar sebelumnya. NVDA membaca "Kembali" | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya

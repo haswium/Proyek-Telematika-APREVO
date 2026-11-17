@@ -46,7 +46,7 @@ Opsional, tambahkan sendiri kalau perlu:
 
 | Variabel | Kegunaan |
 |---|---|
-| `CORS_ORIGINS` | Origin versi web, dipisah koma. Aplikasi Android tidak memerlukannya |
+| `CORS_ORIGINS` | Origin web tambahan, dipisah koma. Versi web resmi (`https://haswium.github.io`) sudah diizinkan di kode, jadi biasanya tidak perlu diisi. Lihat bagian [Versi web](#versi-web-github-pages) |
 | `GEMINI_DELAY_SECONDS` | Jeda antar panggilan Gemini, bawaan 4 detik |
 | `GEMINI_RATE_LIMIT_PAUSE_SECONDS` | Jeda setelah kena batas Gemini, bawaan 30 detik |
 
@@ -257,6 +257,17 @@ menjadi siswa, sehingga pilihan Guru tidak berlaku.
    Alamat ini harus sama dengan `kAuthRedirectUrl` di
    `lib/services/google_auth.dart` dan intent-filter di `AndroidManifest.xml`.
 
+   Untuk versi web, tambahkan juga:
+
+   ```text
+   https://haswium.github.io/Proyek-Telematika-APREVO/**
+   ```
+
+   Di web, Supabase mengembalikan browser ke halaman yang sedang dibuka
+   (`webRedirectUrl` di file yang sama), jadi alamat ini harus diizinkan.
+   Untuk mencoba di laptop dengan `flutter run -d chrome`, tambahkan juga
+   `http://localhost:*/**`.
+
 ### D. Backend dan aplikasi
 
 1. Backend harus sudah memuat `POST /me/role`. Render men-deploy-nya setelah kode
@@ -272,6 +283,7 @@ menjadi siswa, sehingga pilihan Guru tidak berlaku.
 | Browser berhenti di halaman Site URL atau `localhost` | Redirect URLs di langkah C2 |
 | Pesan `Unsupported provider` | Google sudah diaktifkan di langkah C1 |
 | Browser tidak kembali ke aplikasi | APK sudah dibuat ulang setelah intent-filter ditambahkan |
+| Di versi web, kembali ke halaman Site URL, bukan ke APREVO | Alamat GitHub Pages sudah ada di Redirect URLs (langkah C2) |
 | Memilih peran gagal dengan 404 | Backend di Render sudah memuat `POST /me/role` |
 | Guru ditolak dengan "Hanya guru yang boleh..." | Migrasi di langkah A sudah dijalankan sebelum akun itu dibuat |
 
@@ -284,6 +296,91 @@ menjadi siswa, sehingga pilihan Guru tidak berlaku.
    pertama kali memasang.
 3. Siswa membuka aplikasi, mendaftar atau masuk, lalu bergabung ke kelas dengan kode
    akses. Tidak ada alamat yang perlu diisi.
+
+## Versi web (GitHub Pages)
+
+Guru bisa memakai APREVO di browser laptop, tanpa memasang apa pun:
+
+```text
+https://haswium.github.io/Proyek-Telematika-APREVO/
+```
+
+Kodenya sama dengan aplikasi Android, dan backend serta akunnya juga sama.
+Siswa tunanetra sebaiknya tetap memakai APK, karena TalkBack di aplikasi Android
+lebih andal daripada screen reader di browser.
+
+Situs dibuild oleh GitHub Actions (`.github/workflows/web.yml`) setiap ada push ke
+`main` yang mengubah `lib/`, `web/`, `assets/`, `test/`, atau `pubspec`. Workflow
+menjalankan `flutter analyze` dan `flutter test` dulu, sehingga kode yang gagal tes
+tidak terbit.
+
+### Persiapan (sekali, oleh pemilik repo)
+
+Langkah ini butuh akses admin ke repo `haswium/Proyek-Telematika-APREVO`.
+
+1. **Settings > Pages > Build and deployment > Source**: pilih **GitHub Actions**.
+2. **Settings > Secrets and variables > Actions > New repository secret**, buat
+   dua secret:
+
+   | Secret | Isi |
+   |---|---|
+   | `SUPABASE_URL` | Sama dengan `SUPABASE_URL` di `config/app_env.json` |
+   | `SUPABASE_ANON_KEY` | Kunci `anon`, sama dengan `SUPABASE_ANON_KEY` di `config/app_env.json` |
+
+   **Jangan pernah mengisi kunci `service_role`.** Situs web bisa dibuka siapa
+   saja, dan semua isi build bisa dibaca dari browser. Workflow memeriksa peran
+   kunci dan menolak build kalau kuncinya bukan `anon`, tanpa mencetak nilainya.
+3. Di Supabase, tambahkan alamat GitHub Pages ke **Redirect URLs** (lihat langkah
+   C2 di bagian [Login Google](#login-google)). Tanpa ini, masuk dengan email tetap
+   jalan, tetapi masuk dengan Google gagal kembali ke APREVO.
+4. **Actions > Web (GitHub Pages) > Run workflow** untuk build pertama. Setelah
+   selesai, alamatnya tampil di ringkasan job `deploy`.
+
+### CORS di Render
+
+Browser hanya mengizinkan halaman web memanggil backend kalau backend menyebut
+origin halaman itu. Origin GitHub Pages (`https://haswium.github.io`, tanpa path
+repo) sudah diizinkan di `WEB_APP_ORIGIN` di `backend/main.py`, jadi **tidak ada
+yang perlu diisi di Render** selama backend sudah di-deploy dari `main` yang
+memuat perubahan ini.
+
+Kalau versi web dipasang di alamat lain (misalnya domain sendiri), tambahkan
+origin-nya di Render > **Environment**:
+
+```text
+CORS_ORIGINS=https://aprevo.example.id
+```
+
+Lalu pilih **Save, rebuild, and deploy**. Cek dari laptop:
+
+```bash
+curl -si -X OPTIONS https://proyek-telematika-aprevo.onrender.com/teacher/subjects   -H "Origin: https://haswium.github.io"   -H "Access-Control-Request-Method: GET" | grep -i access-control-allow-origin
+# access-control-allow-origin: https://haswium.github.io
+```
+
+### Build web di laptop
+
+Untuk mencoba sebelum push:
+
+```bash
+flutter build web --release --dart-define-from-file=config/app_env.json
+```
+
+`config/app_env.json` hanya berisi `SUPABASE_URL` dan `SUPABASE_ANON_KEY`. Hasilnya
+ada di `build/web`. Untuk mencobanya di Chrome tanpa build release, pakai
+`flutter run -d chrome --dart-define-from-file=config/app_env.json`.
+
+### Memakai web dengan keyboard dan screen reader
+
+- **Tab** dan **Shift+Tab** berpindah antar tombol, **Enter** atau **Spasi**
+  menekan tombol. Elemen yang sedang difokus diberi cincin kuning (hanya saat
+  keyboard dipakai).
+- Pohon aksesibilitas Flutter langsung dinyalakan di web, jadi NVDA dan screen
+  reader lain membaca label yang sama dengan TalkBack. Tombol tersembunyi
+  "Enable accessibility" tidak perlu ditekan.
+- Di layar lebar, isi berada di tengah dengan lebar maksimum 720 piksel. Ukuran
+  huruf bisa diperbesar dengan zoom browser (Ctrl +).
+- Cek dengan `docs/uji-talkback.md` bagian 28.
 
 ## Batasan paket gratis Render
 
