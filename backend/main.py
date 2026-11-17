@@ -72,8 +72,6 @@ from PIL import UnidentifiedImageError
 from ai_image import describe_image
 import mimetypes
 
-print("DEBUG: MAIN.PY TERLOAD", flush=True)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
