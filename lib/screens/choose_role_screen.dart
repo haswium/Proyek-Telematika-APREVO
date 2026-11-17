@@ -69,6 +69,9 @@ class _ChooseRoleScreenState extends State<ChooseRoleScreen> {
           children: [
             Semantics(
               header: true,
+              // Layar ini tanpa AppBar: judul ini yang dibacakan TalkBack
+              // saat layar terbuka.
+              namesRoute: true,
               child: Text('Pilih peran', style: AppType.headlineMedium),
             ),
             const SizedBox(height: 12),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_store.dart';
 import '../../models/attendance.dart';
 import '../../models/models.dart';
+import '../../services/a11y_focus.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -40,12 +41,17 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   String? _busyId;
   String? _feedback;
   int _feedbackSerial = 0;
+  final _feedbackKey = GlobalKey(debugLabel: 'hasil presensi');
 
+  /// Pesan hasil dibacakan lewat liveRegion, dan fokus TalkBack dipindah ke
+  /// sana: tombol Hadir yang tadi difokus hilang setelah presensi tercatat,
+  /// sehingga tanpa ini fokus TalkBack hilang.
   void _say(String message) {
     setState(() {
       _feedback = message;
       _feedbackSerial++;
     });
+    moveScreenReaderFocus(_feedbackKey);
   }
 
   Future<void> _present(AttendanceSession session, VoidCallback reload) async {
@@ -93,15 +99,18 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   ),
                   if (_feedback != null) ...[
                     const SizedBox(height: 12),
-                    Semantics(
-                      key: ValueKey('feedback-$_feedbackSerial'),
-                      container: true,
-                      liveRegion: true,
-                      label: _feedback,
-                      excludeSemantics: true,
-                      child: AppCard(
-                        color: AppColors.highlight,
-                        child: Text(_feedback!, style: AppType.titleMedium),
+                    KeyedSubtree(
+                      key: _feedbackKey,
+                      child: Semantics(
+                        key: ValueKey('feedback-$_feedbackSerial'),
+                        container: true,
+                        liveRegion: true,
+                        label: _feedback,
+                        excludeSemantics: true,
+                        child: AppCard(
+                          color: AppColors.highlight,
+                          child: Text(_feedback!, style: AppType.titleMedium),
+                        ),
                       ),
                     ),
                   ],

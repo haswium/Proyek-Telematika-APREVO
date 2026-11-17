@@ -3,6 +3,7 @@ import 'package:flutter/semantics.dart';
 
 import '../../data/app_store.dart';
 import '../../models/models.dart';
+import '../../services/a11y_focus.dart';
 import '../../services/announce.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
@@ -437,8 +438,11 @@ class _SectionReaderScreenState extends State<SectionReaderScreen> {
       if (_scroll.hasClients) _scroll.jumpTo(0);
       store.checkOpenSubject();
       // Fokus pindah dari tombol ke header halaman baru, supaya siswa
-      // langsung membaca dari atas.
+      // langsung membaca dari atas. requestFocus untuk keyboard (web),
+      // FocusSemanticEvent untuk TalkBack, yang tidak selalu mengikuti fokus
+      // keyboard.
       _headerFocus.requestFocus();
+      moveScreenReaderFocus(_headerKey);
       _announce();
     });
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/app_store.dart';
 import '../models/models.dart';
+import '../services/announce.dart';
 import '../theme/app_theme.dart';
 import 'choose_role_screen.dart';
 import 'student/student_shell.dart';
@@ -158,15 +159,31 @@ class PasswordToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: visible ? 'Sembunyikan password' : 'Tampilkan password',
-      constraints: const BoxConstraints(
-        minWidth: kTouchTarget,
-        minHeight: kTouchTarget,
+    final label = visible ? 'Sembunyikan password' : 'Tampilkan password';
+    void toggle() {
+      onPressed();
+      announce(visible ? 'Password disembunyikan' : 'Password terlihat');
+    }
+
+    // Satu node: tombol dengan status saklar ("aktif" kalau password
+    // terlihat). Perubahannya juga diumumkan.
+    return Semantics(
+      container: true,
+      button: true,
+      toggled: visible,
+      label: label,
+      onTap: toggle,
+      excludeSemantics: true,
+      child: IconButton(
+        tooltip: label,
+        constraints: const BoxConstraints(
+          minWidth: kTouchTarget,
+          minHeight: kTouchTarget,
+        ),
+        color: AppColors.primary,
+        icon: Icon(visible ? Icons.visibility_off : Icons.visibility_outlined),
+        onPressed: toggle,
       ),
-      color: AppColors.primary,
-      icon: Icon(visible ? Icons.visibility_off : Icons.visibility_outlined),
-      onPressed: onPressed,
     );
   }
 }

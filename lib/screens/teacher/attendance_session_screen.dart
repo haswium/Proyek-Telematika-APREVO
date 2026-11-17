@@ -86,6 +86,9 @@ class _AttendanceSessionScreenState extends State<AttendanceSessionScreen> {
         );
         return AlertDialog(
           title: Text('Hapus sesi ${session.title}?'),
+          // Dibaca TalkBack saat dialog terbuka. Tanpa ini Android hanya
+          // membaca "Peringatan" atau "Dialog".
+          semanticLabel: 'Hapus sesi ${session.title}?',
           content: const Text(
             'Semua catatan presensi di sesi ini ikut terhapus dan tidak '
             'dihitung di rekap.',
@@ -240,6 +243,9 @@ class _StatusDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return SimpleDialog(
       title: Text('Status ${student.name}'),
+      // Dibaca TalkBack saat dialog terbuka. Tanpa ini Android hanya
+      // membaca "Peringatan" atau "Dialog".
+      semanticLabel: 'Status ${student.name}',
       children: [
         for (final status in AttendanceStatus.values)
           Semantics(

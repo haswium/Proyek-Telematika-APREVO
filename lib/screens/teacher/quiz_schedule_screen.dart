@@ -7,6 +7,7 @@ import '../../services/announce.dart';
 import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/date_time_picker.dart';
 import '../../widgets/playful.dart';
 
 /// Guru membuat pre-test atau post-test dengan jadwalnya, atau mengubah
@@ -57,27 +58,15 @@ class _QuizScheduleScreenState extends State<QuizScheduleScreen> {
     });
   }
 
-  Future<DateTime?> _pick(DateTime initial, String what) async {
+  Future<DateTime?> _pick(DateTime initial, String what) {
     final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial,
+    return pickDateTime(
+      context,
+      initial: initial,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
-      helpText: 'Pilih tanggal $what',
+      what: what,
     );
-    if (date == null || !mounted) return null;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'Pilih jam $what',
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child!,
-      ),
-    );
-    if (time == null) return null;
-    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
   Future<void> _pickFrom() async {

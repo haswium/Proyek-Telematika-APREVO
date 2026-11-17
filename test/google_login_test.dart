@@ -244,7 +244,12 @@ void main() {
 
       expect(
         tester.getSemantics(find.text('Pilih peran')),
-        matchesSemantics(label: 'Pilih peran', isHeader: true),
+        // namesRoute: layar tanpa AppBar, judul ini dibacakan saat terbuka.
+        matchesSemantics(
+          label: 'Pilih peran',
+          isHeader: true,
+          namesRoute: true,
+        ),
       );
       for (final role in ['Guru', 'Siswa']) {
         expect(

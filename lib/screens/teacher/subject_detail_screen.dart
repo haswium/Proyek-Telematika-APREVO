@@ -297,6 +297,9 @@ class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
     );
     return AlertDialog(
       title: Text('Hapus kelas ${widget.subject.name}?'),
+      // Dibaca TalkBack saat dialog terbuka. Tanpa ini Android hanya
+      // membaca "Peringatan" atau "Dialog".
+      semanticLabel: 'Hapus kelas ${widget.subject.name}?',
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

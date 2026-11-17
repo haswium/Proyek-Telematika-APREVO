@@ -152,6 +152,9 @@ class _RemoveMemberDialog extends StatelessWidget {
     );
     return AlertDialog(
       title: Text('Keluarkan ${member.name} dari kelas?'),
+      // Dibaca TalkBack saat dialog terbuka. Tanpa ini Android hanya
+      // membaca "Peringatan" atau "Dialog".
+      semanticLabel: 'Keluarkan ${member.name} dari kelas?',
       content: Text(
         '${member.name} tidak bisa lagi membuka materi kelas ini. Nilainya '
         'tetap tersimpan. ${member.name} bisa bergabung lagi dengan kode '

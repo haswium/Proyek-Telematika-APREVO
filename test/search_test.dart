@@ -662,16 +662,23 @@ void main() {
       _announced(tester);
       focused.clear();
 
+      // Seperti pindah halaman biasa: fokus TalkBack ke judul halaman, bukan
+      // ke blok hasil pencarian.
       await tester.tap(find.text('Halaman sebelumnya'));
       await tester.pumpAndSettle();
       expect(_announced(tester), ['Halaman 1 dari 3: Pembuka']);
-      expect(focused, isEmpty);
+      expect(focused, [
+        tester.getSemantics(find.text('Halaman 1 dari 3: Pembuka')).id,
+      ]);
+      focused.clear();
 
       await tester.tap(find.text('Halaman berikutnya'));
       await tester.pumpAndSettle();
       // Halaman yang sama dibuka lagi tanpa pengumuman hasil pencarian.
       expect(_announced(tester), ['Halaman 2 dari 3: Fotosintesis']);
-      expect(focused, isEmpty);
+      expect(focused, [
+        tester.getSemantics(find.text('Halaman 2 dari 3: Fotosintesis')).id,
+      ]);
       handle.dispose();
     });
 

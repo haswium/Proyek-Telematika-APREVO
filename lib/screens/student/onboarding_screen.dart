@@ -97,6 +97,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       children: [
                         Semantics(
                           header: true,
+                          // Layar ini tanpa AppBar: judul ini yang dibacakan TalkBack
+                          // saat layar terbuka.
+                          namesRoute: true,
                           child: Text(
                             'Siap untuk belajar?',
                             textAlign: TextAlign.center,
