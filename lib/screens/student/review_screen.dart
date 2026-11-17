@@ -110,7 +110,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
             PrimaryButton(
               label: 'Buka pembahasan',
               icon: Icons.lightbulb_outline,
-              onPressed: () => Navigator.pushReplacement(
+              // push, bukan pushReplacement: saat pembahasan ditutup, fokus
+              // TalkBack kembali ke tombol ini.
+              onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) =>

@@ -224,6 +224,33 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('pindah halaman: fokus TalkBack pindah ke judul halaman', (
+    tester,
+  ) async {
+    // requestFocus hanya memindahkan fokus keyboard. TalkBack diminta pindah
+    // lewat FocusSemanticEvent, supaya tidak tertinggal di tombol.
+    tallScreen(tester);
+    _serve();
+    final handle = tester.ensureSemantics();
+    await _openPages(tester);
+    await tapAndPump(tester, find.text('Halaman 1: Ayo Menabung'));
+    await tester.pumpAndSettle();
+    final reader = watchScreenReader(tester);
+
+    await tapAndPump(tester, find.text('Halaman berikutnya'));
+    await tester.pump();
+    expect(reader.focusedOn(tester, find.text('Halaman 2 dari 3')), isTrue);
+    expect(reader.said, contains('Halaman 2 dari 3'));
+
+    await tapAndPump(tester, find.text('Halaman sebelumnya'));
+    await tester.pump();
+    expect(
+      reader.focusedOn(tester, find.text('Halaman 1 dari 3: Ayo Menabung')),
+      isTrue,
+    );
+    handle.dispose();
+  });
+
   testWidgets('halaman terakhir: Selesai kembali ke daftar materi', (
     tester,
   ) async {

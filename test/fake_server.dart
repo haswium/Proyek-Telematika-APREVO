@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -114,4 +115,40 @@ void tallScreen(WidgetTester tester) {
   tester.view.physicalSize = const Size(800, 2400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+}
+
+/// Catatan pesan ke screen reader selama tes: id node yang diminta menerima
+/// fokus TalkBack (`FocusSemanticEvent`) dan pengumuman. Selama aktif,
+/// `tester.takeAnnouncements()` tidak menerima apa pun; pakai [said].
+class ScreenReaderLog {
+  final focused = <int>[];
+  final said = <String>[];
+
+  /// `true` kalau fokus TalkBack terakhir diminta ke node milik [finder].
+  bool focusedOn(WidgetTester tester, Finder finder) =>
+      focused.isNotEmpty && focused.last == tester.getSemantics(finder).id;
+}
+
+ScreenReaderLog watchScreenReader(WidgetTester tester) {
+  final log = ScreenReaderLog();
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockDecodedMessageHandler<dynamic>(
+    SystemChannels.accessibility,
+    (message) async {
+      final map = message as Map<Object?, Object?>;
+      if (map['type'] == 'focus') log.focused.add(map['nodeId']! as int);
+      if (map['type'] == 'announce') {
+        final data = map['data']! as Map<Object?, Object?>;
+        log.said.add(data['message']! as String);
+      }
+      return null;
+    },
+  );
+  addTearDown(
+    () => messenger.setMockDecodedMessageHandler<dynamic>(
+      SystemChannels.accessibility,
+      null,
+    ),
+  );
+  return log;
 }

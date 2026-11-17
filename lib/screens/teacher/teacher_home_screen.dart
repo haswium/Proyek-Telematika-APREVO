@@ -188,6 +188,9 @@ class _NewSubjectDialogState extends State<_NewSubjectDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Kelas baru'),
+      // Dibaca TalkBack saat dialog terbuka. Tanpa ini Android hanya
+      // membaca "Peringatan" atau "Dialog".
+      semanticLabel: 'Kelas baru',
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

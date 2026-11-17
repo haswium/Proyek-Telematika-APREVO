@@ -14,6 +14,7 @@ import 'generate_questions_screen.dart';
 import 'material_editor_screen.dart';
 import 'material_images_screen.dart';
 import 'new_material_screen.dart';
+import 'paste_material_screen.dart';
 import 'progress_screen.dart';
 import 'subject_members_screen.dart';
 
@@ -130,6 +131,17 @@ class SubjectDetailScreen extends StatelessWidget {
                     label: 'Unggah Materi PDF',
                     icon: Icons.add_circle_outline,
                     onPressed: () => _createMaterial(context),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.content_paste),
+                    label: const Text('Tempel teks'),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PasteMaterialScreen(subject: subject),
+                      ),
+                    ),
                   ),
                   if (materials.isNotEmpty) ...[
                     const SizedBox(height: 12),
@@ -297,6 +309,9 @@ class _DeleteSubjectDialogState extends State<_DeleteSubjectDialog> {
     );
     return AlertDialog(
       title: Text('Hapus kelas ${widget.subject.name}?'),
+      // Dibaca TalkBack saat dialog terbuka. Tanpa ini Android hanya
+      // membaca "Peringatan" atau "Dialog".
+      semanticLabel: 'Hapus kelas ${widget.subject.name}?',
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

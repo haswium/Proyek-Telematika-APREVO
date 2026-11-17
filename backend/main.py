@@ -45,6 +45,7 @@ from pdf_sections import (
     split_pdf_bytes,
 )
 from ai_client import GeminiKeyMissing, gemini_client
+from text_material import MAX_PAGES, MAX_TEXT_LENGTH, preview_of, split_pasted_text
 from ai_quiz import generate_quiz
 from PIL import UnidentifiedImageError
 from ai_image import describe_image
@@ -1951,6 +1952,97 @@ async def upload_material_pdf(
                 "image_count": section["image_count"],
             }
             for section in sorted(saved_sections, key=lambda row: row["position"])
+        ],
+    }
+
+
+class PastedTextPreviewRequest(BaseModel):
+    title: str = Field(default="", max_length=200)
+    text: str = Field(max_length=MAX_TEXT_LENGTH)
+
+
+class PastedTextMaterialRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    subject_id: str
+    text: str = Field(max_length=MAX_TEXT_LENGTH)
+
+
+def pasted_sections(text: str, title: str):
+    """Halaman dari teks tempelan, atau 422 dengan pesan untuk guru."""
+    sections = split_pasted_text(text, title.strip() or "Materi")
+    if not sections or not any(s.content.strip() for s in sections):
+        raise HTTPException(
+            status_code=422,
+            detail="Teks materi masih kosong. Tempel isi materi dulu.",
+        )
+    if len(sections) > MAX_PAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Teks terbagi menjadi {len(sections)} halaman, maksimal "
+                f"{MAX_PAGES}. Pecah menjadi beberapa materi."
+            ),
+        )
+    return sections
+
+
+@app.post("/teacher/materials/text/preview")
+def preview_pasted_material(
+    data: PastedTextPreviewRequest, auth=Depends(require_teacher)
+):
+    """Pembagian halaman sebelum disimpan. Tidak menyimpan apa pun."""
+    sections = pasted_sections(data.text, data.title)
+    return {"pages": [preview_of(section) for section in sections]}
+
+
+@app.post("/teacher/materials/text")
+def create_pasted_material(
+    data: PastedTextMaterialRequest, auth=Depends(require_teacher)
+):
+    """Materi dari teks tempelan guru, tanpa file. Selalu draf. `file_url`
+    kosong: tidak ada PDF di penyimpanan, dan kode yang membaca PDF
+    memeriksanya dulu."""
+    teacher_id = auth["user_id"]
+    get_owned_subject(data.subject_id, teacher_id)
+    title = data.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Judul materi wajib diisi.")
+    sections = pasted_sections(data.text, title)
+    material = (
+        supabase_admin.table("materials")
+        .insert(
+            {
+                "title": title,
+                "file_url": "",
+                "teacher_id": teacher_id,
+                "subject_id": data.subject_id,
+                "is_published": False,
+            }
+        )
+        .execute()
+    ).data[0]
+    try:
+        saved = (
+            supabase_admin.table("material_sections")
+            .insert(
+                [
+                    section.as_row(material["id"], position)
+                    for position, section in enumerate(sections, start=1)
+                ]
+            )
+            .execute()
+        ).data or []
+    except Exception:
+        logger.exception("Gagal menyimpan halaman materi teks")
+        supabase_admin.table("materials").delete().eq("id", material["id"]).execute()
+        raise HTTPException(
+            status_code=500, detail="Halaman materi gagal disimpan. Coba lagi."
+        )
+    return {
+        "material": material,
+        "sections": [
+            {"id": row["id"], "position": row["position"], "title": row["title"]}
+            for row in sorted(saved, key=lambda row: row["position"])
         ],
     }
 

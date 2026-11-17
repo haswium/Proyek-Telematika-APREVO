@@ -58,6 +58,11 @@ TEACHER_CASES = [
     ),
     ("GET", "/teacher/subjects/{subject}/attendance/summary", None),
     ("GET", "/teacher/subjects/{subject}/progress", None),
+    (
+        "POST",
+        "/teacher/materials/text",
+        {"title": "Baru", "subject_id": "{subject}", "text": "Isi materi."},
+    ),
     ("GET", "/teacher/subjects/{subject}/students/{student}/progress", None),
     ("GET", "/teacher/subjects/{subject}/delete-summary", None),
     ("GET", "/materials/m1/sections", None),
@@ -174,7 +179,11 @@ def test_daftar_kasus_mencakup_semua_endpoint_kelas():
         (method, route.path)
         for route in main.app.routes
         if any(mark in getattr(route, "path", "") for mark in marks)
-        or getattr(route, "path", "") in ("/student/subjects/join", "/teacher/materials/upload")
+        or getattr(route, "path", "") in (
+            "/student/subjects/join",
+            "/teacher/materials/upload",
+            "/teacher/materials/text",
+        )
         for method in getattr(route, "methods", None) or ()
     }
     routes = {route for route in routes if route[0] != "HEAD"}

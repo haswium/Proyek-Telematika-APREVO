@@ -202,7 +202,12 @@ void main() {
     expect(server.bodyOf('PATCH /teacher/materials/m1/images/1'), {
       'is_decorative': true,
     });
-    expectLive(tester, 'Ditandai dekoratif, tidak dibacakan ke siswa.');
+    // Pesan juga menyebut kolom yang hilang di bawah saklar.
+    expectLive(
+      tester,
+      'Ditandai dekoratif, tidak dibacakan ke siswa. Kolom deskripsi '
+      'disembunyikan.',
+    );
     expect(find.byType(TextField), findsNothing);
     handle.dispose();
   });

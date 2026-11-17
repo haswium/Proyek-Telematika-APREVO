@@ -7,6 +7,7 @@ import '../../widgets/common.dart';
 import '../../widgets/load_view.dart';
 import '../../widgets/nav_bar.dart';
 import '../../widgets/playful.dart';
+import '../guide_screen.dart';
 import '../profile_tab.dart';
 import 'results_screen.dart';
 import 'teacher_home_screen.dart';
@@ -24,6 +25,29 @@ class TeacherShell extends StatefulWidget {
 
 class _TeacherShellState extends State<TeacherShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tawarkan panduan saat pertama kali sampai di beranda, setelah transisi
+    // layar selesai supaya judul dialog yang dibacakan TalkBack.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      final animation = route?.animation;
+      if (animation == null || animation.isCompleted) {
+        offerGuideOnce(context);
+        return;
+      }
+      late final AnimationStatusListener listener;
+      listener = (status) {
+        if (!status.isCompleted) return;
+        animation.removeStatusListener(listener);
+        if (mounted) offerGuideOnce(context);
+      };
+      animation.addStatusListener(listener);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

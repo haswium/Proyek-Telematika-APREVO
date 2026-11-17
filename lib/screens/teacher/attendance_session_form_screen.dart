@@ -8,6 +8,7 @@ import '../../services/api_client.dart';
 import '../../services/time_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/date_time_picker.dart';
 import '../../widgets/playful.dart';
 
 /// Guru membuka sesi presensi: judul, waktu buka (sekarang atau atur
@@ -61,27 +62,15 @@ class _AttendanceSessionFormScreenState
     });
   }
 
-  Future<DateTime?> _pick(DateTime initial, String what) async {
+  Future<DateTime?> _pick(DateTime initial, String what) {
     final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial,
+    return pickDateTime(
+      context,
+      initial: initial,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: DateTime(now.year + 1, 12, 31),
-      helpText: 'Pilih tanggal $what',
+      what: what,
     );
-    if (date == null || !mounted) return null;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'Pilih jam $what',
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child!,
-      ),
-    );
-    if (time == null) return null;
-    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
   Future<void> _pickOpen() async {
@@ -228,7 +217,16 @@ class _AttendanceSessionFormScreenState
                   selected: opensAt == null,
                   onSelected: _busy
                       ? null
-                      : (_) => setState(() => _opensAt = null),
+                      : (_) {
+                          final hadCard = _opensAt != null;
+                          setState(() => _opensAt = null);
+                          if (hadCard) {
+                            announce(
+                              'Kartu waktu buka disembunyikan. Sesi langsung '
+                              'dibuka saat disimpan.',
+                            );
+                          }
+                        },
                 ),
                 AppChoiceChip(
                   label: 'Atur sendiri',
@@ -283,7 +281,16 @@ class _AttendanceSessionFormScreenState
                       ? null
                       : (_) {
                           setState(() => _preset = null);
-                          if (_closesAt == null) _pickClose();
+                          if (_closesAt == null) {
+                            _pickClose();
+                          } else {
+                            // Kartu waktu tutup muncul tanpa dialog, jadi
+                            // perubahan layarnya diumumkan.
+                            announce(
+                              'Kartu waktu tutup muncul di bawah pilihan: '
+                              '${formatDateTime(_closesAt!)}.',
+                            );
+                          }
                         },
                 ),
               ],

@@ -391,8 +391,12 @@ class _ImageCardState extends State<_ImageCard> {
       message = decorative == null
           ? 'Deskripsi ${_title.toLowerCase()} disimpan.'
           : decorative
-          ? 'Ditandai dekoratif, tidak dibacakan ke siswa.'
-          : 'Tidak dekoratif lagi, deskripsinya dibacakan ke siswa.';
+          // Pesan ini juga menyebut kolom yang muncul atau hilang di bawah
+          // saklar, supaya pengguna screen reader tahu isi layarnya berubah.
+          ? 'Ditandai dekoratif, tidak dibacakan ke siswa. Kolom deskripsi '
+                'disembunyikan.'
+          : 'Tidak dekoratif lagi, deskripsinya dibacakan ke siswa. Kolom '
+                'deskripsi muncul di bawah saklar.';
     } on ApiException catch (e) {
       message = e.message;
     }

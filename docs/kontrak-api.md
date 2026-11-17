@@ -152,6 +152,64 @@ Error: `400` bukan PDF (`"File harus berformat PDF."` atau `"Isi file bukan
 PDF yang valid."`) atau tidak bisa diproses, `403` bukan guru, `404`
 kelas tidak ditemukan, `413` terlalu besar, `500` gagal simpan.
 
+### POST `/teacher/materials/text/preview`
+
+Hanya guru. Pembagian halaman teks tempelan, **tanpa menyimpan apa pun**.
+Body: `{"title": "Iklim", "text": "..."}` (`text` maksimal 100.000 karakter).
+
+```json
+{
+  "pages": [
+    {
+      "title": "Musim",
+      "content": "Ada dua musim:\n- kemarau\n- hujan",
+      "paragraph_count": 1,
+      "subheading_count": 0,
+      "list_item_count": 2,
+      "word_count": 5
+    }
+  ]
+}
+```
+
+Aturan pembagian (kode: `backend/text_material.py`), satu judul bagian = satu
+halaman:
+
+1. Ada baris berawalan `# `: hanya baris itu yang memulai halaman baru, `## `
+   menjadi subjudul.
+2. Tidak ada `# `: baris pendek yang berdiri sendiri menjadi judul bagian, yaitu
+   kurang dari 60 karakter, tidak diakhiri titik, bukan butir daftar, dan
+   diapit baris kosong (atau teksnya tidak punya baris kosong sama sekali, atau
+   baris berikutnya memulai kalimat baru dengan huruf besar).
+3. Baris berurutan tanpa baris kosong digabung menjadi satu paragraf (teks
+   salinan sering terpotong di tengah kalimat). Kalau teksnya tidak punya baris
+   kosong sama sekali, setiap baris satu paragraf. Butir (`-`, `•`, `1.`) selalu
+   satu baris sendiri.
+4. Teks sebelum judul pertama masuk ke halaman berjudul sama dengan judul
+   materi. Dua judul berturut-turut menjadi judul halaman dan subjudul.
+
+Error: `403` bukan guru; `422` teks kosong ("Teks materi masih kosong..."),
+terlalu panjang, atau lebih dari 200 halaman.
+
+### POST `/teacher/materials/text`
+
+Hanya guru pemilik kelas. Membuat materi **draf** dari teks tempelan dengan
+pembagian yang sama seperti pratinjau. Tidak ada file: `file_url` kosong,
+dan halaman disimpan di `material_sections` seperti materi PDF, jadi editor,
+pencarian, dan layar baca siswa sama.
+
+Body: `{"title": "Iklim", "subject_id": "...", "text": "..."}`.
+
+```json
+{
+  "material": { "id": "...", "title": "Iklim", "is_published": false, "file_url": "", "...": "..." },
+  "sections": [ { "id": "...", "position": 1, "title": "Musim" } ]
+}
+```
+
+Error: `403` bukan guru; `404` kelas bukan milik guru atau sudah dihapus;
+`422` judul atau teks kosong, terlalu panjang, atau lebih dari 200 halaman.
+
 Daftar materi guru (`GET /teacher/subjects/{subject_id}/materials`) juga
 berisi `hidden_image_count`: jumlah gambar yang disembunyikan dari siswa di
 materi yang sudah terbit karena belum punya deskripsi. Draf selalu `0`.

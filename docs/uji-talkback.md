@@ -442,17 +442,72 @@ laptop, dengan layar lebar (jendela penuh). Jalankan NVDA
 | 28.12 | Zoom browser 200% (Ctrl +) | Teks membesar, tidak ada isi yang terpotong | | |
 | 28.13 | Tab ke tombol kembali di AppBar, tekan Enter | Kembali ke layar sebelumnya. NVDA membaca "Kembali" | | |
 
+## 29. Buka-tutup, dialog, dan perpindahan fokus (masukan uji SLB)
+
+Masukan dari uji coba di SLB: "kadang buka tutup kurang, tidak dibaca screen
+reader". Utamakan layar siswa. Catat di kolom Catatan kalau sebuah pesan
+dibacakan dua kali.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 29.1 | Baca materi, ketuk dua kali Halaman berikutnya | Terdengar "Halaman 2 dari N: [judul]". Fokus pindah ke judul halaman, bukan tetap di tombol. Geser kanan membaca paragraf pertama | | |
+| 29.2 | Ketuk dua kali Halaman sebelumnya | Sama: fokus di judul halaman sebelumnya | | |
+| 29.3 | Buka Daftar halaman, lalu kembali | Judul layar dibacakan saat masuk. Saat kembali, fokus ada di tombol yang tadi diketuk | | |
+| 29.4 | Kuis: jawab soal, tekan Periksa Jawaban | Bunyi pendek (lihat bagian 31), lalu kartu benar/salah dibacakan. Geser kiri dari tombol sampai ke kartu itu | | |
+| 29.5 | Ketuk dua kali Soal berikutnya | Terdengar "Soal 2 dari N" dan instruksi. Fokus pindah ke teks soal, bukan ke tombol | | |
+| 29.6 | Jawabanku: ketuk dua kali Buka pembahasan, lalu tombol kembali | Judul "Pembahasan" dibacakan. Setelah kembali, layar Jawabanku tampil lagi dan fokus di tombol Buka pembahasan | | |
+| 29.7 | Presensi: ketuk dua kali tombol Hadir | Tombol hilang, fokus pindah ke kartu "Presensi tercatat: hadir di [judul]" | | |
+| 29.8 | Riwayat presensi | Setiap baris satu fokus, status dibacakan | | |
+| 29.9 | Guru: hapus sesi, keluarkan siswa, buat kelas | Saat dialog terbuka, judul dialog dibacakan (misalnya "Kelas baru"), bukan hanya "Peringatan" atau "Dialog". Saat ditutup, fokus kembali ke tombol pembuka | | |
+| 29.10 | Layar masuk: ketuk dua kali tombol mata | Terdengar "Password terlihat". Tombolnya dibaca sebagai saklar aktif | | |
+| 29.11 | Guru: form presensi, pilih Atur sendiri di waktu buka | Dialog tanggal terbuka dengan kolom ketik "Tanggal buka" (hh/bb/tttt), bukan kalender. Tombol "Beralih ke kalender" ada | | |
+| 29.12 | Jam: dialog jam | Dua kolom ketik, Jam dan Menit | | |
+| 29.13 | Pilih Atur sendiri di waktu tutup setelah tadi memilih 30 menit | Terdengar "Kartu waktu tutup muncul di bawah pilihan" | | |
+| 29.14 | Guru: Gambar dan deskripsi, nyalakan saklar Dekoratif | Terdengar bahwa kolom deskripsi disembunyikan | | |
+| 29.15 | Layar sambutan, Pilih peran, dan onboarding siswa | Judul layar dibacakan saat layar terbuka | | |
+| 29.16 | Pratinjau tempel teks (bagian 30): ketuk dua kali satu halaman | Terdengar "[judul] dibuka". Label berubah menjadi "..., terbuka". Geser kanan membaca paragraf pertama halaman itu | | |
+
+## 30. Materi dari tempel teks (guru)
+
+Siapkan teks dari Word atau situs dengan beberapa judul bagian tanpa tanda `#`.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 30.1 | Halaman kelas, Tempel teks | Layar "Tempel teks materi". Aturan pembagian halaman dibacakan | | |
+| 30.2 | Tekan Lihat pratinjau halaman tanpa teks | "Tempel isi materi dulu di kolom teks." | | |
+| 30.3 | Isi judul, tempel teks, tekan Lihat pratinjau halaman | Fokus pindah ke "Pratinjau: teks terbagi menjadi N halaman: [judul-judul]" | | |
+| 30.4 | Periksa daftar halaman | Tiap halaman: "Halaman 1: [judul], tertutup. [n] paragraf, [n] kata" | | |
+| 30.5 | Buka satu halaman | Isinya terbaca per paragraf; subjudul sebagai judul; butir sebagai "Butir: ..." | | |
+| 30.6 | Ubah teks sedikit | Terdengar pratinjau lama; tombol Simpan sebagai draf tidak bisa ditekan | | |
+| 30.7 | Pratinjau lagi, Simpan sebagai draf | Editor materi terbuka, terdengar "Materi [judul] disimpan sebagai draf, N halaman" | | |
+| 30.8 | Teks dengan baris `# Judul` | Hanya baris `#` yang memulai halaman | | |
+
+## 31. Efek bunyi dan panduan
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 31.1 | Jawab benar | Dua nada naik pendek, lalu TalkBack membaca kartu benar. Suara TalkBack tidak terpotong | | |
+| 31.2 | Jawab salah | Satu nada rendah pendek, lalu kartu salah dibacakan | | |
+| 31.3 | Profil siswa | Ada saklar "Efek bunyi benar dan salah", aktif | | |
+| 31.4 | Matikan saklar, jawab soal | Tidak ada bunyi, kartu tetap dibacakan | | |
+| 31.5 | Masuk pertama kali di HP ini | Dialog "Mau membaca panduan dulu?" dibacakan setelah beranda tampil | | |
+| 31.6 | Pilih Buka panduan | Layar Panduan, judul tiap fitur bisa dilompati dengan navigasi Judul | | |
+| 31.7 | Fokus ke langkah | "Langkah 1 dari 3: ..." satu fokus per langkah | | |
+| 31.8 | Keluar lalu masuk lagi dengan akun yang sama | Panduan tidak ditawarkan lagi. Tetap bisa dibuka dari Profil > Panduan | | |
+| 31.9 | Laptop dengan NVDA: buka Panduan, tekan H | Pindah antarjudul fitur | | |
+
 ## Tanpa TalkBack
 
 Matikan TalkBack, lalu ulangi beberapa langkah ini. APREVO tidak punya
-suara sendiri (tanpa TTS), jadi aplikasi harus **diam**. Semua informasi
+suara bicara sendiri (tanpa TTS), jadi aplikasi harus **diam**, kecuali efek
+bunyi pendek benar dan salah (bisa dimatikan di Profil). Semua informasi
 tetap tampil di layar.
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
 | T1 | Masuk pertama kali sebagai siswa baru | Sambutan tampil, tidak ada suara | | |
 | T2 | Masukkan kode akses salah | Pesan error tampil, tidak ada suara | | |
-| T3 | Jawab satu soal | Umpan balik tampil, tidak ada suara | | |
+| T3 | Jawab satu soal | Umpan balik tampil. Hanya efek bunyi pendek, tidak ada suara bicara | | |
 | T4 | Selesaikan satu tes | Ringkasan hasil tampil, tidak ada suara | | |
 | T5 | Tekan Hadir di Presensi | "Presensi tercatat" tampil, tidak ada suara | | |
 

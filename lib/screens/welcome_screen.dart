@@ -33,6 +33,9 @@ class WelcomeScreen extends StatelessWidget {
                     children: [
                       Semantics(
                         header: true,
+                        // Layar ini tanpa AppBar: judul ini yang dibacakan TalkBack
+                        // saat layar terbuka.
+                        namesRoute: true,
                         child: const Text(
                           'APREVO',
                           style: TextStyle(

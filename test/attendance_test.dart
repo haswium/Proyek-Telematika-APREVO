@@ -157,6 +157,30 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('setelah Hadir, fokus TalkBack pindah ke kartu hasil', (
+      tester,
+    ) async {
+      // Tombol Hadir yang sedang difokus hilang. Tanpa perpindahan fokus,
+      // TalkBack kehilangan posisinya.
+      tallScreen(tester);
+      final handle = tester.ensureSemantics();
+      server().install();
+      await open(tester);
+      final reader = watchScreenReader(tester);
+
+      await tester.tap(find.textContaining('Hadir untuk Pertemuan 3'));
+      await tester.pumpAndSettle();
+
+      expect(
+        reader.focusedOn(
+          tester,
+          find.bySemanticsLabel('Presensi tercatat: hadir di Pertemuan 3.'),
+        ),
+        isTrue,
+      );
+      handle.dispose();
+    });
+
     testWidgets('penolakan server dibacakan lewat liveRegion', (tester) async {
       tallScreen(tester);
       final handle = tester.ensureSemantics();
