@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 
 import '../models/attendance.dart';
 import '../models/models.dart';
+import '../models/pasted_text.dart';
 import '../models/progress.dart';
 import '../services/announce.dart';
 import '../services/api_client.dart';
@@ -459,6 +460,41 @@ class AppStore extends ChangeNotifier {
       }),
       sections: sections,
     );
+  }
+
+  /// Pembagian halaman teks tempelan, tanpa menyimpan apa pun.
+  Future<List<PastedPage>> previewPastedText({
+    required String title,
+    required String text,
+  }) async {
+    final data = await api.post('/teacher/materials/text/preview', {
+      'title': title,
+      'text': text,
+    });
+    return [
+      for (final page in data['pages'] as List? ?? const [])
+        PastedPage.fromJson(page as Map<String, dynamic>),
+    ];
+  }
+
+  /// Materi baru (draf) dari teks tempelan.
+  Future<LessonMaterial> createPastedMaterial(
+    Subject subject, {
+    required String title,
+    required String text,
+  }) async {
+    final data = await api.post('/teacher/materials/text', {
+      'title': title,
+      'subject_id': subject.id,
+      'text': text,
+    });
+    final sections = data['sections'] as List? ?? const [];
+    final material = data['material'] as Map<String, dynamic>? ?? const {};
+    notifyListeners();
+    return LessonMaterial.fromJson({
+      ...material,
+      'section_count': sections.length,
+    });
   }
 
   /// Gambar materi dengan tautan pratinjau, untuk diperiksa guru.
