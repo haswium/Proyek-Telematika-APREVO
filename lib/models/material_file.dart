@@ -53,13 +53,12 @@ const Map<String, String> kOldOfficeFormats = {
   'xls': 'xlsx',
 };
 
-/// Teks bantuan di layar unggah, dibaca TalkBack.
+/// Teks bantuan di layar unggah, dibaca TalkBack. Batas ukuran dan format
+/// lama tidak disebut di sini; keduanya baru disebutkan di pesan error kalau
+/// filenya memang ditolak ([uploadProblem] dan pesan dari backend).
 const String kUploadHelp =
-    'Format yang didukung: PDF, Word (.docx), PowerPoint (.pptx), Excel '
-    '(.xlsx), CSV, teks (.txt, .md), foto atau gambar (.jpg, .png), dan audio '
-    '(.mp3, .m4a, .wav, .ogg). Batas ukuran: PDF, Word, dan PowerPoint 20 MB; '
-    'Excel dan gambar 10 MB; CSV dan teks 2 MB; audio 25 MB dan paling lama 15 '
-    'menit. Format lama .doc, .ppt, dan .xls perlu disimpan ulang dulu.';
+    'Bisa unggah materi dalam bentuk apa pun: dokumen, presentasi, tabel, '
+    'teks, foto, atau audio.';
 
 String extensionOf(String fileName) {
   final dot = fileName.lastIndexOf('.');

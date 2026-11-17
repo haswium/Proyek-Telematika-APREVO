@@ -504,7 +504,7 @@ pendek (.m4a atau .mp3, kurang dari 1 menit). Siapkan juga satu file .doc lama.
 
 | No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
 |---|---|---|---|---|
-| 32.1 | Halaman kelas, Unggah materi | Judul "Unggah materi". Teks bantuan menyebut semua format dan batas ukurannya | | |
+| 32.1 | Halaman kelas, Unggah materi | Judul "Unggah materi". Teks bantuan satu kalimat: "Bisa unggah materi dalam bentuk apa pun: dokumen, presentasi, tabel, teks, foto, atau audio." Tidak ada rincian ukuran | | |
 | 32.2 | Pilih file materi | Pemilih file Android menampilkan file semua format di atas | | |
 | 32.3 | Pilih file .doc lama | "Format .doc lama tidak didukung. Simpan ulang ... sebagai .docx lalu unggah lagi." | | |
 | 32.4 | Pilih file .docx | "File dipilih: [nama], [ukuran]". Baris file dibaca "File Word: ..." | | |
@@ -518,6 +518,8 @@ pendek (.m4a atau .mp3, kurang dari 1 menit). Siapkan juga satu file .doc lama.
 | 32.12 | Kembali ke halaman kelas selama file diproses | Kartu materi "Sedang diproses" dengan langkahnya. Status berganti sendiri tanpa ditekan | | |
 | 32.13 | Unggah file .docx yang rusak (misalnya file .zip yang diganti nama) | Pesan gagal dibacakan, fokus pindah ke pesan itu, tombol "Coba unggah lagi". Materi gagal tidak tertinggal di daftar | | |
 | 32.14 | Audio lebih dari 15 menit | Ditolak dengan pesan durasi maksimal 15 menit | | |
+| 32.15 | Pilih file yang terlalu besar (misalnya foto 12 MB) | Baru sekarang batasnya disebut: "File ... terlalu besar, ... Batas ukuran gambar 10 MB." | | |
+| 32.16 | Versi web: unggah MP3 4–5 MB | Status diproses sampai selesai. Kalau gagal, pesannya menyebut penyebab (misalnya migrasi 008 belum terpasang), bukan "Server mengalami kesalahan" | | |
 
 ## 33. Pemutar audio dan edit teks halaman
 

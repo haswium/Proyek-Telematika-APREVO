@@ -117,21 +117,18 @@ void main() {
     });
   });
 
-  testWidgets('teks bantuan menyebut format yang didukung', (tester) async {
+  testWidgets('teks bantuan satu kalimat, tanpa rincian ukuran', (
+    tester,
+  ) async {
     FakeServer({}).install();
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(_screen(() async => null));
-    expect(find.bySemanticsLabel(kUploadHelp), findsOneWidget);
-    for (final format in [
-      'PDF',
-      'Word',
-      'PowerPoint',
-      'Excel',
-      'CSV',
-      '.mp3',
-    ]) {
-      expect(kUploadHelp, contains(format));
-    }
+    const help =
+        'Bisa unggah materi dalam bentuk apa pun: dokumen, presentasi, tabel, '
+        'teks, foto, atau audio.';
+    expect(kUploadHelp, help);
+    expect(find.bySemanticsLabel(help), findsOneWidget);
+    expect(find.textContaining('MB'), findsNothing);
     handle.dispose();
   });
 
