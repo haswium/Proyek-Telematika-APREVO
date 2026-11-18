@@ -3,9 +3,9 @@
     "short_name": "APREVO",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#5B34E0",
-    "theme_color": "#5B34E0",
-    "description": "APREVO, aplikasi belajar untuk siswa tunanetra.",
+    "background_color": "#2A1580",
+    "theme_color": "#2A1580",
+    "description": "APREVO, aplikasi belajar interaktif untuk siswa tunanetra yang memakai screen reader.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
@@ -31,5 +31,6 @@
             "type": "image/png",
             "purpose": "maskable"
         }
-    ]
+    ],
+    "lang": "id"
 }
