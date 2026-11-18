@@ -292,47 +292,29 @@ class StarRow extends StatelessWidget {
   }
 }
 
-/// Logo APREVO: lima batang gelombang suara yang naik-turun pelan.
-/// Hanya hiasan; nama aplikasinya dibacakan dari teks di sebelahnya.
-class SoundWaveLogo extends StatelessWidget {
-  const SoundWaveLogo({super.key, this.height = 72, this.onDark = false});
+/// Logo APREVO (`assets/logo_aprevo.png`) di atas lingkaran putih, supaya
+/// gradasi ungunya tetap terlihat di latar ungu. Hanya hiasan; nama
+/// aplikasinya dibacakan dari teks di sebelahnya.
+class AprevoLogo extends StatelessWidget {
+  const AprevoLogo({super.key, this.size = 96});
 
-  final double height;
+  /// Diameter lingkaran putih.
+  final double size;
 
-  /// `true` untuk latar ungu (batang kuning dan putih),
-  /// `false` untuk latar putih (batang kuning dan ungu).
-  final bool onDark;
-
-  static const List<double> _levels = [0.45, 0.8, 1, 0.8, 0.45];
+  static const String asset = 'assets/logo_aprevo.png';
 
   @override
   Widget build(BuildContext context) {
-    final other = onDark ? AppColors.white : AppColors.primary;
-    final barWidth = height * 0.12;
     return ExcludeSemantics(
-      child: SizedBox(
-        height: height,
-        child: Loop(
-          duration: const Duration(milliseconds: 1800),
-          builder: (context, t) => Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < _levels.length; i++)
-                Container(
-                  width: barWidth,
-                  height:
-                      height *
-                      _levels[i] *
-                      (0.8 + 0.2 * math.sin(t * 2 * math.pi + i * 1.1)),
-                  margin: EdgeInsets.symmetric(horizontal: barWidth * 0.3),
-                  decoration: BoxDecoration(
-                    color: i.isEven ? AppColors.accent : other,
-                    borderRadius: BorderRadius.circular(barWidth),
-                  ),
-                ),
-            ],
-          ),
+      child: Container(
+        width: size,
+        height: size,
+        padding: EdgeInsets.all(size * 0.16),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          shape: BoxShape.circle,
         ),
+        child: Image.asset(asset, fit: BoxFit.contain),
       ),
     );
   }

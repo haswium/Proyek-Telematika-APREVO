@@ -24,7 +24,7 @@ class WelcomeScreen extends StatelessWidget {
             child: Column(
               children: [
                 const FadeSlideIn(
-                  child: SoundWaveLogo(height: 88, onDark: true),
+                  child: AprevoLogo(size: 120),
                 ),
                 const SizedBox(height: 20),
                 FadeSlideIn(

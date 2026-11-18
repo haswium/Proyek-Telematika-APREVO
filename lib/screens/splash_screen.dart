@@ -73,7 +73,7 @@ class _SplashScreenState extends State<SplashScreen>
                           const PulseRings(
                             size: 190,
                             color: Color(0x14FFFFFF),
-                            child: SoundWaveLogo(height: 84, onDark: true),
+                            child: AprevoLogo(size: 130),
                           ),
                           const SizedBox(height: 12),
                           Semantics(

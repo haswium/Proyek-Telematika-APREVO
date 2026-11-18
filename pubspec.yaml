@@ -80,6 +80,8 @@ flutter:
   # suara bicara), masing-masing kurang dari 0,3 detik.
   assets:
     - assets/sounds/
+    # Logo APREVO (PNG transparan) untuk layar pembuka dan sambutan.
+    - assets/logo_aprevo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -112,8 +114,9 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# Ikon launcher Android: logo APREVO (gelombang suara, sama dengan layar
-# pembuka dan ikon web). Sumbernya dibuat dari geometri SoundWaveLogo.
+# Ikon launcher Android: logo APREVO (assets/logo_aprevo.png, sama dengan
+# layar pembuka dan ikon web). foreground.png berisi logo yang sudah diberi
+# ruang aman (muat di lingkaran 60% kanvas), icon.png logo di atas ungu tua.
 # Buat ulang dengan: dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: true
@@ -121,6 +124,6 @@ flutter_launcher_icons:
   image_path: assets/icon/icon.png
   adaptive_icon_background: "#2A1580" # AppColors.bgBottom
   adaptive_icon_foreground: assets/icon/foreground.png
-  # Logo di foreground.png sudah berada di zona aman, jadi tanpa inset.
+  # Ruang aman sudah ada di foreground.png, jadi tanpa inset tambahan.
   adaptive_icon_foreground_inset: 0
   min_sdk_android: 21

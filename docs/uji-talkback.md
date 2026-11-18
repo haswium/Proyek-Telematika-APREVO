@@ -53,7 +53,7 @@ Periksa sambil mengerjakan layar-layar di bawah. Isi sekali di akhir.
 | No | Yang diperiksa | Yang seharusnya | Hasil | Catatan |
 |---|---|---|---|---|
 | U1 | Tombol kembali di kiri atas | Terbaca "Kembali, tombol" (bukan "Back") | | |
-| U2 | Hiasan (logo gelombang suara, gelembung latar, ikon centang, batang progres) | Tidak pernah difokus TalkBack | | |
+| U2 | Hiasan (logo APREVO, gelembung latar, ikon centang, batang progres) | Tidak pernah difokus TalkBack | | |
 | U3 | Semua tombol | Terbaca nama tombolnya, tidak ada yang hanya "tombol" tanpa nama | | |
 | U4 | Ukuran tombol | Semua tombol mudah diketuk dengan satu jari, tidak perlu presisi | | |
 | U5 | Pesan error dan umpan balik | Dibacakan **satu kali** saja, tidak dobel | | |

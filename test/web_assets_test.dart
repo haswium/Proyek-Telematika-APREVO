@@ -1,11 +1,15 @@
 // Ikon versi web dan launcher Android: logo APREVO, bukan logo Flutter.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aprevo/theme/app_theme.dart';
+import 'package:aprevo/widgets/playful.dart';
 
 /// Lebar dan tinggi dari header PNG (IHDR).
 (int, int) _pngSize(String path) {
@@ -67,22 +71,111 @@ void main() {
   });
 
   testWidgets('favicon berisi logo APREVO, bukan logo Flutter', (tester) async {
-    // Logo APREVO punya batang kuning #FFC400; logo Flutter hanya biru.
-    final yellow = await tester.runAsync(() async {
+    // Logo APREVO bergradasi ungu ke jingga; logo Flutter hanya biru.
+    final (violet, orange) =
+        await tester.runAsync(() async {
+          final codec = await ui.instantiateImageCodec(
+            File('web/favicon.png').readAsBytesSync(),
+          );
+          final image = (await codec.getNextFrame()).image;
+          final data = await image.toByteData();
+          var violet = 0, orange = 0;
+          for (var i = 0; i + 3 < data!.lengthInBytes; i += 4) {
+            final r = data.getUint8(i), g = data.getUint8(i + 1);
+            final b = data.getUint8(i + 2), a = data.getUint8(i + 3);
+            if (a < 200) continue;
+            if (b > 200 && r > 100 && g < 90) violet++;
+            if (r > 200 && g > 100 && g < 200 && b < 120) orange++;
+          }
+          return (violet, orange);
+        }) ??
+        (0, 0);
+    expect(violet, greaterThan(50));
+    expect(orange, greaterThan(20));
+  });
+
+  testWidgets('ikon maskable dan foreground Android memberi ruang aman', (
+    tester,
+  ) async {
+    Future<(int, ByteData)> pixels(String path) async {
       final codec = await ui.instantiateImageCodec(
-        File('web/favicon.png').readAsBytesSync(),
+        File(path).readAsBytesSync(),
       );
       final image = (await codec.getNextFrame()).image;
-      final data = await image.toByteData();
-      var count = 0;
-      for (var i = 0; i + 3 < data!.lengthInBytes; i += 4) {
-        final r = data.getUint8(i), g = data.getUint8(i + 1);
-        final b = data.getUint8(i + 2), a = data.getUint8(i + 3);
-        if (a > 200 && r > 230 && g > 170 && g < 220 && b < 60) count++;
+      return (image.width, (await image.toByteData())!);
+    }
+
+    /// Piksel tidak transparan terjauh dari pusat, dibagi lebar ikon.
+    double reach(int size, ByteData data, bool Function(int i) isLogo) {
+      var far = 0.0;
+      for (var y = 0; y < size; y++) {
+        for (var x = 0; x < size; x++) {
+          if (!isLogo((y * size + x) * 4)) continue;
+          final d = math.sqrt(
+            math.pow(x + 0.5 - size / 2, 2) + math.pow(y + 0.5 - size / 2, 2),
+          );
+          far = math.max(far, d);
+        }
       }
-      return count;
+      return far / size;
+    }
+
+    final bg = AppColors.bgBottom;
+    final result = await tester.runAsync(() async {
+      // Maskable: latar ungu tua penuh, logo di dalam lingkaran 80%.
+      final (ms, md) = await pixels('web/icons/Icon-maskable-192.png');
+      final corner = (
+        md.getUint8(0),
+        md.getUint8(1),
+        md.getUint8(2),
+        md.getUint8(3),
+      );
+      final maskReach = reach(ms, md, (i) {
+        final dr = (md.getUint8(i) - (bg.r * 255).round()).abs();
+        final dg = (md.getUint8(i + 1) - (bg.g * 255).round()).abs();
+        final db = (md.getUint8(i + 2) - (bg.b * 255).round()).abs();
+        return dr + dg + db > 30;
+      });
+      // Foreground adaptive icon: transparan di luar logo, logo di dalam
+      // lingkaran aman 66/108 kanvas.
+      final (fs, fd) = await pixels('assets/icon/foreground.png');
+      final fgReach = reach(fs, fd, (i) => fd.getUint8(i + 3) > 16);
+      return (corner, maskReach, fgReach);
     });
-    expect(yellow, greaterThan(10));
+    final (corner, maskReach, fgReach) = result!;
+    expect(corner, (
+      (bg.r * 255).round(),
+      (bg.g * 255).round(),
+      (bg.b * 255).round(),
+      255,
+    ));
+    expect(maskReach, lessThanOrEqualTo(0.40));
+    expect(maskReach, greaterThan(0.30), reason: 'logo tidak terlalu kecil');
+    expect(fgReach, lessThanOrEqualTo(33 / 108));
+  });
+
+  testWidgets('logo APREVO tampil tetapi tidak dibacakan TalkBack', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Column(children: [AprevoLogo(), Text('APREVO')])),
+      ),
+    );
+    final image = tester.widget<Image>(find.byType(Image));
+    expect((image.image as AssetImage).assetName, AprevoLogo.asset);
+    expect(File(AprevoLogo.asset).existsSync(), isTrue);
+    expect(_pngSize(AprevoLogo.asset), (1024, 1024));
+    expect(find.bySemanticsLabel('APREVO'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ExcludeSemantics),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
+    handle.dispose();
   });
 
   test('favicon ada dan judul tab APREVO', () {
