@@ -1,4 +1,4 @@
-// Ikon dan manifest versi web: logo APREVO, bukan logo Flutter.
+// Ikon versi web dan launcher Android: logo APREVO, bukan logo Flutter.
 import 'dart:convert';
 import 'dart:io';
 
@@ -49,5 +49,39 @@ void main() {
       File('lib/main.dart').readAsStringSync(),
       contains("title: 'APREVO'"),
     );
+  });
+
+  test('aplikasi Android bernama APREVO dengan adaptive icon', () {
+    const res = 'android/app/src/main/res';
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
+    expect(manifest, contains('android:label="APREVO"'));
+    expect(manifest, contains('android:icon="@mipmap/ic_launcher"'));
+    final adaptive = File('$res/mipmap-anydpi-v26/ic_launcher.xml')
+        .readAsStringSync();
+    expect(adaptive, contains('@color/ic_launcher_background'));
+    expect(adaptive, contains('@drawable/ic_launcher_foreground'));
+    // Latar ungu tua AppColors.bgBottom.
+    expect(
+      File('$res/values/colors.xml').readAsStringSync(),
+      contains(_hex(AppColors.bgBottom.toARGB32())),
+    );
+    for (final (density, size) in [
+      ('mdpi', 48),
+      ('hdpi', 72),
+      ('xhdpi', 96),
+      ('xxhdpi', 144),
+      ('xxxhdpi', 192),
+    ]) {
+      expect(_pngSize('$res/mipmap-$density/ic_launcher.png'), (
+        size,
+        size,
+      ), reason: density);
+      expect(
+        File('$res/drawable-$density/ic_launcher_foreground.png').existsSync(),
+        isTrue,
+        reason: density,
+      );
+    }
   });
 }

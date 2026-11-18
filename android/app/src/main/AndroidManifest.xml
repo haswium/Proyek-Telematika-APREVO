@@ -4,7 +4,7 @@
     <!-- Release hanya memakai https. Http untuk backend di laptop ada di
          manifest debug dan profile. -->
     <application
-        android:label="aprevo"
+        android:label="APREVO"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
