@@ -488,13 +488,10 @@ Siapkan teks dari Word atau situs dengan beberapa judul bagian tanpa tanda `#`.
 |---|---|---|---|---|
 | 31.1 | Jawab benar | Dua nada naik pendek, lalu TalkBack membaca kartu benar. Suara TalkBack tidak terpotong | | |
 | 31.2 | Jawab salah | Satu nada rendah pendek, lalu kartu salah dibacakan | | |
-| 31.3 | Profil siswa | Ada saklar "Efek bunyi benar dan salah", aktif | | |
+| 31.3 | Profil siswa dan Profil guru | Ada saklar "Efek bunyi", aktif. Keterangannya menyebut bunyi menjawab soal (siswa) dan membalik halaman panduan | | |
 | 31.4 | Matikan saklar, jawab soal | Tidak ada bunyi, kartu tetap dibacakan | | |
 | 31.5 | Masuk pertama kali di HP ini | Dialog "Mau membaca panduan dulu?" dibacakan setelah beranda tampil | | |
-| 31.6 | Pilih Buka panduan | Layar Panduan, judul tiap fitur bisa dilompati dengan navigasi Judul | | |
-| 31.7 | Fokus ke langkah | "Langkah 1 dari 3: ..." satu fokus per langkah | | |
-| 31.8 | Keluar lalu masuk lagi dengan akun yang sama | Panduan tidak ditawarkan lagi. Tetap bisa dibuka dari Profil > Panduan | | |
-| 31.9 | Laptop dengan NVDA: buka Panduan, tekan H | Pindah antarjudul fitur | | |
+| 31.6 | Keluar lalu masuk lagi dengan akun yang sama | Panduan tidak ditawarkan lagi. Tetap bisa dibuka dari Profil > Panduan | | |
 
 ## 32. Unggah materi semua format (guru)
 
@@ -535,6 +532,25 @@ pendek (.m4a atau .mp3, kurang dari 1 menit). Siapkan juga satu file .doc lama.
 | 33.8 | Guru: Kelola materi, Ubah teks halaman, pilih halaman | Kolom judul dan teks berisi teks halaman. Gambar dan tabel tampil sebagai baris [Gambar 1] dan [Tabel 1], dengan keterangan yang dibacakan | | |
 | 33.9 | Perbaiki satu kata, Simpan halaman | Kembali ke daftar, terdengar "Halaman 1 disimpan." Siswa membaca teks yang sudah diperbaiki | | |
 | 33.10 | Hapus baris [Gambar 1], Simpan halaman | Pesan error dibacakan, halaman tidak tersimpan | | |
+
+## 34. Panduan sebagai buku interaktif
+
+Buka Profil > Panduan, sekali sebagai siswa dan sekali sebagai guru.
+
+| No | Langkah | Yang seharusnya terdengar / terjadi | Hasil | Catatan |
+|---|---|---|---|---|
+| 34.1 | Buka Panduan | Judul layar "Panduan Siswa" atau "Panduan Guru". Halaman 1 berjudul "Daftar isi" (judul) | | |
+| 34.2 | Geser kanan di daftar isi | Satu fokus per bab: "Bab 1: Masuk dan daftar. 4 halaman, mulai halaman 2", lalu "tombol". Siswa 5 bab; guru 8 bab termasuk Unggah materi, Buat soal, Progres siswa | | |
+| 34.3 | Ketuk dua kali Bab 4: Kuis | Bunyi membalik halaman pendek. Terdengar "Halaman 12 dari N: Pre-test dan post-test", lalu fokus berada di judul halaman itu | | |
+| 34.4 | Geser kanan dari judul | Penjelasan langkah dalam satu kartu. Odi atau ilustrasi tidak dibacakan | | |
+| 34.5 | Navigasi Judul TalkBack | Bab ("Bab 4: Kuis") dan judul halaman sama-sama judul | | |
+| 34.6 | Ketuk dua kali Halaman berikutnya | Pengumuman nomor halaman dan judulnya, fokus pindah ke judul. Suara TalkBack tidak terpotong oleh bunyi membalik halaman | | |
+| 34.7 | Ketuk dua kali Halaman sebelumnya, lalu Daftar isi | Sama, dan Daftar isi kembali ke halaman 1 | | |
+| 34.8 | Halaman terakhir | Tombol "Selesai membaca panduan" menggantikan Halaman berikutnya, lalu kembali ke Profil | | |
+| 34.9 | Matikan efek bunyi di Profil, buka Panduan lagi | Pindah halaman tanpa bunyi, pengumuman tetap ada | | |
+| 34.10 | Nyalakan Hapus animasi (Setelan > Aksesibilitas) | Halaman langsung berganti tanpa animasi membalik | | |
+| 34.11 | Tanpa TalkBack: lihat layar | Animasi membalik halaman singkat. Geser kiri dan kanan juga bisa membalik halaman | | |
+| 34.12 | Laptop: buka Panduan di browser, tekan panah kanan dan kiri | Halaman berganti. Dengan NVDA, nomor dan judul halaman dibacakan, tekan H untuk lompat antarjudul | | |
 
 ## Tanpa TalkBack
 

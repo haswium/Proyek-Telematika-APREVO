@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 
 import 'settings.dart';
 
-/// Efek bunyi jawaban benar dan salah: nada pendek, bukan suara bicara.
+/// Efek bunyi pendek, bukan suara bicara: jawaban benar dan salah, dan
+/// membalik halaman panduan.
 ///
 /// Pengumuman TalkBack tetap ada; bunyi ini hanya tambahan supaya siswa
 /// langsung tahu hasilnya. Bisa dimatikan di Profil ([Settings.soundEffects]).
@@ -18,6 +19,13 @@ class SoundEffects {
   Future<void> playAnswer({required bool correct}) async {
     if (!Settings.soundEffects) return;
     await play(correct ? 'sounds/correct.wav' : 'sounds/wrong.wav');
+  }
+
+  /// Desis kertas 0,3 detik saat membalik halaman panduan. Ikut saklar efek
+  /// bunyi yang sama.
+  Future<void> playPageTurn() async {
+    if (!Settings.soundEffects) return;
+    await play('sounds/page.wav');
   }
 
   @protected

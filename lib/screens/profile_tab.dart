@@ -12,7 +12,7 @@ import 'guide_screen.dart';
 import 'server_settings_screen.dart';
 
 /// Tab Profil, dipakai guru dan siswa: nama, email, peran, panduan, efek
-/// bunyi (siswa), dan tombol keluar.
+/// bunyi, dan tombol keluar.
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
 
@@ -85,29 +85,31 @@ class _ProfileTabState extends State<ProfileTab> {
             ListRow(
               icon: Icons.menu_book_outlined,
               title: 'Panduan',
-              subtitle: 'Langkah singkat memakai setiap fitur',
+              subtitle: 'Buku langkah demi langkah untuk setiap fitur',
               onTap: () => openGuide(context, role),
             ),
-            if (role == UserRole.student)
-              AppCard(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: SwitchListTile(
-                    value: Settings.soundEffects,
-                    onChanged: _setSound,
-                    title: Text(
-                      'Efek bunyi benar dan salah',
-                      style: AppType.titleMedium,
-                    ),
-                    subtitle: Text(
-                      'Bunyi pendek setelah menjawab soal. Pengumuman '
-                      'TalkBack tetap ada.',
-                      style: AppType.bodySmall,
-                    ),
+            // Untuk guru dan siswa: bunyi membalik halaman panduan dipakai
+            // keduanya, bunyi benar dan salah hanya di kuis siswa.
+            AppCard(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  value: Settings.soundEffects,
+                  onChanged: _setSound,
+                  title: Text('Efek bunyi', style: AppType.titleMedium),
+                  subtitle: Text(
+                    role == UserRole.student
+                        ? 'Bunyi pendek setelah menjawab soal dan saat '
+                              'membalik halaman panduan. Pengumuman TalkBack '
+                              'tetap ada.'
+                        : 'Bunyi pendek saat membalik halaman panduan. '
+                              'Pengumuman TalkBack tetap ada.',
+                    style: AppType.bodySmall,
                   ),
                 ),
               ),
+            ),
             const SizedBox(height: 20),
             const AboutAprevoRow(),
             const SizedBox(height: 8),

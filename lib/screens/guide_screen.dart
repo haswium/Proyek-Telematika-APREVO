@@ -1,92 +1,309 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/app_store.dart';
 import '../data/guide.dart';
 import '../models/models.dart';
+import '../services/a11y_focus.dart';
+import '../services/announce.dart';
 import '../services/settings.dart';
+import '../services/sound_effects.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/mascot.dart';
 import '../widgets/playful.dart';
 
-/// Panduan singkat per fitur. Tiap fitur punya judul (`header`) supaya bisa
-/// dilompati dengan navigasi Judul TalkBack atau tombol H di NVDA. Tiap
-/// langkah satu fokus: "Langkah 1 dari 3: ...". Tidak ada bagian yang dilipat,
-/// jadi semua langkah langsung terbaca.
-class GuideScreen extends StatelessWidget {
+/// Lama animasi membalik halaman.
+const Duration kPageFlipDuration = Duration(milliseconds: 320);
+
+/// Satu halaman buku: bab dan langkahnya. Daftar isi bukan bagian dari daftar
+/// ini; ia selalu halaman 1.
+class _BookPage {
+  const _BookPage(this.chapter, this.chapterIndex, this.page);
+
+  final GuideChapter chapter;
+  final int chapterIndex;
+  final GuidePage page;
+}
+
+/// Panduan sebagai buku interaktif. Halaman 1 berisi daftar isi; setiap
+/// halaman berikutnya satu langkah: bab, judul, penjelasan, dan ilustrasi
+/// (dekoratif, disembunyikan dari screen reader).
+///
+/// Pindah halaman lewat tombol "Halaman sebelumnya", "Halaman berikutnya",
+/// dan "Daftar isi". Panah kiri dan kanan di keyboard dan geser juga bisa,
+/// tetapi bukan satu-satunya cara. Setiap pindah: suara membalik halaman
+/// (ikut saklar efek bunyi), pengumuman "Halaman 2 dari 8: [judul]", dan
+/// fokus TalkBack pindah ke judul halaman. Animasi membalik halaman berhenti
+/// kalau animasi dimatikan.
+class GuideScreen extends StatefulWidget {
   const GuideScreen({super.key, required this.role});
 
   final UserRole role;
 
   @override
+  State<GuideScreen> createState() => _GuideScreenState();
+}
+
+class _GuideScreenState extends State<GuideScreen> {
+  late final List<GuideChapter> _chapters = guideFor(widget.role);
+  late final List<_BookPage> _pages = [
+    for (var c = 0; c < _chapters.length; c++)
+      for (final page in _chapters[c].pages) _BookPage(_chapters[c], c, page),
+  ];
+
+  /// Indeks halaman; 0 adalah daftar isi.
+  int _index = 0;
+  bool _forward = true;
+
+  /// Satu kunci per halaman: selama animasi, halaman lama dan baru ada
+  /// bersamaan.
+  late final List<GlobalKey> _titleKeys = List.generate(
+    _total,
+    (i) => GlobalKey(debugLabel: 'judul halaman panduan ${i + 1}'),
+  );
+  final _keyboard = FocusNode(debugLabel: 'buku panduan');
+
+  int get _total => _pages.length + 1;
+
+  String _titleOf(int index) =>
+      index == 0 ? 'Daftar isi' : _pages[index - 1].page.title;
+
+  /// Indeks halaman pertama sebuah bab (0 = daftar isi).
+  int _firstPageOf(int chapterIndex) =>
+      1 + _pages.indexWhere((p) => p.chapterIndex == chapterIndex);
+
+  @override
+  void dispose() {
+    _keyboard.dispose();
+    super.dispose();
+  }
+
+  void _go(int index) {
+    if (index < 0 || index >= _total || index == _index) return;
+    setState(() {
+      _forward = index > _index;
+      _index = index;
+    });
+    soundEffects.playPageTurn();
+    announce('Halaman ${index + 1} dari $_total: ${_titleOf(index)}');
+    moveScreenReaderFocus(_titleKeys[index]);
+  }
+
+  void _next() => _go(_index + 1);
+  void _previous() => _go(_index - 1);
+
+  @override
   Widget build(BuildContext context) {
-    final sections = guideFor(role);
+    final last = _index == _total - 1;
     return PurpleScaffold(
-      appBar: aprevoAppBar('Panduan ${role.label}'),
+      appBar: aprevoAppBar('Panduan ${widget.role.label}'),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Semantics(
-              header: true,
-              child: Text(
-                'Panduan APREVO untuk ${role.label.toLowerCase()}',
-                style: AppType.headlineMedium,
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.arrowRight): _next,
+            const SingleActivator(LogicalKeyboardKey.arrowLeft): _previous,
+          },
+          child: Focus(
+            focusNode: _keyboard,
+            autofocus: true,
+            child: GestureDetector(
+              // Tambahan untuk pengguna yang melihat layar. TalkBack memakai
+              // geser untuk dirinya sendiri, jadi tombol tetap cara utama.
+              onHorizontalDragEnd: (details) {
+                final speed = details.primaryVelocity ?? 0;
+                if (speed < -300) _next();
+                if (speed > 300) _previous();
+              },
+              child: Column(
+                children: [
+                  Expanded(child: _flipping(context)),
+                  _navigation(last),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Ada ${sections.length} bagian. Lompat antarjudul untuk memilih '
-              'bagian.',
-              style: AppType.bodyMedium,
-            ),
-            for (final section in sections) ...[
-              const SizedBox(height: 20),
-              SectionTitle(section.title),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var i = 0; i < section.steps.length; i++)
-                      Semantics(
-                        container: true,
-                        label:
-                            'Langkah ${i + 1} dari ${section.steps.length}: '
-                            '${section.steps[i]}',
-                        excludeSemantics: true,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 28,
-                                child: Text(
-                                  '${i + 1}.',
-                                  style: AppType.titleMedium,
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  section.steps[i],
-                                  style: AppType.bodyLarge,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Animasi membalik halaman: halaman baru berputar masuk dari tepi,
+  /// halaman lama memudar. Halaman lama disembunyikan dari screen reader.
+  Widget _flipping(BuildContext context) {
+    final current = ValueKey(_index);
+    return AnimatedSwitcher(
+      duration: reduceMotion(context) ? Duration.zero : kPageFlipDuration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final incoming = child.key == current;
+        return ExcludeSemantics(
+          excluding: !incoming,
+          child: AnimatedBuilder(
+            animation: animation,
+            child: child,
+            builder: (context, child) {
+              final turn = (1 - animation.value) * math.pi / 2;
+              return Opacity(
+                opacity: animation.value.clamp(0.0, 1.0),
+                child: Transform(
+                  alignment: _forward
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.0015)
+                    ..rotateY(incoming ? (_forward ? turn : -turn) : 0),
+                  child: child,
                 ),
-              ),
-            ],
-            const SizedBox(height: 24),
+              );
+            },
+          ),
+        );
+      },
+      layoutBuilder: (currentChild, previous) => Stack(
+        alignment: Alignment.topCenter,
+        children: [...previous, ?currentChild],
+      ),
+      child: KeyedSubtree(
+        key: current,
+        child: _index == 0 ? _contents() : _stepPage(_pages[_index - 1]),
+      ),
+    );
+  }
+
+  Widget _title(String text) => Semantics(
+    key: _titleKeys[_index],
+    container: true,
+    header: true,
+    child: Text(text, style: AppType.headlineMedium),
+  );
+
+  Widget _pageNumber() => Padding(
+    padding: const EdgeInsets.only(top: 16),
+    child: Text(
+      'Halaman ${_index + 1} dari $_total',
+      textAlign: TextAlign.center,
+      style: AppType.bodySmall.copyWith(color: AppColors.white),
+    ),
+  );
+
+  Widget _contents() {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const ExcludeSemantics(
+          child: Center(child: Mascot(size: 110, decorative: true)),
+        ),
+        const SizedBox(height: 8),
+        _title('Daftar isi'),
+        const SizedBox(height: 8),
+        Text(
+          'Ada ${_chapters.length} bab. Pilih bab untuk langsung membukanya, '
+          'atau tekan Halaman berikutnya untuk membaca dari awal.',
+          style: AppType.bodyMedium.copyWith(color: AppColors.white),
+        ),
+        const SizedBox(height: 16),
+        for (var c = 0; c < _chapters.length; c++)
+          ListRow(
+            key: ValueKey('bab-$c'),
+            icon: _chapters[c].icon,
+            title: 'Bab ${c + 1}: ${_chapters[c].title}',
+            subtitle:
+                '${_chapters[c].pages.length} halaman, mulai halaman '
+                '${_firstPageOf(c) + 1}',
+            semanticLabel:
+                'Bab ${c + 1}: ${_chapters[c].title}. '
+                '${_chapters[c].pages.length} halaman, mulai halaman '
+                '${_firstPageOf(c) + 1}',
+            onTap: () => _go(_firstPageOf(c)),
+          ),
+        _pageNumber(),
+      ],
+    );
+  }
+
+  Widget _stepPage(_BookPage entry) {
+    final art = entry.page.art;
+    final mood = art.mood;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            'Bab ${entry.chapterIndex + 1}: ${entry.chapter.title}',
+            style: AppType.titleMedium.copyWith(color: AppColors.accent),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _title(entry.page.title),
+        const SizedBox(height: 16),
+        // Ilustrasi hanya hiasan; isinya sudah ada di judul dan penjelasan.
+        ExcludeSemantics(
+          child: Center(
+            child: mood != null
+                ? Mascot(size: 140, mood: mood, decorative: true)
+                : Container(
+                    width: 140,
+                    height: 140,
+                    decoration: BoxDecoration(
+                      color: AppColors.lilac,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.ink, width: 3),
+                    ),
+                    child: Icon(art.icon, size: 72, color: AppColors.ink),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        AppCard(child: Text(entry.page.body, style: AppType.bodyLarge)),
+        _pageNumber(),
+      ],
+    );
+  }
+
+  Widget _navigation(bool last) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (last)
             PrimaryButton(
               label: 'Selesai membaca panduan',
               icon: Icons.check,
               onPressed: () => Navigator.pop(context),
+            )
+          else
+            PrimaryButton(
+              label: 'Halaman berikutnya',
+              icon: Icons.arrow_forward,
+              onPressed: _next,
             ),
-          ],
-        ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Halaman sebelumnya'),
+                  onPressed: _index == 0 ? null : _previous,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.list),
+                  label: const Text('Daftar isi'),
+                  onPressed: _index == 0 ? null : () => _go(0),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -114,8 +331,8 @@ Future<void> offerGuideOnce(BuildContext context) async {
       title: const Text('Mau membaca panduan dulu?'),
       semanticLabel: 'Mau membaca panduan dulu?',
       content: const Text(
-        'Panduan berisi langkah singkat memakai setiap fitur. Panduan juga '
-        'bisa dibuka kapan saja dari Profil.',
+        'Panduan berisi langkah demi langkah memakai setiap fitur, seperti '
+        'buku. Panduan juga bisa dibuka kapan saja dari Profil.',
       ),
       actions: [
         TextButton(

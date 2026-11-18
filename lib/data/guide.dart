@@ -1,125 +1,299 @@
+import 'package:flutter/material.dart';
+
 import '../models/models.dart';
+import '../widgets/mascot.dart';
 
-/// Satu fitur di panduan: judul (dibaca sebagai header) dan langkah singkat.
-class GuideSection {
-  const GuideSection(this.title, this.steps);
+/// Ilustrasi satu halaman panduan: Odi dengan suasana tertentu, atau ikon
+/// fitur. Selalu dekoratif; isi halaman ada di judul dan penjelasannya.
+class GuideArt {
+  const GuideArt.odi(MascotMood this.mood) : icon = null;
+  const GuideArt.icon(IconData this.icon) : mood = null;
 
-  final String title;
-  final List<String> steps;
+  final MascotMood? mood;
+  final IconData? icon;
 }
 
-/// Langkah memakai APREVO dengan TalkBack di HP, untuk semua peran.
-const _talkBack = GuideSection('Memakai APREVO dengan TalkBack', [
+/// Satu halaman buku panduan: satu langkah.
+class GuidePage {
+  const GuidePage(this.title, this.body, this.art);
+
+  final String title;
+  final String body;
+  final GuideArt art;
+}
+
+/// Satu bab buku panduan.
+class GuideChapter {
+  const GuideChapter(this.title, this.icon, this.pages);
+
+  final String title;
+  final IconData icon;
+  final List<GuidePage> pages;
+}
+
+const _odiHappy = GuideArt.odi(MascotMood.happy);
+const _odiCheer = GuideArt.odi(MascotMood.cheer);
+const _odiThinking = GuideArt.odi(MascotMood.thinking);
+
+const _talkBackPage = GuidePage(
+  'Bergerak dengan TalkBack',
   'Geser satu jari ke kanan untuk pindah ke elemen berikutnya, ke kiri untuk '
-      'kembali.',
-  'Ketuk dua kali di mana saja untuk menekan tombol yang sedang difokus.',
-  'Untuk lompat antarjudul, pilih navigasi Judul di menu TalkBack, lalu geser '
-      'ke atas atau ke bawah.',
-  'Di laptop, tekan Tab untuk pindah tombol dan Enter untuk menekan. Dengan '
-      'NVDA, tekan H untuk lompat antarjudul.',
-]);
+      'kembali. Ketuk dua kali di mana saja untuk menekan. Di laptop, tekan '
+      'Tab untuk pindah dan Enter untuk menekan.',
+  GuideArt.icon(Icons.touch_app_outlined),
+);
 
 const studentGuide = [
-  _talkBack,
-  GuideSection('Bergabung ke kelas', [
-    'Minta kode akses 6 huruf dari guru.',
-    'Di Beranda, ketik kode itu di kolom kode akses. Huruf yang kamu ketik '
-        'dibacakan satu per satu.',
-    'Tekan Gabung. Kelas baru muncul di daftar kelasmu.',
+  GuideChapter('Masuk dan daftar', Icons.login, [
+    GuidePage(
+      'Membuka APREVO',
+      'Nyalakan TalkBack, lalu buka APREVO. Layar sambutan membacakan pilihan '
+          'Masuk dan Daftar.',
+      _odiHappy,
+    ),
+    GuidePage(
+      'Daftar akun baru',
+      'Pilih Daftar, isi nama, email, dan password, lalu pilih peran Siswa. '
+          'Peran tidak bisa diganti setelah dipilih.',
+      GuideArt.icon(Icons.person_add_alt_1_outlined),
+    ),
+    GuidePage(
+      'Masuk',
+      'Pilih Masuk, lalu isi email dan password. Tombol mata membuat password '
+          'terlihat supaya bisa dicek. Bisa juga masuk dengan Google.',
+      GuideArt.icon(Icons.key_outlined),
+    ),
+    _talkBackPage,
   ]),
-  GuideSection('Membaca materi', [
-    'Buka kelas, lalu pilih materi.',
-    'Kerjakan pre-test dulu kalau diminta, lalu tekan Baca materi.',
-    'Pindah halaman dengan tombol Halaman berikutnya dan Halaman sebelumnya di '
-        'bawah teks. Nomor dan judul halaman dibacakan setiap pindah.',
-    'Gambar dibacakan sebagai "Gambar:" lalu deskripsinya.',
-    'Kalau materinya rekaman suara guru, tombol Putar audio, Jeda audio, '
-        'Mundur 10 detik, dan Maju 10 detik ada di atas teks transkrip. Audio '
-        'tidak diputar sendiri.',
-    'Untuk lompat ke halaman tertentu atau mencari kata, buka Daftar halaman.',
+  GuideChapter('Kelas', Icons.groups_outlined, [
+    GuidePage(
+      'Bergabung ke kelas',
+      'Minta kode akses 6 huruf dari guru. Di Beranda, ketik kodenya; huruf '
+          'yang diketik dibacakan satu per satu. Lalu tekan Gabung.',
+      GuideArt.icon(Icons.vpn_key_outlined),
+    ),
+    GuidePage(
+      'Membuka kelas',
+      'Kelasmu ada di Beranda. Pilih satu kelas untuk melihat materi, '
+          'presensi, dan teman sekelas.',
+      _odiHappy,
+    ),
   ]),
-  GuideSection('Mengerjakan kuis', [
-    'Tekan Mulai pre-test atau Mulai post-test. Post-test terbuka setelah '
-        'pre-test selesai.',
-    'Dengarkan soal, pilih satu jawaban, lalu tekan Periksa Jawaban.',
-    'Kamu mendengar bunyi pendek dan pesan benar atau salah. Jawaban yang sudah '
-        'dikirim tidak bisa diganti.',
-    'Tekan Soal berikutnya. Setelah soal terakhir, tekan Kumpulkan dan lihat '
-        'hasil.',
+  GuideChapter('Baca materi', Icons.menu_book_outlined, [
+    GuidePage(
+      'Memilih materi',
+      'Di dalam kelas, pilih materi. Kerjakan pre-test dulu kalau diminta, '
+          'lalu tekan Baca materi.',
+      GuideArt.icon(Icons.library_books_outlined),
+    ),
+    GuidePage(
+      'Pindah halaman',
+      'Tombol Halaman berikutnya dan Halaman sebelumnya ada di bawah teks. '
+          'Setiap pindah, nomor dan judul halaman dibacakan.',
+      GuideArt.icon(Icons.import_contacts_outlined),
+    ),
+    GuidePage(
+      'Gambar dan audio',
+      'Gambar dibacakan sebagai "Gambar:" lalu deskripsinya. Kalau materinya '
+          'rekaman suara, tombol Putar audio, Jeda audio, Mundur 10 detik, dan '
+          'Maju 10 detik ada di atas transkrip.',
+      GuideArt.icon(Icons.headphones_outlined),
+    ),
+    GuidePage(
+      'Mencari di materi',
+      'Buka Daftar halaman untuk lompat ke halaman tertentu, atau ketik kata '
+          'di kolom Cari isi materi.',
+      GuideArt.icon(Icons.search),
+    ),
   ]),
-  GuideSection('Melihat jawaban dan pembahasan', [
-    'Setelah kuis selesai, tekan Lihat jawabanku untuk mendengar soal dan '
-        'jawabanmu.',
-    'Jawaban benar dan pembahasan terbuka setelah tenggat kuis lewat. '
-        'Sebelumnya, aplikasi menyebutkan kapan pembahasan terbuka.',
+  GuideChapter('Kuis', Icons.quiz_outlined, [
+    GuidePage(
+      'Pre-test dan post-test',
+      'Setiap materi punya pre-test sebelum membaca dan post-test sesudahnya. '
+          'Post-test terbuka setelah pre-test selesai.',
+      _odiThinking,
+    ),
+    GuidePage(
+      'Menjawab soal',
+      'Dengarkan soal, pilih satu jawaban, lalu tekan Periksa Jawaban. Kamu '
+          'mendengar bunyi pendek dan pesan benar atau salah.',
+      GuideArt.icon(Icons.check_circle_outline),
+    ),
+    GuidePage(
+      'Soal berikutnya',
+      'Tekan Soal berikutnya. Setelah soal terakhir, tekan Kumpulkan dan lihat '
+          'hasil. Jawaban yang sudah dikirim tidak bisa diganti.',
+      GuideArt.icon(Icons.arrow_forward),
+    ),
+    GuidePage(
+      'Jawaban dan pembahasan',
+      'Tekan Lihat jawabanku untuk mendengar jawabanmu. Jawaban benar dan '
+          'pembahasan terbuka setelah tenggat kuis lewat.',
+      _odiCheer,
+    ),
   ]),
-  GuideSection('Presensi', [
-    'Buka kelas, lalu pilih Presensi.',
-    'Saat guru membuka sesi, tekan tombol Hadir. Tombolnya menyebutkan jam '
-        'tutup sesi.',
-    'Pesan "Presensi tercatat" dibacakan. Riwayat dan rekap kehadiranmu ada di '
-        'bawahnya.',
-  ]),
-  GuideSection('Efek bunyi', [
-    'Bunyi pendek terdengar setelah menjawab soal: dua nada naik untuk benar, '
-        'satu nada rendah untuk salah.',
-    'Untuk mematikannya, buka Profil, lalu matikan saklar Efek bunyi benar dan '
-        'salah.',
+  GuideChapter('Presensi', Icons.how_to_reg_outlined, [
+    GuidePage(
+      'Menekan Hadir',
+      'Di dalam kelas, pilih Presensi. Saat guru membuka sesi, tekan tombol '
+          'Hadir. Tombolnya menyebutkan jam tutup sesi.',
+      GuideArt.icon(Icons.front_hand_outlined),
+    ),
+    GuidePage(
+      'Riwayat presensi',
+      'Setelah tercatat, pesan Presensi tercatat dibacakan. Rekap dan riwayat '
+          'kehadiranmu ada di bawahnya.',
+      _odiCheer,
+    ),
   ]),
 ];
 
 const teacherGuide = [
-  _talkBack,
-  GuideSection('Membuat kelas', [
-    'Di tab Kelas, tekan Buat Kelas, lalu ketik nama kelas, misalnya "7A '
-        'Geografi".',
-    'Bagikan kode akses 6 huruf ke siswa. Tombol Salin menyalin kodenya.',
-    'Siswa yang bergabung muncul di Anggota kelas.',
+  GuideChapter('Masuk dan daftar', Icons.login, [
+    GuidePage(
+      'Daftar sebagai guru',
+      'Pilih Daftar, isi nama, email, dan password, lalu pilih peran Guru. '
+          'Peran tidak bisa diganti setelah dipilih.',
+      _odiHappy,
+    ),
+    _talkBackPage,
+    GuidePage(
+      'Memakai di laptop',
+      'APREVO juga bisa dibuka di browser laptop dengan akun yang sama. Tombol '
+          'yang sedang dipilih dengan Tab diberi cincin kuning.',
+      GuideArt.icon(Icons.laptop_outlined),
+    ),
   ]),
-  GuideSection('Menambah materi', [
-    'Buka kelas, lalu pilih Unggah materi, atau Tempel teks kalau isinya '
-        'disalin dari dokumen lain.',
-    'Unggah materi menerima PDF, Word, PowerPoint, Excel, CSV, teks, foto '
-        'halaman buku atau papan tulis, dan rekaman audio sampai 15 menit. '
-        'File Word, PowerPoint, dan Excel lama (.doc, .ppt, .xls) perlu '
-        'disimpan ulang dulu.',
-    'Setelah diunggah, file diproses di latar belakang. Status setiap langkah '
-        'dibacakan sampai selesai.',
-    'Untuk tempel teks, salin teks dari dokumen, tempel di kolom isi, lalu '
-        'periksa pratinjau pembagian halaman sebelum menyimpan.',
-    'Periksa isi tiap halaman dan deskripsi gambar. Tulisan dari foto, '
-        'transkrip audio, dan deskripsi buatan AI bisa salah, jadi perbaiki di '
-        'Ubah teks halaman dan Gambar dan deskripsi sebelum terbit.',
-    'Materi masih draf sampai saklar Publikasikan ke siswa dinyalakan.',
+  GuideChapter('Kelas', Icons.groups_outlined, [
+    GuidePage(
+      'Membuat kelas',
+      'Di tab Kelas, tekan Buat Kelas, lalu ketik nama kelas, misalnya "7A '
+          'Geografi".',
+      GuideArt.icon(Icons.add_circle_outline),
+    ),
+    GuidePage(
+      'Membagikan kode akses',
+      'Setiap kelas punya kode akses 6 huruf. Bagikan ke siswa; tombol Salin '
+          'menyalin kodenya.',
+      GuideArt.icon(Icons.vpn_key_outlined),
+    ),
+    GuidePage(
+      'Anggota kelas',
+      'Siswa yang sudah bergabung ada di Anggota kelas. Dari sana, siswa juga '
+          'bisa dikeluarkan.',
+      _odiHappy,
+    ),
   ]),
-  GuideSection('Membuat soal dan jadwal', [
-    'Di Kelola materi, tambahkan soal pre-test dan post-test. Masing-masing '
-        'perlu minimal satu soal supaya materi bisa diterbitkan.',
-    'Soal juga bisa dibuat dengan AI dari isi materi, lalu diperiksa dulu.',
-    'Atur jadwal tiap kuis: waktu buka dan tenggat. Pembahasan terbuka untuk '
-        'siswa setelah tenggat.',
+  GuideChapter('Baca materi', Icons.menu_book_outlined, [
+    GuidePage(
+      'Memeriksa halaman',
+      'Di Kelola materi, pilih Lihat halaman materi untuk membaca materi '
+          'seperti yang didengar siswa.',
+      GuideArt.icon(Icons.import_contacts_outlined),
+    ),
+    GuidePage(
+      'Memperbaiki teks dan gambar',
+      'Tulisan dari foto, transkrip audio, dan deskripsi AI bisa salah. '
+          'Perbaiki di Ubah teks halaman dan Gambar dan deskripsi.',
+      GuideArt.icon(Icons.edit_note),
+    ),
+    GuidePage(
+      'Menerbitkan materi',
+      'Materi masih draf sampai saklar Publikasikan ke siswa dinyalakan. '
+          'Siswa hanya melihat materi yang sudah terbit.',
+      _odiCheer,
+    ),
   ]),
-  GuideSection('Presensi', [
-    'Buka kelas, pilih Presensi, lalu tekan Buka sesi presensi.',
-    'Isi judul pertemuan, lalu pilih waktu tutup: 15 menit, 30 menit, 1 jam, '
-        'akhir hari, atau atur sendiri.',
-    'Siswa yang tidak menekan Hadir sampai sesi ditutup dihitung alpa.',
-    'Untuk mengubah status siswa menjadi hadir, izin, sakit, atau alpa, buka '
-        'sesinya lalu pilih nama siswa.',
+  GuideChapter('Kuis', Icons.quiz_outlined, [
+    GuidePage(
+      'Pre-test dan post-test',
+      'Setiap materi punya pre-test dan post-test. Masing-masing perlu minimal '
+          'satu soal supaya materi bisa diterbitkan.',
+      _odiThinking,
+    ),
+    GuidePage(
+      'Jadwal kuis',
+      'Atur waktu buka dan tenggat setiap kuis. Jawaban benar dan pembahasan '
+          'terbuka untuk siswa setelah tenggat.',
+      GuideArt.icon(Icons.event_outlined),
+    ),
+    GuidePage(
+      'Hasil kuis',
+      'Tab Hasil berisi nilai pre-test, post-test, rata-rata, dan soal yang '
+          'paling banyak salah.',
+      GuideArt.icon(Icons.insights_outlined),
+    ),
   ]),
-  GuideSection('Hasil dan progres siswa', [
-    'Tab Hasil berisi nilai pre-test, post-test, dan rata-rata tiap materi.',
-    'Di halaman kelas, Progres siswa menampilkan nilai pre-test, post-test, '
-        'dan kenaikannya per siswa.',
-    'Pre-test memakai percobaan pertama, post-test memakai percobaan terakhir.',
+  GuideChapter('Presensi', Icons.how_to_reg_outlined, [
+    GuidePage(
+      'Membuka sesi',
+      'Di dalam kelas, pilih Presensi, lalu Buka sesi presensi. Pilih waktu '
+          'tutup: 15 menit, 30 menit, 1 jam, akhir hari, atau atur sendiri.',
+      GuideArt.icon(Icons.timer_outlined),
+    ),
+    GuidePage(
+      'Mengubah status',
+      'Siswa yang tidak menekan Hadir sampai sesi ditutup dihitung alpa. Buka '
+          'sesinya lalu pilih nama siswa untuk mengubah ke hadir, izin, sakit, '
+          'atau alpa.',
+      GuideArt.icon(Icons.fact_check_outlined),
+    ),
   ]),
-  GuideSection('Memakai versi web di laptop', [
-    'Buka alamat web APREVO di Chrome atau Edge, lalu masuk dengan akun yang '
-        'sama.',
-    'Tekan Tab untuk pindah tombol. Tombol yang sedang difokus diberi cincin '
-        'kuning.',
+  GuideChapter('Unggah materi', Icons.cloud_upload_outlined, [
+    GuidePage(
+      'Memilih file',
+      'Di halaman kelas, tekan Unggah materi. Bisa dokumen, presentasi, tabel, '
+          'teks, foto halaman buku, atau rekaman audio.',
+      GuideArt.icon(Icons.attach_file),
+    ),
+    GuidePage(
+      'Menunggu proses',
+      'File diubah menjadi halaman di latar belakang. Setiap langkahnya '
+          'dibacakan sampai selesai.',
+      _odiThinking,
+    ),
+    GuidePage(
+      'Tempel teks',
+      'Kalau isinya dari dokumen lain, tekan Tempel teks, tempel isinya, lalu '
+          'periksa pratinjau pembagian halaman sebelum menyimpan.',
+      GuideArt.icon(Icons.content_paste),
+    ),
+  ]),
+  GuideChapter('Buat soal', Icons.edit_outlined, [
+    GuidePage(
+      'Menambah soal',
+      'Di Kelola materi, tekan Tambah soal. Pilih jenis soal: pilihan ganda, '
+          'benar atau salah, isian singkat, atau puzzle urutan.',
+      GuideArt.icon(Icons.playlist_add),
+    ),
+    GuidePage(
+      'Soal dengan AI',
+      'Tekan Buat soal dengan AI untuk membuat draf soal dari isi materi. '
+          'Periksa setiap draf sebelum disimpan.',
+      GuideArt.icon(Icons.auto_awesome),
+    ),
+    GuidePage(
+      'Menyalin soal',
+      'Post-test bisa memakai soal pre-test lewat Salin soal dari pre-test, '
+          'supaya kenaikan nilai bisa dibandingkan.',
+      GuideArt.icon(Icons.copy),
+    ),
+  ]),
+  GuideChapter('Progres siswa', Icons.trending_up, [
+    GuidePage(
+      'Tabel progres',
+      'Di halaman kelas, pilih Progres siswa. Tabelnya berisi nilai pre-test, '
+          'post-test, dan kenaikannya per siswa.',
+      GuideArt.icon(Icons.table_chart_outlined),
+    ),
+    GuidePage(
+      'Progres per siswa',
+      'Pilih nama siswa untuk melihat semua kuisnya. Pre-test memakai '
+          'percobaan pertama, post-test memakai percobaan terakhir.',
+      _odiCheer,
+    ),
   ]),
 ];
 
-List<GuideSection> guideFor(UserRole role) =>
+List<GuideChapter> guideFor(UserRole role) =>
     role == UserRole.teacher ? teacherGuide : studentGuide;
